@@ -334,43 +334,99 @@ fn is_url(path: &str) -> bool {
     path.starts_with("http://") || path.starts_with("https://")
 }
 
+/// Extract the host component of a URL for SSRF analysis.
+///
+/// Bracketed IPv6 literals are handled as a single unit: the brackets come off
+/// first, and only what surrounds the address is dropped — a `%zone` suffix
+/// inside the brackets and the `:port` after them. Splitting on `:` before
+/// looking at the brackets collapses `[::1]` to `[` — and then to an empty
+/// host — which silently exempts every bracketed IPv6 literal from the address
+/// checks.
+///
+/// Returns `None` when the URL has no scheme or yields an empty host.
+fn extract_url_host(url: &str) -> Option<&str> {
+    let after_scheme = url.split_once("://")?.1;
+
+    // Extract host (before first / or ?)
+    let host_end = after_scheme
+        .find('/')
+        .or_else(|| after_scheme.find('?'))
+        .unwrap_or(after_scheme.len());
+
+    // Remove auth if present (user:pass@host)
+    let host_part = &after_scheme[..host_end];
+    let host_part = match host_part.rfind('@') {
+        Some(auth_end) => &host_part[auth_end + 1..],
+        None => host_part,
+    };
+
+    if let Some(inner) = host_part.strip_prefix('[') {
+        // Bracketed IPv6 literal (RFC 3986 §3.2.2): the address runs to the
+        // closing bracket and only a port may follow it. A missing bracket
+        // leaves a host that cannot parse as an address, which the caller
+        // handles as a hostname.
+        let addr = match inner.find(']') {
+            Some(end) => &inner[..end],
+            None => inner,
+        };
+        // Strip a %zone suffix (RFC 6874 percent-encodes it as %25).
+        let addr = match addr.split_once('%') {
+            Some((before_zone, _)) => before_zone,
+            None => addr,
+        };
+        return if addr.is_empty() { None } else { Some(addr) };
+    }
+
+    // Plain host or IPv4 literal: a single separating `:port` is the only colon.
+    let host = host_part.split(':').next()?;
+    if host.is_empty() { None } else { Some(host) }
+}
+
+/// Reason an IPv4 address is blocked, or `None` if it is publicly routable.
+fn blocked_ipv4_reason(ipv4: std::net::Ipv4Addr) -> Option<String> {
+    // Block IPv4 loopback (127.0.0.0/8)
+    if ipv4.is_loopback() {
+        return Some("IPv4 loopback addresses are blocked (SSRF protection)".to_string());
+    }
+
+    // Block IPv4 wildcard (0.0.0.0)
+    if ipv4.is_unspecified() {
+        return Some("IPv4 wildcard addresses are blocked (SSRF protection)".to_string());
+    }
+
+    // Block RFC 1918 private networks
+    let octets = ipv4.octets();
+    if octets[0] == 10 {
+        return Some("RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string());
+    }
+    if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
+        return Some("RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string());
+    }
+    if octets[0] == 192 && octets[1] == 168 {
+        return Some("RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string());
+    }
+
+    // Block link-local (169.254.0.0/16) - includes cloud metadata
+    if octets[0] == 169 && octets[1] == 254 {
+        return Some("Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string());
+    }
+
+    None
+}
+
 /// Validate a URL for SSRF (Server-Side Request Forgery) protection.
 ///
 /// Returns an error if the URL should be blocked:
 /// - http:// scheme is not allowed (only https://)
 /// - Private network ranges (RFC 1918, loopback, link-local, cloud metadata)
-/// - IPv6 loopback and other private ranges
+/// - IPv6 loopback, IPv4-mapped IPv6, and other private ranges
 ///
 /// Returns Ok(()) if the URL is safe to fetch.
 fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
     use std::net::IpAddr;
 
     // Parse URL to extract host
-    let host = if let Some(start) = url.find("://") {
-        let after_scheme = &url[start + 3..];
-
-        // Extract host (before first / or ?)
-        let host_end = after_scheme
-            .find('/')
-            .or_else(|| after_scheme.find('?'))
-            .unwrap_or(after_scheme.len());
-
-        // Remove auth if present (user:pass@host)
-        let host_part = &after_scheme[..host_end];
-        if let Some(auth_end) = host_part.rfind('@') {
-            &host_part[auth_end + 1..]
-        } else {
-            host_part
-        }
-    } else {
-        return Err("Invalid URL format".to_string());
-    };
-
-    // Remove port if present
-    let host = host.split(':').next().unwrap_or(host);
-
-    // Remove brackets from IPv6 addresses
-    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let host = extract_url_host(url).ok_or_else(|| "Invalid URL format".to_string())?;
 
     // Check scheme: http:// is blocked
     if url.starts_with("http://") {
@@ -381,31 +437,8 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
     if let Ok(ip_addr) = host.parse::<IpAddr>() {
         match ip_addr {
             IpAddr::V4(ipv4) => {
-                // Block IPv4 loopback (127.0.0.0/8)
-                if ipv4.is_loopback() {
-                    return Err("IPv4 loopback addresses are blocked (SSRF protection)".to_string());
-                }
-
-                // Block IPv4 wildcard (0.0.0.0)
-                if ipv4.is_unspecified() {
-                    return Err("IPv4 wildcard addresses are blocked (SSRF protection)".to_string());
-                }
-
-                // Block RFC 1918 private networks
-                let octets = ipv4.octets();
-                if octets[0] == 10 {
-                    return Err("RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string());
-                }
-                if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
-                    return Err("RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string());
-                }
-                if octets[0] == 192 && octets[1] == 168 {
-                    return Err("RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string());
-                }
-
-                // Block link-local (169.254.0.0/16) - includes cloud metadata
-                if octets[0] == 169 && octets[1] == 254 {
-                    return Err("Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string());
+                if let Some(reason) = blocked_ipv4_reason(ipv4) {
+                    return Err(reason);
                 }
             }
             IpAddr::V6(ipv6) => {
@@ -417,6 +450,20 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
                 // Block IPv6 unspecified
                 if ipv6.is_unspecified() {
                     return Err("IPv6 unspecified addresses are blocked (SSRF protection)".to_string());
+                }
+
+                // Block IPv4-mapped and IPv4-compatible literals such as
+                // ::ffff:127.0.0.1 — they reach the same host as the embedded
+                // IPv4 address, so the same ranges apply to them. The early
+                // Ok(()) skips the v6 range checks below, which is safe: a
+                // mapped/compatible literal has `::ffff:` or all-zero leading
+                // segments, so segments[0] can never match the fc00::/7 or
+                // fe80::/10 masks those checks test.
+                if let Some(ipv4) = ipv6.to_ipv4() {
+                    if let Some(reason) = blocked_ipv4_reason(ipv4) {
+                        return Err(reason);
+                    }
+                    return Ok(());
                 }
 
                 // Block IPv6 private ranges (fc00::/7, fd00::/8)
@@ -1075,8 +1122,8 @@ impl Tool for ClassifyTool {
 
 #[cfg(test)]
 mod tests {
-    use super::super::ERROR_NOT_YET_IMPLEMENTED;
     use super::*;
+    use crate::mcp::tools::ERROR_NOT_YET_IMPLEMENTED;
 
     #[test]
     fn test_registry_has_all_tools() {
@@ -1391,5 +1438,130 @@ mod tests {
         let result = find_startxref_offset(pdf_data);
         // When startxref is not found, we return Ok(0) to signal forward scan should be used
         assert_eq!(result.unwrap(), 0);
+    }
+}
+
+#[cfg(test)]
+mod ssrf_validation_tests {
+    use super::*;
+
+    /// Every URL here must be refused, and the refusal must come from the
+    /// address checks — not the http:// scheme check — which is why all but
+    /// one of them are https://. The bracketed IPv6 rows are the TH-05
+    /// regression: they used to pass validation because splitting the port off
+    /// before stripping the brackets collapsed `[::1]` to an empty host.
+    const BLOCKED_ON_ADDRESS: &[&str] = &[
+        // Bracketed IPv6 literals
+        "https://[::1]/doc.pdf",
+        "https://[0:0:0:0:0:0:0:1]/doc.pdf",
+        "https://[::1]:8443/doc.pdf",
+        "https://[::ffff:127.0.0.1]/doc.pdf",
+        "https://[::ffff:10.0.0.1]/doc.pdf",
+        "https://[::ffff:169.254.169.254]/doc.pdf",
+        "https://[::ffff:0.0.0.0]/doc.pdf",
+        "https://[fe80::1]/doc.pdf",
+        "https://[fe80::1%25eth0]/doc.pdf",
+        "https://[fe80::1%eth0]:443/doc.pdf",
+        "https://[fc00::1]/doc.pdf",
+        "https://[fd12:3456:789a::1]/doc.pdf",
+        "https://[::]/doc.pdf",
+        // IPv4 literals, with and without ports
+        "https://127.0.0.1/doc.pdf",
+        "https://127.0.0.1:9999/doc.pdf",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://10.0.0.1/internal/doc.pdf",
+        "https://172.16.0.1/doc.pdf",
+        "https://192.168.1.1/doc.pdf",
+        "https://0.0.0.0/doc.pdf",
+        // Hostnames
+        "https://localhost/doc.pdf",
+        "https://metadata.doc.localhost/doc.pdf",
+        // Scheme is still rejected even when the host is public
+        "http://example.com/doc.pdf",
+    ];
+
+    /// URLs that must pass validation untouched.
+    const ALLOWED: &[&str] = &[
+        "https://example.com/doc.pdf",
+        "https://example.com:443/doc.pdf",
+        "https://docs.example.com/doc.pdf?query=1",
+        "https://user:pass@example.com/doc.pdf",
+        "https://8.8.8.8/doc.pdf",
+        "https://[2001:4860:4860::8888]/doc.pdf",
+        "https://[2001:4860:4860::8888]:443/doc.pdf",
+    ];
+
+    #[test]
+    fn blocked_urls_are_refused_on_address() {
+        for url in BLOCKED_ON_ADDRESS {
+            let reason = validate_url_no_ssrf(url)
+                .err()
+                .unwrap_or_else(|| panic!("{} must be blocked by validate_url_no_ssrf", url));
+            assert!(
+                reason.contains("SSRF protection") || reason.contains("not http://"),
+                "{} blocked for an unexpected reason: {}",
+                url,
+                reason
+            );
+        }
+    }
+
+    #[test]
+    fn publicly_routable_urls_are_allowed() {
+        for url in ALLOWED {
+            assert!(
+                validate_url_no_ssrf(url).is_ok(),
+                "{} must not be blocked by validate_url_no_ssrf",
+                url
+            );
+        }
+    }
+
+    /// The bracketed forms must reach the same checks as the plain IPv4 they
+    /// name — the whole point of TH-05 is that `[::1]` names loopback.
+    #[test]
+    fn bracketed_ipv6_is_blocked_same_as_its_address() {
+        for (bracketed, literal) in [
+            ("https://[::ffff:127.0.0.1]/", "https://127.0.0.1/"),
+            ("https://[::ffff:10.0.0.1]/", "https://10.0.0.1/"),
+            ("https://[::ffff:169.254.169.254]/", "https://169.254.169.254/"),
+        ] {
+            assert!(
+                validate_url_no_ssrf(bracketed).is_err(),
+                "{} must be blocked",
+                bracketed
+            );
+            assert!(
+                validate_url_no_ssrf(literal).is_err(),
+                "{} must be blocked",
+                literal
+            );
+        }
+    }
+
+    #[test]
+    fn urls_without_a_usable_host_are_refused() {
+        for url in ["not-a-url", "https:///doc.pdf", "https://[]/doc.pdf"] {
+            assert!(
+                validate_url_no_ssrf(url).is_err(),
+                "{} must not validate cleanly",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn extract_url_host_keeps_ipv6_colons() {
+        assert_eq!(extract_url_host("https://[::1]/doc.pdf"), Some("::1"));
+        assert_eq!(extract_url_host("https://[::1]:8443/doc.pdf"), Some("::1"));
+        assert_eq!(
+            extract_url_host("https://[fe80::1%25eth0]/doc.pdf"),
+            Some("fe80::1")
+        );
+        assert_eq!(extract_url_host("https://[::1]"), Some("::1"));
+        // Plain hosts and IPv4 literals still lose their port.
+        assert_eq!(extract_url_host("https://example.com:443/doc.pdf"), Some("example.com"));
+        assert_eq!(extract_url_host("https://127.0.0.1:9999/doc.pdf"), Some("127.0.0.1"));
+        assert_eq!(extract_url_host("https://user:pass@example.com/x"), Some("example.com"));
     }
 }

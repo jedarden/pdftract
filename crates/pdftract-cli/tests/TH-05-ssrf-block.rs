@@ -11,6 +11,17 @@
 //! - IPv4 link-local (169.254.169.254 - cloud metadata)
 //! - IPv4 private (10.0.0.1)
 //! - IPv6 loopback ([::1])
+//! - http:// scheme rejection on a public host
+//! - no network connection attempted before rejection
+//!
+//! The http:// cases above only prove the scheme check fires: http:// is
+//! refused before the host is examined. `test_https_variants_blocked_on_address`
+//! re-runs every pattern over https:// so each one can only be refused by the
+//! address checks — bracketed IPv6 literals included, which once slipped
+//! through because splitting the port off before stripping the brackets
+//! collapsed `[::1]` to an empty host. Two further tests pin the edges of
+//! that sweep: an IPv4-mapped literal must be refused *as* the IPv4 address
+//! it names, and publicly routable hosts must keep working.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
@@ -20,9 +31,12 @@ use std::time::Duration;
 /// Path to the pdftract binary.
 const PDFTRACT: &str = env!("CARGO_BIN_EXE_pdftract");
 
-/// Expected error code for SSRF blocking.
-/// This should match the code returned by the MCP server when a URL is blocked.
-const SSRF_BLOCKED_CODE: i64 = -32001;
+/// Expected JSON-RPC error code for SSRF blocking.
+///
+/// Must match `ERROR_SSRF_BLOCKED` in `crates/pdftract-cli/src/mcp/tools/mod.rs`,
+/// which the extract tool emits — alongside `data.code: "SSRF_BLOCKED"` — when
+/// `validate_url_no_ssrf` refuses a URL.
+const SSRF_BLOCKED_CODE: i64 = -32004;
 
 // ============================================================================
 // JSON-RPC Response Parsing Types
@@ -254,40 +268,44 @@ fn make_extract_call_request(id: i64, url: &str) -> String {
     .to_string()
 }
 
+/// Send one extract tools/call to a fresh MCP server and return the raw
+/// response body.
+///
+/// The server is torn down by the RAII guard before this returns, so a test
+/// can never leak a `pdftract mcp` process, even when an assertion fails.
+fn send_extract_call(id: i64, url: &str) -> String {
+    let mut server = spawn_mcp_server();
+    thread::sleep(Duration::from_millis(50));
+
+    {
+        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
+        write_framed_message(stdin, &make_extract_call_request(id, url))
+            .expect("Failed to write request");
+    }
+
+    let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
+    let mut reader = BufReader::new(stdout);
+
+    let start = std::time::Instant::now();
+    loop {
+        match read_framed_response(&mut reader) {
+            Ok(Some(resp)) => return resp,
+            Ok(None) => panic!("Unexpected EOF waiting for response to {}", url),
+            Err(e) if start.elapsed() >= Duration::from_secs(1) => {
+                panic!("Timeout waiting for response to {}: {}", url, e);
+            }
+            Err(_) => thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
 /// Test case 1: IPv4 loopback (127.0.0.1) is blocked.
 ///
 /// This test verifies that attempting to extract from 127.0.0.1 is rejected
 /// with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_ipv4_loopback_blocked() {
-    let mut server = spawn_mcp_server();
-    thread::sleep(Duration::from_millis(50));
-
-    let request = make_extract_call_request(1, "http://127.0.0.1:9999/doc.pdf");
-
-    // Send request
-    {
-        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
-        write_framed_message(stdin, &request).expect("Failed to write request");
-    }
-
-    // Read response with bounded timeout
-    let response = {
-        let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
-        let mut reader = BufReader::new(stdout);
-
-        let start = std::time::Instant::now();
-        loop {
-            match read_framed_response(&mut reader) {
-                Ok(Some(resp)) => break resp,
-                Ok(None) => panic!("Unexpected EOF"),
-                Err(e) if start.elapsed() >= Duration::from_secs(1) => {
-                    panic!("Timeout waiting for response: {}", e);
-                }
-                Err(_) => thread::sleep(Duration::from_millis(10)),
-            }
-        }
-    };
+    let response = send_extract_call(1, "http://127.0.0.1:9999/doc.pdf");
 
     // Assert SSRF_BLOCKED error (Phase 1.8 implemented)
     assert_ssrf_blocked_error(&response, "IPv4 loopback (127.0.0.1)");
@@ -299,32 +317,7 @@ fn test_ipv4_loopback_blocked() {
 /// with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_ipv4_wildcard_blocked() {
-    let mut server = spawn_mcp_server();
-    thread::sleep(Duration::from_millis(50));
-
-    let request = make_extract_call_request(2, "http://0.0.0.0/doc.pdf");
-
-    {
-        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
-        write_framed_message(stdin, &request).expect("Failed to write request");
-    }
-
-    let response = {
-        let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
-        let mut reader = BufReader::new(stdout);
-
-        let start = std::time::Instant::now();
-        loop {
-            match read_framed_response(&mut reader) {
-                Ok(Some(resp)) => break resp,
-                Ok(None) => panic!("Unexpected EOF"),
-                Err(e) if start.elapsed() >= Duration::from_secs(1) => {
-                    panic!("Timeout waiting for response: {}", e);
-                }
-                Err(_) => thread::sleep(Duration::from_millis(10)),
-            }
-        }
-    };
+    let response = send_extract_call(2, "http://0.0.0.0/doc.pdf");
 
     // Assert SSRF_BLOCKED error (Phase 1.8 implemented)
     assert_ssrf_blocked_error(&response, "IPv4 wildcard (0.0.0.0)");
@@ -336,32 +329,7 @@ fn test_ipv4_wildcard_blocked() {
 /// is rejected with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_cloud_metadata_blocked() {
-    let mut server = spawn_mcp_server();
-    thread::sleep(Duration::from_millis(50));
-
-    let request = make_extract_call_request(3, "http://169.254.169.254/latest/meta-data/");
-
-    {
-        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
-        write_framed_message(stdin, &request).expect("Failed to write request");
-    }
-
-    let response = {
-        let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
-        let mut reader = BufReader::new(stdout);
-
-        let start = std::time::Instant::now();
-        loop {
-            match read_framed_response(&mut reader) {
-                Ok(Some(resp)) => break resp,
-                Ok(None) => panic!("Unexpected EOF"),
-                Err(e) if start.elapsed() >= Duration::from_secs(1) => {
-                    panic!("Timeout waiting for response: {}", e);
-                }
-                Err(_) => thread::sleep(Duration::from_millis(10)),
-            }
-        }
-    };
+    let response = send_extract_call(3, "http://169.254.169.254/latest/meta-data/");
 
     // Assert SSRF_BLOCKED error
     assert_ssrf_blocked_error(&response, "Cloud metadata endpoint (169.254.169.254)");
@@ -373,32 +341,7 @@ fn test_cloud_metadata_blocked() {
 /// is rejected with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_rfc1918_private_blocked() {
-    let mut server = spawn_mcp_server();
-    thread::sleep(Duration::from_millis(50));
-
-    let request = make_extract_call_request(4, "http://10.0.0.1/internal/doc.pdf");
-
-    {
-        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
-        write_framed_message(stdin, &request).expect("Failed to write request");
-    }
-
-    let response = {
-        let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
-        let mut reader = BufReader::new(stdout);
-
-        let start = std::time::Instant::now();
-        loop {
-            match read_framed_response(&mut reader) {
-                Ok(Some(resp)) => break resp,
-                Ok(None) => panic!("Unexpected EOF"),
-                Err(e) if start.elapsed() >= Duration::from_secs(1) => {
-                    panic!("Timeout waiting for response: {}", e);
-                }
-                Err(_) => thread::sleep(Duration::from_millis(10)),
-            }
-        }
-    };
+    let response = send_extract_call(4, "http://10.0.0.1/internal/doc.pdf");
 
     // Assert SSRF_BLOCKED error
     assert_ssrf_blocked_error(&response, "RFC 1918 private network (10.0.0.1)");
@@ -410,32 +353,7 @@ fn test_rfc1918_private_blocked() {
 /// is rejected with a SSRF_BLOCKED error in the JSON-RPC response.
 #[test]
 fn test_ipv6_loopback_blocked() {
-    let mut server = spawn_mcp_server();
-    thread::sleep(Duration::from_millis(50));
-
-    let request = make_extract_call_request(5, "http://[::1]/doc.pdf");
-
-    {
-        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
-        write_framed_message(stdin, &request).expect("Failed to write request");
-    }
-
-    let response = {
-        let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
-        let mut reader = BufReader::new(stdout);
-
-        let start = std::time::Instant::now();
-        loop {
-            match read_framed_response(&mut reader) {
-                Ok(Some(resp)) => break resp,
-                Ok(None) => panic!("Unexpected EOF"),
-                Err(e) if start.elapsed() >= Duration::from_secs(1) => {
-                    panic!("Timeout waiting for response: {}", e);
-                }
-                Err(_) => thread::sleep(Duration::from_millis(10)),
-            }
-        }
-    };
+    let response = send_extract_call(5, "http://[::1]/doc.pdf");
 
     // Assert SSRF_BLOCKED error
     assert_ssrf_blocked_error(&response, "IPv6 loopback ([::1])");
@@ -479,11 +397,15 @@ fn assert_ssrf_blocked_error(response_json: &str, test_description: &str) {
     // Additional verification: ensure we're dealing with a proper error structure
     let error_code = error.code;
 
-    // Error code should be in the server error range or the specific SSRF blocked code
+    // The numeric code must be the one documented for SSRF blocking. Accepting
+    // the whole -32099..=-32000 server-error range here would also pass a
+    // URL refused for an unrelated reason — PDF_ENCRYPTED is -32001 and
+    // IO_ERROR is -32002 — so the marker check above is what carries the
+    // assertion, and this pins the code the extract tool actually emits.
     assert!(
-        error_code == SSRF_BLOCKED_CODE || (-32099..=-32000).contains(&error_code),
-        "Error code {} for {} should be SSRF_BLOCKED_CODE or in server error range",
-        error_code, test_description
+        error_code == SSRF_BLOCKED_CODE,
+        "Error code {} for {} should be SSRF_BLOCKED_CODE ({})",
+        error_code, test_description, SSRF_BLOCKED_CODE
     );
 }
 
@@ -993,6 +915,49 @@ mod json_rpc_parsing_tests {
         assert!(parsed.is_success(), "is_success returns true if result is Some");
         assert!(parsed.is_error(), "is_error returns true if error is Some");
     }
+
+    // --------------------------------------------------------------------
+    // assert_ssrf_blocked_error must actually reject
+    // --------------------------------------------------------------------
+    //
+    // The positive cases are covered by the TH-05 tests above; these pin the
+    // rejection side. Without them the helper can decay into accepting any
+    // server error — which is exactly how the wrong `SSRF_BLOCKED_CODE`
+    // constant went unnoticed: the numeric check was satisfied by the loose
+    // -32099..=-32000 range fallback instead.
+
+    /// A success response is not an SSRF rejection, even when the tool's
+    /// result mentions the marker in its own payload.
+    #[test]
+    #[should_panic(expected = "Response should be an error")]
+    fn assert_helper_rejects_a_success_response() {
+        assert_ssrf_blocked_error(
+            r#"{"jsonrpc":"2.0","result":{"note":"SSRF_BLOCKED not triggered"},"id":1}"#,
+            "success response",
+        );
+    }
+
+    /// A URL refused for an unrelated reason carries a different numeric code.
+    /// PDF_ENCRYPTED (-32001) must not satisfy the SSRF assertion even when
+    /// its data.code names SSRF_BLOCKED.
+    #[test]
+    #[should_panic(expected = "should be SSRF_BLOCKED_CODE")]
+    fn assert_helper_rejects_a_different_error_code() {
+        assert_ssrf_blocked_error(
+            r#"{"jsonrpc":"2.0","error":{"code":-32001,"message":"Document is encrypted","data":{"code":"SSRF_BLOCKED"}},"id":1}"#,
+            "encrypted document",
+        );
+    }
+
+    /// A genuine SSRF refusal — the exact shape the extract tool emits — must
+    /// keep passing, so these negative tests cannot drift into rejecting it.
+    #[test]
+    fn assert_helper_accepts_the_real_ssrf_response() {
+        assert_ssrf_blocked_error(
+            r#"{"jsonrpc":"2.0","error":{"code":-32004,"message":"URL blocked: IPv4 loopback addresses are blocked (SSRF protection)","data":{"code":"SSRF_BLOCKED"}},"id":1}"#,
+            "real SSRF refusal",
+        );
+    }
 }
 
 /// Test case 6: Verify http:// scheme is rejected (https:// required).
@@ -1001,33 +966,8 @@ mod json_rpc_parsing_tests {
 /// public hostname) is rejected with a SSRF_BLOCKED error.
 #[test]
 fn test_http_scheme_rejected() {
-    let mut server = spawn_mcp_server();
-    thread::sleep(Duration::from_millis(50));
-
     // Use a public hostname but with http:// scheme (should be rejected)
-    let request = make_extract_call_request(6, "http://example.com/doc.pdf");
-
-    {
-        let stdin = server.child_mut().stdin.as_mut().expect("Failed to open stdin");
-        write_framed_message(stdin, &request).expect("Failed to write request");
-    }
-
-    let response = {
-        let stdout = server.child_mut().stdout.as_mut().expect("Failed to open stdout");
-        let mut reader = BufReader::new(stdout);
-
-        let start = std::time::Instant::now();
-        loop {
-            match read_framed_response(&mut reader) {
-                Ok(Some(resp)) => break resp,
-                Ok(None) => panic!("Unexpected EOF"),
-                Err(e) if start.elapsed() >= Duration::from_secs(1) => {
-                    panic!("Timeout waiting for response: {}", e);
-                }
-                Err(_) => thread::sleep(Duration::from_millis(10)),
-            }
-        }
-    };
+    let response = send_extract_call(6, "http://example.com/doc.pdf");
 
     // Assert SSRF_BLOCKED error
     assert_ssrf_blocked_error(&response, "http:// scheme (not https)");
@@ -1092,4 +1032,93 @@ fn test_no_network_connection_attempted() {
 
     // Assert SSRF_BLOCKED error to verify proper rejection
     assert_ssrf_blocked_error(&response, "RFC 1918 private network (192.168.1.1)");
+}
+
+// ============================================================================
+// https:// Variants — Address Blocking, Independent of the Scheme Check
+// ============================================================================
+
+/// Every SSRF pattern from the http:// tests above, sent over https://.
+///
+/// An http:// URL is refused by the scheme check before the host is ever
+/// examined, so it proves nothing about address detection: before TH-05 was
+/// fixed, `http://[::1]/doc.pdf` passed this suite while
+/// `https://[::1]/doc.pdf` was served without complaint, because the port
+/// split collapsed the bracketed literal to an empty host. Each URL here can
+/// only be refused by the address checks.
+///
+/// Every request runs against its own MCP server; the RAII guard in
+/// `send_extract_call` tears it down before the next one is spawned.
+const HTTPS_PAYLOADS: &[(&str, &str)] = &[
+    ("https://[::1]/doc.pdf", "IPv6 loopback ([::1])"),
+    ("https://[0:0:0:0:0:0:0:1]/doc.pdf", "IPv6 loopback long form ([0:0:0:0:0:0:0:1])"),
+    ("https://[::ffff:127.0.0.1]/doc.pdf", "IPv4-mapped IPv6 loopback ([::ffff:127.0.0.1])"),
+    ("https://[::ffff:10.0.0.1]/doc.pdf", "IPv4-mapped IPv6 private ([::ffff:10.0.0.1])"),
+    ("https://[::ffff:169.254.169.254]/doc.pdf", "IPv4-mapped IPv6 metadata ([::ffff:169.254.169.254])"),
+    ("https://[fe80::1]/doc.pdf", "IPv6 link-local ([fe80::1])"),
+    ("https://[fe80::1%25eth0]/doc.pdf", "IPv6 link-local with zone id ([fe80::1%25eth0])"),
+    ("https://[fc00::1]/doc.pdf", "IPv6 unique local ([fc00::1])"),
+    ("https://[::1]:8443/doc.pdf", "IPv6 loopback with port ([::1]:8443)"),
+    ("https://127.0.0.1:9999/doc.pdf", "IPv4 loopback (127.0.0.1)"),
+    ("https://0.0.0.0/doc.pdf", "IPv4 wildcard (0.0.0.0)"),
+    ("https://169.254.169.254/latest/meta-data/", "Cloud metadata endpoint (169.254.169.254)"),
+    ("https://10.0.0.1/internal/doc.pdf", "RFC 1918 private network (10.0.0.1)"),
+    ("https://192.168.1.1/doc.pdf", "RFC 1918 private network (192.168.1.1)"),
+    ("https://localhost/doc.pdf", "localhost hostname"),
+];
+
+#[test]
+fn test_https_variants_blocked_on_address() {
+    for (index, (url, description)) in HTTPS_PAYLOADS.iter().enumerate() {
+        let response = send_extract_call(100 + index as i64, url);
+        assert_ssrf_blocked_error(&response, description);
+    }
+}
+
+/// A bracketed IPv6 literal must be refused for the same reason as the plain
+/// IPv4 address it names. This pins the *reason string*, so a regression that
+/// blocks such URLs by accident (say, by rejecting every URL with a bracket)
+/// still fails here.
+#[test]
+fn test_ipv4_mapped_ipv6_reports_the_mapped_address() {
+    let response = send_extract_call(200, "https://[::ffff:127.0.0.1]/doc.pdf");
+    let parsed: JsonRpcResponse<serde_json::Value> =
+        serde_json::from_str(&response).expect("Response is not valid JSON");
+
+    let message = parsed
+        .get_error()
+        .expect("Response should be an error for IPv4-mapped loopback")
+        .message
+        .clone();
+
+    assert!(
+        message.contains("IPv4 loopback"),
+        "IPv4-mapped loopback should be reported as IPv4 loopback, got: {}",
+        message
+    );
+}
+
+/// Publicly routable hosts over https:// must keep working — the fix must not
+/// collapse into rejecting every URL that carries an address.
+#[test]
+fn test_https_public_addresses_still_allowed() {
+    for (index, url) in [
+        "https://example.com/doc.pdf",
+        "https://8.8.8.8/doc.pdf",
+        "https://[2001:4860:4860::8888]/doc.pdf",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let response = send_extract_call(300 + index as i64, url);
+        let parsed: JsonRpcResponse<serde_json::Value> =
+            serde_json::from_str(&response).expect("Response is not valid JSON");
+
+        assert!(
+            parsed.is_success(),
+            "Publicly routable URL {} must not be blocked, got: {}",
+            url,
+            response
+        );
+    }
 }
