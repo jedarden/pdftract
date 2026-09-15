@@ -30,12 +30,12 @@ use std::collections::HashSet;
 
 use super::ObjRef;
 
-/// Per-thread set of object references currently being resolved.
-///
-/// Each thread gets its own independent HashSet, allowing concurrent
-/// page processing in rayon without lock contention.
-///
-/// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
+// Per-thread set of object references currently being resolved.
+//
+// Each thread gets its own independent HashSet, allowing concurrent
+// page processing in rayon without lock contention.
+//
+// Capacity of 64 is conservative: typical PDF resolution depth is < 10.
 thread_local! {
     /// Per-thread set of object references currently being resolved.
     ///

@@ -47,10 +47,10 @@ use std::sync::Mutex;
 /// adversarial input that could cause stack overflow through deep chains.
 const MAX_RESOLUTION_DEPTH: u16 = 256;
 
-/// Per-thread resolution depth counter.
-///
-/// Each thread gets its own independent depth counter, allowing concurrent
-/// page processing in rayon without lock contention.
+// Per-thread resolution depth counter.
+//
+// Each thread gets its own independent depth counter, allowing concurrent
+// page processing in rayon without lock contention.
 thread_local! {
     /// Per-thread resolution depth counter for object reference chains.
     static RESOLUTION_DEPTH: Cell<u16> = Cell::new(0);

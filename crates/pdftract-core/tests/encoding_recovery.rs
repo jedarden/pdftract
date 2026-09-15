@@ -287,10 +287,10 @@ fn test_all_encoding_fixtures_exist() {
 
 #[test]
 fn test_corpus_recovery_rate() {
-    /// Overall recovery rate for the entire corpus.
-    ///
-    /// The Phase 2 exit gate requires ≥90% recovery rate on this corpus.
-    /// This is calculated as the weighted average recovery across all fixtures.
+    // Overall recovery rate for the entire corpus.
+    //
+    // The Phase 2 exit gate requires ≥90% recovery rate on this corpus.
+    // This is calculated as the weighted average recovery across all fixtures.
     let fixtures = get_fixtures();
     let mut total_recovery = 0.0;
     let mut fixture_count = 0;

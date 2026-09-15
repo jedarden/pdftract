@@ -885,11 +885,11 @@ pub extern "C" fn pdftract_version() -> *const c_char {
     VERSION.as_ptr() as *const c_char
 }
 
-/// Thread-local storage for the last error message.
-///
-/// This allows C callers to retrieve detailed error information after
-/// a function returns NULL or an error indicator. Each thread has its
-/// own error storage, making the library thread-safe.
+// Thread-local storage for the last error message.
+//
+// This allows C callers to retrieve detailed error information after
+// a function returns NULL or an error indicator. Each thread has its
+// own error storage, making the library thread-safe.
 thread_local! {
     static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
     static LAST_ERROR_CSTR: Mutex<Option<CString>> = Mutex::new(None);
