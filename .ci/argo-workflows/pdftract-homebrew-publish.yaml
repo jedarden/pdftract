@@ -144,9 +144,9 @@ spec:
             dependencies: [versioned-tag-gate, render-formula]
             when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"
             arguments:
-              artifacts:
-                - name: formula
-                  from: "{{tasks.render-formula.outputs.artifacts.formula}}"
+              parameters:
+                - name: formula-b64
+                  value: "{{tasks.render-formula.outputs.parameters.formula-b64}}"
 
           - name: wait-for-mirror
             template: wait-for-mirror
@@ -211,8 +211,8 @@ spec:
     # source archive the formula url points at, hashes those exact bytes, and
     # substitutes <VERSION>/<SHA256>. The rendered formula must contain no
     # leftover placeholder, exactly one 64-hex sha256 line, and parse as Ruby
-    # (ruby -c) before it can become an output artifact -- a formula that
-    # fails validation must never reach the push step.
+    # (ruby -c) before it is handed to the push step as a base64 parameter --
+    # a formula that fails validation must never reach the push step.
     #
     # dry_run=true stubs the archive download and takes the template from the
     # repo's default branch instead of the (fake) tag -- so the render+validate
@@ -274,23 +274,29 @@ spec:
             [ -f "${TEMPLATE}" ] \
               || { echo "ERROR: ${TEMPLATE} is not present at ${TEMPLATE_REF}" >&2; exit 1; }
 
-            mkdir -p /formula/Formula
             sed -e "s|<VERSION>|${VERSION}|g" -e "s|<SHA256>|${SHA256}|g" \
-              "${TEMPLATE}" > /formula/Formula/pdftract.rb
+              "${TEMPLATE}" > /tmp/pdftract.rb
 
-            if grep -Eq '<VERSION>|<SHA256>' /formula/Formula/pdftract.rb; then
+            if grep -Eq '<VERSION>|<SHA256>' /tmp/pdftract.rb; then
               echo "ERROR: unsubstituted placeholder left in rendered formula" >&2
               exit 1
             fi
-            [ "$(grep -c 'sha256 "' /formula/Formula/pdftract.rb)" = "1" ] \
+            [ "$(grep -c 'sha256 "' /tmp/pdftract.rb)" = "1" ] \
               || { echo "ERROR: expected exactly one sha256 line in the formula" >&2; exit 1; }
-            grep -Eq 'sha256 "[0-9a-f]{64}"' /formula/Formula/pdftract.rb \
+            grep -Eq 'sha256 "[0-9a-f]{64}"' /tmp/pdftract.rb \
               || { echo "ERROR: sha256 line is not a 64-hex digest" >&2; exit 1; }
-            ruby -c /formula/Formula/pdftract.rb \
+            ruby -c /tmp/pdftract.rb \
               || { echo "ERROR: rendered formula does not parse as Ruby" >&2; exit 1; }
 
             echo "=== Rendered Formula/pdftract.rb for ${TAG} (dry_run=${DRY_RUN}) ==="
-            cat /formula/Formula/pdftract.rb
+            cat /tmp/pdftract.rb
+
+            # Handed to push-tap as a base64 parameter, not an artifact: the
+            # iad-ci cluster has no artifact repository configured, and an
+            # outputs.artifacts node fails there with exit 64 ("artifact
+            # storage is not configured"). The formula is ~2 KB, comfortably
+            # inside a workflow-status parameter.
+            base64 -w0 /tmp/pdftract.rb > /tmp/formula.b64
         resources:
           requests:
             cpu: 200m
@@ -299,9 +305,10 @@ spec:
             cpu: 500m
             memory: 512Mi
       outputs:
-        artifacts:
-          - name: formula
-            path: /formula
+        parameters:
+          - name: formula-b64
+            valueFrom:
+              path: /tmp/formula.b64
 
     # === Push to Tap ===
     # Commits the rendered formula to the Forgejo tap repo (source of truth)
@@ -316,9 +323,8 @@ spec:
     # yet, because this step never runs until a real (non-dry-run) push.
     - name: push-tap
       inputs:
-        artifacts:
-          - name: formula
-            path: /input/formula
+        parameters:
+          - name: formula-b64
       activeDeadlineSeconds: 300
       container:
         image: alpine:3.19
@@ -330,10 +336,11 @@ spec:
 
             VERSION="{{workflow.parameters.version}}"
             TAP_URL="{{workflow.parameters.tap-url}}"
+            FORMULA_B64="{{inputs.parameters.formula-b64}}"
 
             git clone --quiet "${TAP_URL}" /tap
             mkdir -p /tap/Formula
-            cp /input/formula/Formula/pdftract.rb /tap/Formula/pdftract.rb
+            printf '%s' "${FORMULA_B64}" | base64 -d > /tap/Formula/pdftract.rb
 
             cd /tap
             git config user.name jedarden
