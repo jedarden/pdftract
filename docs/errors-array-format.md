@@ -4,7 +4,7 @@ This document explains the complete structure of the errors/diagnostics array in
 
 ## Overview
 
-The pdftract extraction system uses a unified diagnostic system to report errors, warnings, and informational messages. All diagnostics are emitted during PDF parsing and extraction without panicking (per INV-8), allowing the parser to always attempt recovery and continue processing.
+The pdftract extraction system uses a unified diagnostic system to report events at four severities — `info`, `warning`, `error`, and `fatal` (the full enum, with the code catalog, lives in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md)). All diagnostics are emitted during PDF parsing and extraction without panicking (per INV-8), allowing the parser to always attempt recovery and continue processing.
 
 ## Extraction Result Structure
 
@@ -36,7 +36,8 @@ pub struct ExtractionMetadata {
     pub cache_age_seconds: Option<u64>,
     pub error_count: usize,              // Number of pages that failed to extract
     pub reading_order_algorithm: Option<String>,
-    pub diagnostics: Vec<String>,        // THE ERRORS ARRAY
+    pub diagnostics: Vec<String>,        // THE ERRORS ARRAY (legacy string form)
+    pub diagnostics_detailed: Vec<DiagnosticJson>, // THE SAME ERRORS, STRUCTURED
     pub profile_name: Option<String>,
     pub profile_version: Option<String>,
     pub profile_fields: Option<serde_json::Value>,
@@ -46,28 +47,87 @@ pub struct ExtractionMetadata {
 ## Errors Array Format
 
 ### Location
-- **Field**: `ExtractionResult.metadata.diagnostics`
-- **Type**: `Vec<String>`
-- **Description**: Array of diagnostic message strings emitted during extraction
+
+The errors array exists in two parallel shapes, which mirror each other
+one-to-one (same length, same order, same diagnostics):
+
+- **String form — `ExtractionResult.metadata.diagnostics`**
+  - **Type**: `Vec<String>`
+  - **Description**: Diagnostic strings in the `CODE: message` form described
+    below; each is the internal `Diagnostic`'s `Display`.
+- **Structured form — `ExtractionResult.metadata.diagnostics_detailed`**
+  - **Type**: `Vec<DiagnosticJson>` (see [Structured Object Form](#structured-object-form))
+  - **Description**: The same diagnostics as objects with `code`, `message`,
+    `severity`, and optional `page_index` / `location` / `hint` fields.
+    **Prefer this form** for machine consumption.
+
+In the full JSON output (`schema_version` 1.0 document), the structured form is
+additionally the top-level `errors` array; in NDJSON streaming output the
+footer frame's `errors` array carries the same objects (page failures first,
+then document diagnostics).
+
+Empty-array behavior differs by surface:
+
+- `metadata.diagnostics` and `metadata.diagnostics_detailed` are **omitted
+  entirely** from serialized output when empty.
+- The full output's top-level `errors` array and the NDJSON footer's
+  `errors` array are stable schema fields: **always present**, `[]` when
+  nothing was emitted.
+- An NDJSON page frame carries `errors` only when that page failed.
 
 ### String Format
 
-Each diagnostic in the array follows this format:
+Each entry of `metadata.diagnostics` follows this format:
 
 ```
-{DIAGNOSTIC_CODE}: {Human-readable message} (byte offset {offset})?
+{DIAGNOSTIC_CODE}: {Human-readable message} (byte offset {offset})? [obj gen R]?
 ```
+
+The `CODE:` prefix is always present (diagnostics are never emitted as bare
+messages), as is the human-readable message. The byte offset and object
+location suffixes are optional.
 
 **Examples:**
 - `STREAM_DECODE_ERROR: zlib stream truncated mid-inflation (byte offset 12345)`
 - `STRUCT_INVALID_NAME: Name object exceeds 127-byte limit (byte offset 67890)`
 - `FONT_GLYPH_UNMAPPED: Glyph could not be mapped to Unicode`
 - `XREF_REPAIRED: Xref was reconstructed via forward scan`
+- `STREAM_DECODE_ERROR: corrupt flate data (byte offset 4096) [12 0 R]`
+
+## Structured Object Form
+
+`metadata.diagnostics_detailed` (and the top-level `errors` array of the full
+output) holds one object per diagnostic, as documented in
+[`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md):
+
+```json
+{
+  "code": "PAGE_OUT_OF_RANGE",
+  "message": "page 12 exceeds document page count (10)",
+  "severity": "error",
+  "page_index": 11,
+  "hint": "Adjust the --pages argument to the actual document page count"
+}
+```
+
+| Field | Always present? | Meaning |
+|-------|-----------------|---------|
+| `code` | yes | Stable `SCREAMING_SNAKE_CASE` identifier; the string form's prefix |
+| `message` | yes | Human-readable description; the string form's remainder |
+| `severity` | yes | `info`, `warning`, `error`, or `fatal` — from the typed code, not a substring guess |
+| `page_index` | no | 0-based page the diagnostic applies to; omitted for document-level diagnostics |
+| `location` | no | `{"object_number": N, "generation_number": G}` when known |
+| `hint` | no | Suggested action, from the code's catalog entry; omitted if the entry carries none (every catalog entry currently does) |
+
+Fields that do not apply — `page_index`, `location`, and `hint` — are
+omitted, not `null`. Because `severity`, `page_index`, and `location` come
+from the typed diagnostic itself, prefer the structured form whenever a
+consumer needs more than a substring search.
 
 ### Components
 
 1. **Diagnostic Code** (e.g., `STREAM_DECODE_ERROR`):
-   - Identifies the type of error/warning/info
+   - Identifies the type of diagnostic (any of the four severities)
    - Follows naming convention: `CATEGORY_SPECIFIC_ISSUE`
    - Categories: `STRUCT_*`, `STREAM_*`, `XREF_*`, `ENCRYPTION_*`, `PAGE_*`, `FONT_*`, `OCR_*`, `REMOTE_*`, `GSTATE_*`, `LAYOUT_*`, `MCP_*`, `CACHE_*`, etc.
 
@@ -111,6 +171,30 @@ let has_encryption_errors = diagnostics.iter()
 let glyph_unmapped_count = diagnostics.iter()
     .filter(|d| d.contains("FONT_GLYPH_UNMAPPED"))
     .count();
+```
+
+### Structured Filtering (Preferred)
+
+The same checks against `metadata.diagnostics_detailed` use the typed
+severity instead of substrings:
+
+```rust
+// Every warning emitted during extraction
+let warnings = result.metadata.diagnostics_detailed.iter()
+    .filter(|d| d.severity == "warning");
+
+// Diagnostics for one page, with their catalog hints
+let page_problems = result.metadata.diagnostics_detailed.iter()
+    .filter(|d| d.page_index == Some(3))
+    .map(|d| (d.code.as_str(), d.hint.as_deref()));
+
+// The string form's prefix always equals the structured code at the same
+// index — the two arrays mirror each other one-to-one.
+for (s, d) in result.metadata.diagnostics.iter()
+    .zip(&result.metadata.diagnostics_detailed)
+{
+    assert!(s.starts_with(&format!("{}: ", d.code)));
+}
 ```
 
 ## Diagnostic Categories and Codes
@@ -429,8 +513,8 @@ fn test_custom_font_with_unmapped_glyphs() {
 3. **Verify Output**: When errors occur, verify that meaningful output was still produced
 4. **Count Errors**: Use counts to verify expected number of diagnostics
 5. **Check Messages**: Verify diagnostic messages contain expected information
-6. **Test Severity**: Ensure fatal errors only occur for truly unrecoverable conditions
-7. **Use Helper Functions**: Create reusable assertion helpers for common patterns
+6. **Test Severity**: Ensure fatal errors only occur for truly unrecoverable conditions — filter `metadata.diagnostics_detailed` by `severity`, never by substring
+7. **Use Helper Functions**: Create reusable assertion helpers for common patterns (`tests/test_helpers/diagnostics.rs` unifies both shapes)
 
 ## Helper Functions for Common Assertions
 
@@ -471,12 +555,13 @@ pub fn get_diagnostics(result: &ExtractionResult, code: &str) -> Vec<&String> {
 
 ## Summary
 
-The errors array (`ExtractionResult.metadata.diagnostics`) provides comprehensive visibility into the PDF extraction process:
+The errors array provides comprehensive visibility into the PDF extraction process:
 
-- **Format**: `Vec<String>` with each string formatted as `CODE: message (offset)?`
-- **Access**: `result.metadata.diagnostics`
+- **String form**: `result.metadata.diagnostics` — `Vec<String>`, each entry `CODE: message (byte offset N)? [obj G R]?`
+- **Structured form**: `result.metadata.diagnostics_detailed` — `Vec<DiagnosticJson>` with `code` / `message` / `severity` / `page_index`? / `location`? / `hint`?; mirrors the string array one-to-one and is the top-level `errors` array of the full JSON output
+- **Access**: `result.metadata.diagnostics` and `result.metadata.diagnostics_detailed`
 - **Error Count**: `result.metadata.error_count`
-- **Assertion Patterns**: Check for specific codes, count errors, verify messages, ensure recovery
-- **Categories**: STRUCT, STREAM, XREF, ENCRYPTION, PAGE, FONT, OCR, REMOTE, GSTATE, LAYOUT, MCP, CACHE, etc.
+- **Assertion Patterns**: Check for specific codes, count errors, verify messages, filter by typed severity, ensure recovery
+- **Categories**: STRUCT, STREAM, XREF, ENCRYPTION, PAGE, FONT, OCR, REMOTE, GSTATE, LAYOUT, MCP, CACHE, etc. — full catalog with severities and hints in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md)
 
 This unified diagnostic system allows tests to verify that errors are properly detected, reported, and recovered from during PDF extraction.

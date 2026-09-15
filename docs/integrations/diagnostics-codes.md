@@ -4,18 +4,50 @@ This document catalogs all diagnostic codes emitted by pdftract during PDF extra
 
 ## Diagnostic Format
 
-All diagnostics follow this structure:
+All diagnostics follow this structure (shown with every field populated):
 
 ```json
 {
   "code": "DIAGNOSTIC_CODE",
   "message": "Human-readable description",
   "severity": "info|warning|error|fatal",
-  "page_index": null | 0-based page number,
-  "location": null | {"object_number": N, "generation_number": G},
-  "hint": null | "Suggested action"
+  "page_index": 0,
+  "location": {"object_number": N, "generation_number": G},
+  "hint": "Suggested action"
 }
 ```
+
+`code`, `message`, and `severity` are always present. `page_index`,
+`location`, and `hint` are **omitted, never serialized as `null`**, when they
+do not apply: `page_index` for document-level diagnostics, `location` when no
+object reference is known, and `hint` when the code's catalog entry carries
+no suggested action. Every catalog entry currently carries an action, so
+emitted diagnostics include a hint today — consumers should nonetheless
+tolerate its absence. This rule (and the severity enum) is pinned by
+`crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
+
+### Where structured diagnostics appear
+
+1. **`metadata.diagnostics_detailed`** — the structured array on the extraction
+   result's metadata. Mirrors `metadata.diagnostics` one-to-one.
+2. **`errors`** — the top-level array of the full JSON output, populated from
+   `metadata.diagnostics_detailed`.
+3. **NDJSON footer frame `errors`** — document-level structured diagnostics,
+   appended after any per-page failure entries.
+
+Empty-array behavior differs by surface: `metadata.diagnostics` and
+`metadata.diagnostics_detailed` are omitted entirely when there are no
+diagnostics, while the full output's top-level `errors` array and the NDJSON
+footer's `errors` array are stable schema fields — always present, `[]` when
+nothing was emitted. An NDJSON page frame carries `errors` only when that
+page failed. See
+[`docs/errors-array-format.md`](../errors-array-format.md#location).
+
+The legacy string form documented in `docs/errors-array-format.md`
+(`CODE: message (byte offset N)? [obj G R]?`) is still emitted as
+`metadata.diagnostics` for line-oriented consumers. Each entry is the
+internal `Diagnostic`'s `Display`, so its `CODE:` prefix always matches the
+`code` of the structured entry at the same index.
 
 ## Code Categories
 
@@ -303,9 +335,15 @@ result = json.loads(pdftract_output)
 for error in result.get('errors', []):
     code = error['code']
     severity = error['severity']
-    page = error.get('page_index')
-    
+    page = error.get('page_index')          # omitted when document-level
+
     if code == 'OCR_BROKENVECTOR_UNAVAILABLE':
         # Install Tesseract for OCR recovery
         print(f"Page {page}: Install Tesseract for OCR recovery")
+
+# Payloads shaped as a bare extraction result carry the same objects at
+# metadata level, alongside the legacy string array:
+detailed = result.get('metadata', {}).get('diagnostics_detailed', [])
+strings = result.get('metadata', {}).get('diagnostics', [])
+assert len(detailed) == len(strings)        # one-to-one mirror
 ```
