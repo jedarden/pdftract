@@ -137,3 +137,29 @@ is re-closed on fresh evidence:
   present at the tip, `.disabled` variant absent.
 
 All PASS items hold; the operator-mint WARN stands as documented.
+
+## Third re-verification addendum (2026-09-15, parent-level split order, epoch 6)
+
+The dispatcher escalated past this bead to a **split order against the parent
+umbrella pdftract-d0e30c13** ("failed 5 times in a row"). Declined for the
+same reasons as both addenda above — the dispatch's own attempt log records
+attempts 4 and 5 as `verified_success`, the failure-count is fed entirely by
+reason-less reopens, and a second-generation child chain would duplicate
+already-satisfied scope. Fresh checks in this session, all unchanged:
+
+- OpenBao `secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token` via
+  `rs-manager-provision` (metadata only; value never read):
+  `current_version=1`, single version, `created_time=2026-09-15T19:35:23Z`,
+  deletion_time unstamped.
+- `kubectl --server=http://traefik-iad-ci:8001 get externalsecret
+  homebrew-tap-push-token -n argo-workflows`: `SecretSynced`, `READY True`,
+  last refresh 58m before the check.
+- declarative-config `origin/main` (fetched, no merge): enabled manifest
+  present at the tip, `.disabled` variant absent;
+  `pdftract-homebrew-publish.yaml` intact at the tip; cascade
+  (`pdftract-release-cascade.yaml`) carries the `homebrew-publish` task
+  referencing the template after `github-release`.
+
+Re-closed on this evidence. The operator-mint WARN (dedicated
+`write:repository` token via WebAuthn ceremony → next KV version) stands as
+documented in §2 and the manifest header.
