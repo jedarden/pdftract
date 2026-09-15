@@ -1747,6 +1747,30 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         phase: "7.1.4",
         suggested_action: "StructTree coverage below 80% with /Suspects true; falling back to XY-cut reading order",
     },
+    DiagInfo {
+        code: DiagCode::StructUnresolvedDestination,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.4",
+        suggested_action: "Named destination resolution is deferred to a future enhancement; the outline destination was recorded as None",
+    },
+    DiagInfo {
+        code: DiagCode::StructNonGotoOutline,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.4",
+        suggested_action: "The outline action is not GoTo (e.g., URI); the outline destination was recorded as None",
+    },
+    DiagInfo {
+        code: DiagCode::StructInvalidHintStream,
+        category: "STRUCT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "1.8",
+        suggested_action: "Prefetch optimization was disabled for this document; extraction continues correctly, just slower (without prefetch)",
+    },
     // === XREF_* codes ===
     DiagInfo {
         code: DiagCode::XrefInvalidHeader,
@@ -2008,6 +2032,22 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         phase: "2.2",
         suggested_action: "A /Differences array contains a character code outside 0-255; the code was clamped",
     },
+    DiagInfo {
+        code: DiagCode::FontType3WidthsLengthMismatch,
+        category: "FONT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "2.4",
+        suggested_action: "The /Widths array length did not match LastChar - FirstChar + 1; the array was clamped or padded with zeros",
+    },
+    DiagInfo {
+        code: DiagCode::CmapInvalidCodespace,
+        category: "FONT",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3",
+        suggested_action: "The codespace range had malformed lo/hi bounds; the range was skipped and CMap parsing continued",
+    },
     #[cfg(feature = "cjk")]
     DiagInfo {
         code: DiagCode::CjkDecodeMalformed,
@@ -2016,6 +2056,15 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "2.3",
         suggested_action: "The CJK byte sequence contained malformed bytes, replaced with U+FFFD",
+    },
+    #[cfg(feature = "cjk")]
+    DiagInfo {
+        code: DiagCode::CjkTokenizeUnknownByte,
+        category: "CJK",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3",
+        suggested_action: "The byte did not match any codespace range; U+FFFD was emitted for it (once per font and byte value)",
     },
     // === OCR_* codes ===
     DiagInfo {
@@ -2327,6 +2376,56 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
         recoverable: true,
         phase: "6.9",
         suggested_action: "Check available disk space; extraction succeeded but the result wasn't cached",
+    },
+    // === MARKED_CONTENT_* codes ===
+    DiagInfo {
+        code: DiagCode::EmcWithoutBmc,
+        category: "MARKED_CONTENT",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "3.4",
+        suggested_action: "The unmatched EMC operator was ignored; extraction continues",
+    },
+    DiagInfo {
+        code: DiagCode::MarkedContentDepthExceeded,
+        category: "MARKED_CONTENT",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "3.4",
+        suggested_action: "BMC/BDC nesting exceeded the maximum depth of 64; the excess frame was discarded and extraction continues",
+    },
+    DiagInfo {
+        code: DiagCode::UnknownMarkedContentProps,
+        category: "MARKED_CONTENT",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "3.4",
+        suggested_action: "The BDC property name was not found in the page's /Properties dictionary; the MCID was set to None",
+    },
+    DiagInfo {
+        code: DiagCode::McidRedefined,
+        category: "MARKED_CONTENT",
+        severity: Severity::Info,
+        recoverable: true,
+        phase: "3.4",
+        suggested_action: "Multiple /MCID keys appeared in the same BDC property dict; the last value wins",
+    },
+    // === INLINE_IMAGE_* codes ===
+    DiagInfo {
+        code: DiagCode::InlineImageIdWhitespaceMissing,
+        category: "INLINE_IMAGE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.5",
+        suggested_action: "The inline image ID keyword was not followed by exactly one whitespace byte; the raw-bytes scanner started immediately and recovery was automatic",
+    },
+    DiagInfo {
+        code: DiagCode::InlineImageNoEi,
+        category: "INLINE_IMAGE",
+        severity: Severity::Warning,
+        recoverable: true,
+        phase: "3.5",
+        suggested_action: "The inline image data did not end with the EI keyword; all remaining bytes were consumed as image data",
     },
     // === PROFILE_* codes ===
     DiagInfo {

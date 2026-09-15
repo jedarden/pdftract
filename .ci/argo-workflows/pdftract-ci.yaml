@@ -742,6 +742,14 @@ spec:
             export CARGO_TARGET_DIR="/cache/cargo/target-test-glibc"
             MEMORY_MAX_MB=6144  # 6 GB cgroup cap for test suite
 
+            run_diagnostic_catalog_drift_test() {
+              echo "=== Running diagnostic catalog drift test (default features) ==="
+              cargo test --locked -p pdftract-core --test diagnostics_catalog_drift
+
+              echo "=== Running diagnostic catalog drift test (all features) ==="
+              cargo test --locked --all-features -p pdftract-core --test diagnostics_catalog_drift
+            }
+
             # Check if cgroup v2 is available (preferred)
             if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
               echo "=== Using cgroup v2 for memory enforcement (bf-1g1fd) ==="
@@ -781,6 +789,8 @@ spec:
 
                 echo "=== Running unit tests (all features including OCR) ==="
                 cargo test --locked --all-features --lib --bins
+
+                run_diagnostic_catalog_drift_test
 
                 echo "=== Running property tests (proptest) ==="
                 echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
@@ -856,6 +866,8 @@ spec:
                 echo "=== Running unit tests (all features including OCR) ==="
                 cargo test --locked --all-features --lib --bins
 
+                run_diagnostic_catalog_drift_test
+
                 echo "=== Running property tests (proptest) ==="
                 echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
                 cargo nextest run --features proptest --proptest --profile=ci-proptest || {
@@ -912,6 +924,8 @@ spec:
 
               echo "=== Running unit tests (all features including OCR) ==="
               cargo test --locked --all-features --lib --bins
+
+              run_diagnostic_catalog_drift_test
 
               echo "=== Running property tests (proptest) ==="
               echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
