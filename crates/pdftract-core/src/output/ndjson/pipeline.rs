@@ -107,18 +107,7 @@ pub fn extract_streaming<W: Write>(
     }
 
     // Build and emit footer frame
-    let errors: Vec<serde_json::Value> = result
-        .pages
-        .iter()
-        .filter_map(|p| p.error.as_ref())
-        .map(|e| {
-            json!({
-                "code": "page_extraction_error",
-                "severity": "error",
-                "message": e,
-            })
-        })
-        .collect();
+    let errors = footer_errors(&result)?;
 
     let quality = ExtractionQuality::new()
         .with_quality(if errors.is_empty() { "high" } else { "medium" })
@@ -135,13 +124,102 @@ pub fn extract_streaming<W: Write>(
     Ok(())
 }
 
+/// Assemble the NDJSON footer frame's `errors` array.
+///
+/// Per `docs/integrations/diagnostics-codes.md` ("Where structured
+/// diagnostics appear"): one `page_extraction_error` record per failed page
+/// first, then the document's structured diagnostics
+/// (`metadata.diagnostics_detailed`) in emission order, serialized
+/// identically to the `errors` array of the full JSON output. Factored out of
+/// [`extract_streaming`] so the ordering contract is unit-testable without a
+/// working extraction path.
+pub fn footer_errors(result: &crate::extract::ExtractionResult) -> Result<Vec<serde_json::Value>> {
+    let mut errors: Vec<serde_json::Value> = result
+        .pages
+        .iter()
+        .filter_map(|p| p.error.as_ref())
+        .map(|e| {
+            json!({
+                "code": "page_extraction_error",
+                "severity": "error",
+                "message": e,
+            })
+        })
+        .collect();
+
+    for diag in &result.metadata.diagnostics_detailed {
+        errors.push(serde_json::to_value(diag).context("Failed to serialize diagnostic")?);
+    }
+
+    Ok(errors)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_extract_streaming_smoke() {
         // This is a placeholder test
         // The full implementation will have actual fixture-based tests
+    }
+
+    #[test]
+    fn test_footer_errors_carry_structured_diagnostics() {
+        // The NDJSON footer's `errors` array is the streaming surface of the
+        // structured diagnostics documented in
+        // docs/integrations/diagnostics-codes.md: document-level diagnostics
+        // (here TAGGED_PDF_STRUCT_TREE_DEFERRED from a marked PDF) must reach
+        // the footer as objects with code/severity fields, not bare strings.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_dir.path().join("tagged_streaming.pdf");
+        // Byte-identical to the inline tagged fixture in extract.rs's tests
+        // (xref offsets depend on it).
+        std::fs::write(
+            &pdf_path,
+            br#"%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R/MarkInfo<</Marked true>>>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>>>>>>>endobj
+
+xref
+0 4
+0000000000 65535 f
+0000000009 00000 n
+0000000096 00000 n
+0000000145 00000 n
+trailer<</Size 4/Root 1 0 R>>
+startxref
+283
+%%EOF
+"#,
+        )
+        .unwrap();
+
+        let mut buf: Vec<u8> = Vec::new();
+        super::extract_streaming(
+            &pdf_path,
+            &crate::options::ExtractionOptions::default(),
+            &mut buf,
+        )
+        .expect("streaming extraction should succeed");
+
+        let footer_line = buf
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .last()
+            .expect("NDJSON output must contain a footer frame");
+        let footer: serde_json::Value =
+            serde_json::from_slice(footer_line).expect("footer frame must be valid JSON");
+
+        let errors = footer["errors"].as_array().expect("footer errors array");
+        let deferred = errors
+            .iter()
+            .find(|e| e["code"] == "TAGGED_PDF_STRUCT_TREE_DEFERRED")
+            .expect("footer errors must carry the structured diagnostic");
+        assert_eq!(deferred["severity"], "info");
+        assert!(
+            deferred["hint"].is_string(),
+            "catalog hint must serialize with the diagnostic"
+        );
     }
 }
