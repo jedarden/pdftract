@@ -2565,7 +2565,7 @@ startxref
 
     #[test]
     fn test_validate_pages_structure_missing_pages_ref() {
-        use crate::parser::catalog::{parse_catalog, Catalog};
+        use crate::parser::catalog::Catalog;
         use crate::parser::xref::XrefResolver;
 
         // Create a resolver with minimal entries
@@ -2767,9 +2767,6 @@ startxref
     #[test]
     fn test_validate_pages_structure_all_catalog_fields_checked() {
         use crate::parser::catalog::{Catalog, MarkInfo};
-        use crate::parser::object::PdfObject;
-        use crate::parser::object::ObjRef;
-        use crate::parser::ocg::OcProperties;
         use crate::parser::xref::XrefResolver;
 
         // TODO: Fix this test - XrefResolver doesn't have add() method
@@ -2901,7 +2898,6 @@ startxref
     #[test]
     fn test_validate_pages_structure_truly_empty_catalog_no_panic() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::ObjRef;
         use crate::parser::xref::XrefResolver;
 
         // Create a resolver
@@ -2941,7 +2937,6 @@ startxref
     fn test_validate_pages_structure_catalog_dictionary_empty_detection() {
         use crate::diagnostics::{Diagnostic, DiagCode};
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::ObjRef;
         use crate::parser::xref::XrefResolver;
 
         // Create a resolver
@@ -3026,7 +3021,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_empty_dictionary_triggers_empty_document() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Test: Empty catalog.dictionary (no keys at all) triggers DocumentError::EmptyDocument
@@ -3053,7 +3048,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_none_dictionary_triggers_empty_document() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Test: None catalog.dictionary (not a dictionary) triggers DocumentError::EmptyDocument
@@ -3283,7 +3278,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_no_panic_on_empty_dictionary() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Verify no panic occurs on empty dictionary (acceptance criteria)
@@ -3305,7 +3300,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_no_panic_on_none_dictionary() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::{intern, PdfObject};
         use crate::parser::xref::XrefResolver;
 
         // Verify no panic occurs on None dictionary (acceptance criteria)
@@ -3440,7 +3435,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_empty_dict_includes_source_identifier() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Test that empty dictionary error includes source identifier (acceptance criteria)
@@ -3466,7 +3461,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_none_dict_includes_source_identifier() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Test that None dictionary error includes source identifier (acceptance criteria)
@@ -3522,7 +3517,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_error_display_includes_source() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Test that error display message includes source identifier (acceptance criteria)
@@ -3544,7 +3539,7 @@ startxref
     #[test]
     fn test_catalog_emptiness_multiple_sources_distinguished() {
         use crate::parser::catalog::Catalog;
-        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::object::PdfObject;
         use crate::parser::xref::XrefResolver;
 
         // Test that different source identifiers are properly distinguished (acceptance criteria)
@@ -4139,7 +4134,6 @@ startxref
 
         // Manually create a page with invalid media box
         use crate::parser::pages::PageDict;
-        use crate::parser::object::ObjRef;
         use crate::parser::resources::ResourceDict;
         use std::sync::Arc;
 
@@ -4188,7 +4182,6 @@ startxref
 
         // Manually create a page with zero width
         use crate::parser::pages::PageDict;
-        use crate::parser::object::ObjRef;
         use crate::parser::resources::ResourceDict;
         use std::sync::Arc;
 
