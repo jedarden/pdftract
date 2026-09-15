@@ -55,7 +55,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 1. Restart Claude Desktop
 2. Open a new conversation
 3. Ask: "List available tools"
-4. Verify that tools prefixed with `pdftract.` appear (e.g., `pdftract_extract`, `pdftract_inspect`)
+4. Verify that the pdftract tools appear. They are named without a prefix — the full catalog is `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`, `get_form_fields`, `get_attachments`, `classify`
 
 **Verified against:** Claude Desktop 1.0.0 (2026-05)
 
@@ -145,7 +145,7 @@ async def main():
 
             # Call a tool (example: extract text)
             result = await session.call_tool(
-                "pdftract_extract",
+                "extract_text",
                 arguments={"path": "document.pdf"}
             )
             print("Result:", result.content)
@@ -164,9 +164,12 @@ if __name__ == "__main__":
 
 ### Error Handling
 
-- **Parse errors:** Server sends error response, continues running
-- **Invalid params:** Server returns `-32602` error with `data.reason` field
+- **Parse errors:** Server sends a JSON-RPC error response (`-32700`, with `id: null`) and continues running — subsequent valid requests are served normally
+- **Invalid params:** Server returns a `-32602` error whose `data` carries a `reason` string explaining the rejection (e.g. `tools/call` without a `name` field)
+- **Unknown tool:** Calling a tool that is not in the `tools/list` catalog returns `-32601` (method not found)
 - **Stdio corruption:** Any non-JSON-RPC on stdout breaks the connection; restart subprocess
+
+These behaviors are asserted end-to-end by the `mcp-client-lifecycle` integration test (`crates/pdftract-cli/tests/mcp-client-lifecycle.rs`).
 
 For the complete subprocess contract, see [`docs/notes/sdk-invocation.md`](../notes/sdk-invocation.md).
 
@@ -235,13 +238,14 @@ If the log shows "stdio transport: stdout writer initialized", the server is run
 
 1. Check stderr logs for initialization errors
 2. Verify `pdftract --version` matches expected version
-3. Test stdio mode manually:
+3. Test stdio mode manually (the server expects LSP-style `Content-Length` framing — a bare JSON line is silently consumed as a header and produces no response):
 
 ```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | pdftract mcp --stdio
+body='{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+printf 'Content-Length: %d\r\n\r\n%s' "${#body}" "$body" | pdftract mcp --stdio
 ```
 
-Expected response: Valid JSON-RPC with `result.tools` array.
+Expected response: a `Content-Length`-framed, valid JSON-RPC body with `result.tools` array.
 
 ## References
 

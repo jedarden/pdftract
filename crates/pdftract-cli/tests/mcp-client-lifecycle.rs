@@ -11,8 +11,14 @@
 //!
 //! plus the documented "Error Handling" contract:
 //!
-//! - Invalid params: server returns `-32602` (`data.reason` for missing
-//!   params; `data.code` for `--root` boundary rejections)
+//! - Parse errors: every malformed frame gets a JSON-RPC error response
+//!   (`-32700` with `id: null` for unparseable JSON) and the server keeps
+//!   serving — subsequent valid requests succeed
+//! - Invalid params: server returns `-32602` with a `data.reason` string
+//!   for missing/invalid `tools/call` params (`data.code` for `--root`
+//!   boundary rejections)
+//! - Unknown tool: a `tools/call` naming a tool outside the `tools/list`
+//!   catalog returns `-32601`
 //! - Errors do not kill the server; it keeps serving requests
 //!
 //! Unlike `mcp-stdio.rs` (transport-level framing checks) and
@@ -303,6 +309,39 @@ impl McpServer {
         }
     }
 
+    /// Send an arbitrary pre-serialized body as one correctly framed message,
+    /// without touching the id counter. Used for deliberately malformed
+    /// frames: the framing itself is valid, so the server's transport stays
+    /// in sync and the failure is contained to JSON-RPC parsing — which is
+    /// exactly the documented "parse errors" scenario.
+    fn send_raw(&mut self, body: &str) {
+        let stdin = self
+            .stdin
+            .as_mut()
+            .unwrap_or_else(|| panic!("server stdin already closed (send_raw: {body})"));
+        stdin
+            .write_all(&frame_message(body))
+            .unwrap_or_else(|e| panic!("failed writing raw frame ({body}): {e}"));
+        stdin.flush().expect("flush raw frame");
+    }
+
+    /// Bounded wait for the next response *without* id correlation. Parse
+    /// errors are answered with `id: null` (an unparseable request carries
+    /// no usable id), so the strict id check in `recv_response` cannot apply.
+    fn recv_any(&self) -> Value {
+        match self.responses.recv_timeout(READ_TIMEOUT) {
+            Ok(response) => response,
+            Err(RecvTimeoutError::Timeout) => panic!(
+                "timed out after {READ_TIMEOUT:?} waiting for a response; stderr tail:\n{}",
+                self.stderr_tail()
+            ),
+            Err(RecvTimeoutError::Disconnected) => panic!(
+                "server closed stdout before responding; stderr tail:\n{}",
+                self.stderr_tail()
+            ),
+        }
+    }
+
     fn stderr_tail(&self) -> String {
         let log = self.stderr.lock().unwrap();
         let start = log.len().saturating_sub(2_000);
@@ -355,6 +394,50 @@ fn assert_success<'a>(response: &'a Value, what: &str) -> &'a Value {
         "{what} result is not an object: {response}"
     );
     result
+}
+
+/// Assert the response is a spec-shaped JSON-RPC *error* envelope and return
+/// the `error` object: JSON-RPC 2.0, an `error` object carrying a numeric
+/// `code` and a non-empty `message`, and no `result` key alongside the error.
+/// `Some(code)` pins the exact code; `None` only requires it to sit in the
+/// spec-reserved error range (-32700..=-32000). The `id` semantics differ per
+/// error class (parse errors answer `id: null`; request validation echoes the
+/// request id), so callers assert it.
+fn assert_error_envelope<'a>(response: &'a Value, what: &str, code: Option<i64>) -> &'a Value {
+    assert_eq!(
+        response.get("jsonrpc").and_then(Value::as_str),
+        Some("2.0"),
+        "{what} response is not JSON-RPC 2.0: {response}"
+    );
+    let error = response
+        .get("error")
+        .unwrap_or_else(|| panic!("{what} did not return an error object: {response}"));
+    let actual = error
+        .get("code")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| panic!("{what} error must carry a numeric code: {response}"));
+    match code {
+        Some(expected) => assert_eq!(
+            actual, expected,
+            "{what} must answer with code {expected}: {response}"
+        ),
+        None => assert!(
+            (-32700..=-32000).contains(&actual),
+            "{what} code must sit in the spec-reserved error range: {response}"
+        ),
+    }
+    assert!(
+        error
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|m| !m.is_empty()),
+        "{what} error must carry a non-empty message: {response}"
+    );
+    assert!(
+        response.get("result").is_none(),
+        "{what} must not carry a result alongside an error: {response}"
+    );
+    error
 }
 
 // ---------------------------------------------------------------------------
@@ -584,5 +667,188 @@ fn out_of_root_and_invalid_params_rejected_with_32602() {
     assert!(
         ping.get("result").is_some(),
         "server must keep serving after error responses: {ping}"
+    );
+}
+
+/// Documented "Error Handling" contract, parse-error half: every malformed
+/// frame gets a JSON-RPC error response and the server keeps serving — never
+/// a hang, never a silent drop, never a success result.
+///
+/// Each malformed frame is sent with correct LSP framing, so the transport
+/// stays in sync and the failure is contained to JSON-RPC parsing. Frames
+/// exercised:
+///
+/// - truncated JSON (the classic parse error) → the spec-mandated `-32700`
+///   with `id: null` and no `result` key — pinned exactly
+/// - valid JSON that is not a Request object (a bare string)
+/// - an empty batch array (invalid per JSON-RPC 2.0)
+/// - a wrong `jsonrpc` version
+/// - a well-formed batch (parses, but this server does not support batches)
+///
+/// The latter four fulfill the same documented promise — "server sends error
+/// response, continues running" — but the doc pins no code for them, so the
+/// test asserts the error envelope and that the code sits in the
+/// spec-reserved range (-32700..=-32000) without pinning which. (This server
+/// currently answers all read failures with `-32700`; the spec itself would
+/// say `-32600` for syntactically-valid-but-invalid Request objects, so the
+/// exact code here is an implementation choice, not contract.)
+#[test]
+fn parse_errors_get_error_responses_and_server_continues() {
+    let mut server = McpServer::spawn(&[]);
+
+    // Sanity: the server answers normally before any abuse.
+    let init = server.request(
+        "initialize",
+        json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "pdftract-conformance-test", "version": "0.1.0"}
+        }),
+    );
+    assert_success(&init, "initialize");
+
+    // (label, raw body, pinned code if the contract fixes one)
+    let malformed: [(&str, &str, Option<i64>); 5] = [
+        (
+            "truncated JSON",
+            r#"{"jsonrpc":"2.0","id":99,"method":"tools/lis"#,
+            Some(-32700),
+        ),
+        ("bare JSON string", r#""just a string""#, None),
+        ("empty batch array", r#"[]"#, None),
+        (
+            "wrong jsonrpc version",
+            r#"{"jsonrpc":"1.0","id":98,"method":"tools/list"}"#,
+            None,
+        ),
+        (
+            "unsupported batch",
+            r#"[{"jsonrpc":"2.0","id":97,"method":"tools/list"}]"#,
+            None,
+        ),
+    ];
+
+    for (what, frame, pinned) in malformed {
+        server.send_raw(frame);
+        let response = server.recv_any();
+        assert_error_envelope(&response, what, pinned);
+        assert!(
+            response.get("id").map(Value::is_null).unwrap_or(false),
+            "{what} must be answered with id null (no usable request id): {response}"
+        );
+    }
+
+    // Second half of the documented promise: the server is still serving.
+    // A full valid round-trip proves the frame stream did not desync and no
+    // per-connection state was corrupted by the malformed frames.
+    let list = server.request("tools/list", json!({}));
+    let result = assert_success(&list, "tools/list after parse errors");
+    let tools = result["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("tools/list result.tools missing after parse errors: {list}"));
+    assert_eq!(
+        tools.len(),
+        CATALOGED_TOOLS.len(),
+        "tools/list must return the full catalog after parse errors: {list}"
+    );
+
+    // One more abuse → recovery cycle, so resilience is not a one-frame
+    // fluke, then the documented terminate step still works.
+    server.send_raw(r#"{"jsonrpc":"2.0","id":96,"method":"tools/list""#);
+    let response = server.recv_any();
+    assert_error_envelope(&response, "second truncated JSON", Some(-32700));
+    let again = server.request("tools/list", json!({}));
+    assert_success(&again, "tools/list after second parse error");
+
+    server.close_stdin();
+    let code = server.wait_for_exit();
+    assert_eq!(
+        code,
+        Some(0),
+        "server must still exit 0 on stdin EOF after parse errors"
+    );
+}
+
+/// Documented "Error Handling" contract, invalid-params half: `tools/call`
+/// with unusable params is rejected with `-32602` carrying a `data.reason`
+/// string, the error response still echoes the request id, and the server
+/// keeps serving. This is the *general* envelope contract — the `--root`
+/// boundary-specific `data.code` rejections are covered by
+/// `out_of_root_and_invalid_params_rejected_with_32602` above.
+#[test]
+fn invalid_params_rejected_with_32602_data_reason() {
+    let mut server = McpServer::spawn(&[]);
+
+    // Handshake, so the sequence mirrors a real client session.
+    let init = server.request(
+        "initialize",
+        json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "pdftract-conformance-test", "version": "0.1.0"}
+        }),
+    );
+    assert_success(&init, "initialize");
+
+    // tools/call with no params object at all (`request` omits null params).
+    let bare = server.request("tools/call", Value::Null);
+    let error = assert_error_envelope(&bare, "params-less tools/call", Some(-32602));
+    assert!(
+        error["data"]["reason"].is_string(),
+        "params-less tools/call must carry data.reason (documented contract): {bare}"
+    );
+    assert_eq!(
+        bare.get("id").and_then(Value::as_u64),
+        Some(2), // second request of the session (initialize was id 1)
+        "invalid-params rejection must still echo the request id: {bare}"
+    );
+
+    // tools/call with arguments but no tool name.
+    let unnamed = server.request(
+        "tools/call",
+        json!({"arguments": {"path": "somewhere.pdf"}}),
+    );
+    let error = assert_error_envelope(&unnamed, "name-less tools/call", Some(-32602));
+    let reason = error["data"]["reason"].as_str().unwrap_or_else(|| {
+        panic!("name-less tools/call must carry data.reason (documented contract): {unnamed}")
+    });
+    assert!(
+        !reason.is_empty(),
+        "data.reason must be a non-empty string: {unnamed}"
+    );
+
+    // tools/call with a non-string name (wrong type, not just missing).
+    let mistyped = server.request("tools/call", json!({"name": 42, "arguments": {}}));
+    let error = assert_error_envelope(&mistyped, "non-string tool name", Some(-32602));
+    assert!(
+        error["data"]["reason"].is_string(),
+        "non-string name must carry data.reason (documented contract): {mistyped}"
+    );
+
+    // A name that parses but is not in the tools/list catalog is rejected
+    // with -32601 (method not found) — the documented "Unknown tool" bullet —
+    // still echoing the request id.
+    let unknown = server.request(
+        "tools/call",
+        json!({"name": "no_such_tool", "arguments": {}}),
+    );
+    assert_error_envelope(&unknown, "unknown tool", Some(-32601));
+    assert_eq!(
+        unknown.get("id").and_then(Value::as_u64),
+        Some(5), // fifth request of the session (initialize was id 1)
+        "unknown-tool rejection must still echo the request id: {unknown}"
+    );
+
+    // The server keeps serving after the rejections.
+    let list = server.request("tools/list", json!({}));
+    assert_success(&list, "tools/list after invalid params");
+
+    // And the documented terminate step still works.
+    server.close_stdin();
+    let code = server.wait_for_exit();
+    assert_eq!(
+        code,
+        Some(0),
+        "server must still exit 0 on stdin EOF after invalid params"
     );
 }
