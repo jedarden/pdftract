@@ -110,15 +110,17 @@ spec:
         name: cargo-cache
       spec:
         accessModes: [ReadWriteOnce]
+        # Rackspace's sata-large tier begins at 75Gi; a 50Gi request is
+        # rejected by Cinder and leaves every CI run permanently Pending.
         storageClassName: sata-large
         resources:
           requests:
-            storage: 50Gi
+            storage: 75Gi
     - metadata:
         name: workspace
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: sata-large
+        storageClassName: sata
         resources:
           requests:
             storage: 10Gi
@@ -126,18 +128,18 @@ spec:
         name: shared-artifacts
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: sata-large
+        storageClassName: sata
         resources:
           requests:
-            storage: 1Gi
+            storage: 5Gi
     - metadata:
         name: regression-results
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: sata-large
+        storageClassName: sata
         resources:
           requests:
-            storage: 2Gi
+            storage: 5Gi
 
   volumes:
     - name: docker-config
