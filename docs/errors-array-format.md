@@ -514,7 +514,7 @@ fn test_custom_font_with_unmapped_glyphs() {
 4. **Count Errors**: Use counts to verify expected number of diagnostics
 5. **Check Messages**: Verify diagnostic messages contain expected information
 6. **Test Severity**: Ensure fatal errors only occur for truly unrecoverable conditions — filter `metadata.diagnostics_detailed` by `severity`, never by substring
-7. **Use Helper Functions**: Create reusable assertion helpers for common patterns (`tests/test_helpers/diagnostics.rs` unifies both shapes)
+7. **Use Helper Functions**: Create reusable assertion helpers for common patterns (`crates/pdftract-core/tests/test_helpers/diagnostics.rs` unifies both shapes)
 
 ## Helper Functions for Common Assertions
 

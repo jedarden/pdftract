@@ -4,7 +4,7 @@
 > **Schema URL:** https://pdftract.com/schema/v1.0/pdftract.schema.json  
 > **Source of truth:** `docs/schema/v1.0/pdftract.schema.json`
 
-This page provides a human-readable rendering of the pdftract output schema. The JSON Schema is the authoritative definition (per [INV-11](../plan/plan.md)), validated in CI for all test fixtures.
+This page provides a human-readable rendering of the pdftract output schema. The JSON Schema is the authoritative definition (per [INV-11](../../plan/plan.md)), validated in CI for all test fixtures.
 
 ## Top-Level Structure
 
@@ -14,7 +14,8 @@ This page provides a human-readable rendering of the pdftract output schema. The
   "pages": [...],
   "metadata": {...},
   "signatures": [...],
-  "form_fields": [...]
+  "form_fields": [...],
+  "errors": [...]
 }
 ```
 
@@ -25,6 +26,7 @@ This page provides a human-readable rendering of the pdftract output schema. The
 | `metadata` | object | Yes | ExtractionMetadata object with page count, diagnostics, receipts mode, etc. |
 | `signatures` | array | Yes | Digital signatures extracted from the document. Empty when no signature fields exist. |
 | `form_fields` | array | Yes | Interactive form fields from AcroForm/XFA. Empty when no form fields exist. |
+| `errors` | array | Yes | All structured diagnostics emitted during extraction. Stable schema field: always present, `[]` when nothing was emitted. See [Diagnostics](#diagnostics). |
 
 ## Document Metadata
 
@@ -37,7 +39,16 @@ The `metadata` object contains extraction-level information:
   "block_count": 156,
   "error_count": 0,
   "receipts_mode": "off",
-  "diagnostics": ["WARN: page 3: low coverage (54%) - possible scanned content"],
+  "diagnostics": ["STRUCT_INCOMPLETE_COVERAGE: Page 3 StructTree coverage is 54.0% (12/26 MCIDs claimed); below 80% threshold, falling back to XY-cut"],
+  "diagnostics_detailed": [
+    {
+      "code": "STRUCT_INCOMPLETE_COVERAGE",
+      "message": "Page 3 StructTree coverage is 54.0% (12/26 MCIDs claimed); below 80% threshold, falling back to XY-cut",
+      "severity": "info",
+      "page_index": 2,
+      "hint": "StructTree coverage below 80% with /Suspects true; falling back to XY-cut reading order"
+    }
+  ],
   "cache_status": "hit",
   "cache_age_seconds": 1240,
   "reading_order_algorithm": "robust-topo"
@@ -51,10 +62,18 @@ The `metadata` object contains extraction-level information:
 | `block_count` | integer | Number of blocks extracted across all pages. |
 | `error_count` | integer | Number of pages that failed to extract. |
 | `receipts_mode` | string | Receipts mode used: `"off"`, `"lite"`, or `"svg"`. |
-| `diagnostics` | array | Diagnostic messages emitted during extraction (coverage warnings, etc.). |
+| `diagnostics` | array | Legacy string form of the diagnostics, each `CODE: message (byte offset N)? [obj G R]?`. Omitted entirely when empty. |
+| `diagnostics_detailed` | array | The same diagnostics in structured form (see [Diagnostics](#diagnostics)), mirroring `diagnostics` one-to-one (same length, order, codes). Omitted entirely when empty. |
 | `cache_status` | string/null | Cache status: `"hit"`, `"miss"`, or `"skipped"`. |
 | `cache_age_seconds` | integer/null | Cache entry age in seconds (only present when `cache_status == "hit"`). |
 | `reading_order_algorithm` | string/null | Reading order algorithm used for this extraction. |
+
+> The metadata-level `diagnostics` / `diagnostics_detailed` fields above belong
+> to the bare extraction-result payload (see
+> [`docs/errors-array-format.md`](../../errors-array-format.md)). In the
+> schema-validated full output document rendered by this page, diagnostics ride
+> at the top-level `errors` array instead — the schema's own metadata object
+> carries none. See [Diagnostics](#diagnostics).
 
 ## Page Result
 
@@ -331,20 +350,58 @@ These fields are present in the schema as empty arrays or null values, allowing 
 
 ## Diagnostics
 
-Diagnostic messages provide visibility into extraction quality and issues:
+Diagnostics provide visibility into extraction quality and issues. Every
+diagnostic is a typed code (`SCREAMING_SNAKE_CASE`, e.g. `STRUCT_INCOMPLETE_COVERAGE`,
+`STREAM_DECODE_ERROR`) carrying one of four severities — `info`, `warning`,
+`error`, or `fatal` — derived from the code itself, never from a string prefix.
 
-| Severity | Description |
-|----------|-------------|
-| `WARN` | Warning - extraction succeeded but with potential quality issues (e.g., low coverage suggesting scanned content). |
-| `ERROR` | Error - extraction failed for a specific page or region. |
+Diagnostics appear in two parallel shapes and three output surfaces:
 
-Example diagnostics:
+- **String form** — `metadata.diagnostics`: each entry is the diagnostic's
+  `Display`, `{CODE}: {message} (byte offset N)? [obj G R]?`.
+- **Structured form** — `metadata.diagnostics_detailed` and the top-level
+  `errors` array: objects of the shape below. The two arrays mirror each other
+  one-to-one (same length, order, and codes). In NDJSON streaming output the
+  footer frame's `errors` array carries the same objects.
+
 ```json
-[
-  "WARN: page 3: low coverage (54%) - possible scanned content",
-  "ERROR: page 7: failed to extract - corrupt content stream"
-]
+{
+  "code": "STREAM_DECODE_ERROR",
+  "message": "zlib stream truncated mid-inflation",
+  "severity": "warning",
+  "page_index": 6,
+  "location": {"object_number": 12, "generation_number": 0},
+  "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
+}
 ```
+
+`code`, `message`, and `severity` are always present. `page_index`, `location`,
+and `hint` are **omitted, never serialized as `null`**, when they do not apply.
+
+Example of the same diagnostic in both shapes:
+
+```json
+{
+  "diagnostics": [
+    "STREAM_DECODE_ERROR: zlib stream truncated mid-inflation (byte offset 4096) [12 0 R]"
+  ],
+  "diagnostics_detailed": [
+    {
+      "code": "STREAM_DECODE_ERROR",
+      "message": "zlib stream truncated mid-inflation",
+      "severity": "warning",
+      "page_index": 6,
+      "location": {"object_number": 12, "generation_number": 0},
+      "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
+    }
+  ]
+}
+```
+
+The complete code catalog, with per-code severities and suggested actions,
+lives in [`docs/integrations/diagnostics-codes.md`](../../integrations/diagnostics-codes.md);
+the errors-array shape, assertion patterns, and empty-array behavior per
+surface are covered in [`docs/errors-array-format.md`](../../errors-array-format.md).
 
 ## Coordinate System
 
@@ -361,7 +418,7 @@ Example: For a US Letter page (8.5 × 11 inches):
 
 ## Schema Validation
 
-Per [INV-11](../plan/plan.md), all JSON output must validate against the schema. CI runs a schema validation step on every fixture:
+Per [INV-11](../../plan/plan.md), all JSON output must validate against the schema. CI runs a schema validation step on every fixture:
 
 ```bash
 # Python validation example
@@ -377,4 +434,4 @@ jsonschema -i output.json docs/schema/v1.0/pdftract.schema.json
 - **Phase 7.4** (lines 2800+): Form fields
 - **INV-11** (line 841): Schema validation invariant
 
-For the complete field-by-field rationale, see the [extraction output schema research doc](../research/extraction-output-schema.md).
+For the complete field-by-field rationale, see the [extraction output schema research doc](../../research/extraction-output-schema.md).
