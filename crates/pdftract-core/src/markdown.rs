@@ -16,12 +16,16 @@
 //! The anchor format is a stable schema parseable with one regex:
 //!
 //! ```text
-//! <!-- pdftract: page=(\d+) block=(\d+) bbox=\[([\d.,]+)\] kind=(\w+) -->
+//! <!-- pdftract: page=(\d+) block=(\d+) bbox=\[([-\d.,]+)\] kind=(\w+) -->
 //! ```
 //!
 //! # Parsing Anchors
 //!
-//! Use [`parse_anchors`] to extract all anchors from markdown text:
+//! Use [`parse_anchors`] to extract all anchors from markdown text.
+//! Real anchors are always emitted *outside* code fences, so
+//! [`parse_anchors`] ignores anchor-like comments inside fences — verbatim
+//! code content can never false-positive and break the round-trip property
+//! documented in `docs/integrations/markdown-anchors.md`:
 //!
 //! ```
 //! use pdftract_core::markdown::{parse_anchors, Anchor};
@@ -87,8 +91,14 @@ impl MarkdownOptions {
 /// New fields may be added to the anchor, but the existing field syntax is
 /// frozen across minor versions:
 /// `<!-- pdftract: page=N block=N bbox=[x0,y0,x1,y1] kind=word -->`
+///
+/// The bbox charset admits a leading `-` per coordinate: pages with a
+/// negative MediaBox origin (bleed/crop boxes) are legal PDFs, and the
+/// emitter has always formatted such coordinates as `-72.0` at the
+/// documented 1-decimal precision. The pre-v0.1.0 schema therefore has to
+/// accept the minus sign rather than reject anchors for those documents.
 pub const ANCHOR_REGEX_PATTERN: &str =
-    r#"<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->"#;
+    r#"<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->"#;
 
 /// Regex for parsing pdftract HTML comment anchors, built from
 /// [`ANCHOR_REGEX_PATTERN`].
@@ -157,6 +167,13 @@ impl Anchor {
 /// Returns a vector of [`Anchor`] structs in the order they appear in the text.
 /// Invalid anchor formats are silently skipped.
 ///
+/// Anchor-like HTML comments inside fenced code blocks (``` or ~~~) are NOT
+/// recognized. pdftract always emits real anchors *outside* fences, so any
+/// anchor-looking text inside a fence is verbatim document content (e.g. a
+/// code sample quoting the anchor format). Counting it as an anchor would
+/// false-positive and break the round-trip property published in
+/// `docs/integrations/markdown-anchors.md`.
+///
 /// # Arguments
 ///
 /// * `md` - The markdown text to parse
@@ -183,43 +200,89 @@ impl Anchor {
 /// assert_eq!(anchors[1].page, 0);
 /// assert_eq!(anchors[1].block, 1);
 /// ```
+///
+/// Fenced content is excluded:
+///
+/// ```
+/// use pdftract_core::markdown::parse_anchors;
+///
+/// let md = concat!(
+///     "<!-- pdftract: page=0 block=0 bbox=[0.0,0.0,1.0,1.0] kind=paragraph -->\n",
+///     "real\n",
+///     "```text\n",
+///     "<!-- pdftract: page=9 block=9 bbox=[1.0,2.0,3.0,4.0] kind=paragraph -->\n",
+///     "```\n",
+/// );
+///
+/// assert_eq!(parse_anchors(md).len(), 1);
+/// ```
 pub fn parse_anchors(md: &str) -> Vec<Anchor> {
     let mut anchors = Vec::new();
+    // Fenced-code state: (fence char, fence length) of the innermost opening
+    // fence, per CommonMark. Anchor-looking comments inside a fence are
+    // verbatim document content, never emitted anchors (emission always
+    // writes anchors at fence depth 0), so they must not parse as anchors.
+    let mut open_fence: Option<(char, usize)> = None;
 
-    for captures in anchor_regex().captures_iter(md) {
-        // Parse page number
-        let page = match captures.get(1).and_then(|m| m.as_str().parse().ok()) {
-            Some(p) => p,
-            None => continue,
-        };
+    for line in md.lines() {
+        if let Some((ch, len, rest)) = fence_marker(line) {
+            match open_fence {
+                Some((open_ch, open_len)) => {
+                    // A closing fence repeats the opening character at equal
+                    // or greater length and carries no info string.
+                    if ch == open_ch && len >= open_len && rest.trim().is_empty() {
+                        open_fence = None;
+                    }
+                }
+                None => open_fence = Some((ch, len)),
+            }
+            continue;
+        }
 
-        // Parse block number
-        let block = match captures.get(2).and_then(|m| m.as_str().parse().ok()) {
-            Some(b) => b,
-            None => continue,
-        };
+        if open_fence.is_some() {
+            continue;
+        }
 
-        // Parse bbox: "x0,y0,x1,y1" with possible decimal points
-        let bbox_str = match captures.get(3) {
-            Some(m) => m.as_str(),
-            None => continue,
-        };
-
-        let bbox: [f32; 4] = match parse_bbox(bbox_str) {
-            Some(b) => b,
-            None => continue,
-        };
-
-        // Parse kind
-        let kind = match captures.get(4) {
-            Some(m) => m.as_str().to_string(),
-            None => continue,
-        };
-
-        anchors.push(Anchor::new(page, block, bbox, kind));
+        for captures in anchor_regex().captures_iter(line) {
+            if let Some(anchor) = anchor_from_captures(&captures) {
+                anchors.push(anchor);
+            }
+        }
     }
 
     anchors
+}
+
+/// Classify a line as a CommonMark fence delimiter: 0-3 spaces of
+/// indentation followed by at least three '`' or '~' characters.
+///
+/// Returns the fence character, its run length, and the remainder of the
+/// line after the run (an info string on an opening fence, empty on a
+/// closing fence).
+fn fence_marker(line: &str) -> Option<(char, usize, &str)> {
+    let indent = line.len() - line.trim_start().len();
+    if indent > 3 {
+        return None;
+    }
+    let s = &line[indent..];
+    let ch = s.chars().next()?;
+    if ch != '`' && ch != '~' {
+        return None;
+    }
+    // '`' and '~' are one byte each, so the char count is a byte offset.
+    let len = s.chars().take_while(|&c| c == ch).count();
+    Some((ch, len, &s[len..]))
+}
+
+/// Build an [`Anchor`] from an [`ANCHOR_REGEX_PATTERN`] capture, or `None`
+/// when a field fails to parse (invalid anchors are silently skipped, per
+/// the documented `parse_anchors` contract).
+fn anchor_from_captures(captures: &regex::Captures<'_>) -> Option<Anchor> {
+    let page = captures.get(1)?.as_str().parse().ok()?;
+    let block = captures.get(2)?.as_str().parse().ok()?;
+    let bbox = parse_bbox(captures.get(3)?.as_str())?;
+    let kind = captures.get(4)?.as_str().to_string();
+    Some(Anchor::new(page, block, bbox, kind))
 }
 
 /// Parse a bbox string like "72.0,640.5,540.0,672.0" into [f32; 4].

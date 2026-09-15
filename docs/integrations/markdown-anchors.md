@@ -19,7 +19,7 @@ Each anchor is a single-line HTML comment:
 
 - `page`: Zero-based page index (0, 1, 2, ...)
 - `block`: Zero-based block index within the page (0, 1, 2, ...)
-- `bbox`: Bounding box in PDF points `[x0, y0, x1, y1]` with 1 decimal place precision
+- `bbox`: Bounding box in PDF points `[x0, y0, x1, y1]` with 1 decimal place precision. Coordinates may be negative — pages with a negative MediaBox origin (e.g. bleed or crop boxes) are legal PDFs, so each component admits a leading `-`.
 - `kind`: Block kind (`heading`, `paragraph`, `list`, `table`, `figure`, etc.)
 
 ### Regex Schema
@@ -27,7 +27,7 @@ Each anchor is a single-line HTML comment:
 The anchor format is parseable with this stable regex:
 
 ```regex
-<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->
+<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->
 ```
 
 ## Usage
@@ -82,6 +82,8 @@ A round-trip property holds: extracting → parsing anchors → recovering the o
 
 HTML comments inside code fences (```) are not recognized by Markdown renderers—they're emitted verbatim. This is a limitation of the Markdown spec, not pdftract.
 
+pdftract never emits a real anchor *inside* a fence: every anchor is written before its block content at fence depth 0. Conversely, `parse_anchors` ignores anchor-like comments that appear *inside* fenced code blocks—a document whose code content quotes the anchor format (like this guide) must not gain phantom blocks in the recovered list. Integrators using the raw regex should apply the same rule: skip matches inside ``` / ~~~ fences.
+
 ### Empty Blocks
 
 Empty blocks (e.g., blank pages) still emit anchors with empty content following.
@@ -123,7 +125,7 @@ This is the first paragraph of the document.
 import re
 
 ANCHOR_RE = re.compile(
-    r'<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->'
+    r'<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->'
 )
 
 def extract_anchors(md_text):
@@ -141,7 +143,7 @@ def extract_anchors(md_text):
 ### JavaScript: Parse Anchors
 
 ```javascript
-const ANCHOR_RE = /<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([\d.,]+)\]\s+kind=(\w+)\s*-->/g;
+const ANCHOR_RE = /<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->/g;
 
 function extractAnchors(md) {
     const anchors = [];
