@@ -354,6 +354,31 @@ gh release create v${VERSION} \
 
 Expected: GitHub Release created at `https://github.com/jedarden/pdftract/releases/tag/v${VERSION}`.
 
+### Step 10a: Platform Smoke Gate
+
+Per [manual-platform-smoke.md](manual-platform-smoke.md) ("Per-Release Gate"),
+the release is **provisional** at this point. Before marking it latest or
+announcing it:
+
+1. Copy `docs/operations/platform-smoke-checklist-template.md` to
+   `platform-smoke-${VERSION}.md`.
+2. Execute all three platform blocks (macOS x86_64, macOS aarch64,
+   Windows x86_64) against the artifacts uploaded in Step 10: install the
+   archive, run `pdftract doctor`, run
+   `tests/smoke/diff_goldens.sh` against the installed binary, and record
+   results + binary SHA256 in the checklist.
+3. Attach the completed checklist to the release:
+   ```bash
+   gh release upload v${VERSION} platform-smoke-${VERSION}.md --repo "${REPO}"
+   ```
+4. Tick the smoke line in the release notes (edit the release body).
+
+This manual fallback needs physical macOS machines and a Windows VM the same
+as the automated cascade path. If those hosts are unavailable during the
+fallback window, record the degraded outcome in the checklist ("smoke gate
+BLOCKED — hosts unavailable") and in the CHANGELOG release record; the release
+still ships from Step 10 but stays provisional.
+
 ### Step 11: Build mdBook
 
 ```bash
@@ -610,6 +635,7 @@ Each step in this procedure is designed to be safe to re-run after a transient f
 | Step 8: PyPI Upload | YES | Use `--skip-existing` on re-run |
 | Step 9: crates.io Publish | NO | Version cannot be overwritten |
 | Step 10: GitHub Release | NO | Release cannot be overwritten (must delete and recreate) |
+| Step 10a: Platform Smoke Gate | YES | Checklist can be refilled; re-upload with `gh release upload --clobber` |
 | Step 11: Build mdBook | YES | `mdbook build` is idempotent |
 | Step 12: Deploy Docs | YES | Wrangler overwrites the existing deployment |
 | Step 13: SLSA Attestation | YES | Re-running overwrites `multiple.intoto.jsonl` |
@@ -637,6 +663,7 @@ The manual release is **complete** when:
 5. Docs are deployed to Cloudflare Pages and accessible.
 6. SLSA attestation is attached to the GitHub Release (or degraded outcome is documented).
 7. CHANGELOG.md includes the manual release record.
+8. Platform smoke checklist (Step 10a) is attached to the GitHub Release — or its BLOCKED outcome is documented and the release stays provisional (not marked latest).
 
 The manual release is **blocked** when:
 
