@@ -7904,3 +7904,5 @@
 {"bead":"pdftract-c1fceb36","duration_ms":3603495,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-15T16:12:20.494800949+00:00","worker":"glm-roam-18"}
 {"bead":"pdftract-e3db48eb","duration_ms":3099318,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-15T16:19:53.987329235+00:00","worker":"glm-pdftract"}
 {"bead":"pdftract-8c41e35b","duration_ms":3603762,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-15T16:35:33.353665404+00:00","worker":"glm-roam-19"}
+{"bead":"pdftract-fc90d8fa","event":"claim","strand":"explore","ts":"2026-09-15T16:53:59.999331674+00:00","worker":"glm-archivist"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a5fd-5e97-78e1-a6fe-28679f57df64","bead":"pdftract-fc90d8fa","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T16:54:00.599250815+00:00","worker":"glm-archivist"}
