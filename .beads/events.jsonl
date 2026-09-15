@@ -7770,3 +7770,12 @@
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a3f8-4e62-7b93-bf04-86fed3581cda","bead":"pdftract-f0d685f4","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T07:29:14.338356941+00:00","worker":"glm-tradegraph"}
 {"bead":"pdftract-fc90d8fa","event":"claim","strand":"explore","ts":"2026-09-15T07:31:24.168735935+00:00","worker":"glm-tgp"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a3fa-4b0c-7102-aa56-d3d6991a691e","bead":"pdftract-fc90d8fa","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T07:31:24.557059002+00:00","worker":"glm-tgp"}
+{"bead":"pdftract-478d6e38","duration_ms":3602307,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"pluck","ts":"2026-09-15T07:59:25.382457880+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-8c4bed00","duration_ms":2815027,"event":"fail","exit_code":0,"outcome":"failure","strand":"explore","ts":"2026-09-15T08:12:09.496372416+00:00","worker":"glm-roam-21"}
+{"bead":"pdftract-456c2b02","event":"claim","strand":"pluck","ts":"2026-09-15T08:21:14.464343405+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a427-ec18-7b43-a83a-8793468f64f7","bead":"pdftract-456c2b02","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-15T08:21:14.904883848+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-22f3772c","duration_ms":3603109,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-15T08:24:24.564492972+00:00","worker":"glm-roam-18"}
+{"bead":"pdftract-f0d685f4","duration_ms":3602904,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-15T08:29:17.362425880+00:00","worker":"glm-tradegraph"}
+{"bead":"pdftract-8c4bed00","event":"claim","strand":"explore","ts":"2026-09-15T08:29:32.856607365+00:00","worker":"glm-tradegraph"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a42f-9ab1-78c1-b881-335c8824a68a","bead":"pdftract-8c4bed00","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T08:29:38.353602952+00:00","worker":"glm-tradegraph"}
+{"bead":"pdftract-fc90d8fa","duration_ms":3602550,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-15T08:31:27.223764776+00:00","worker":"glm-tgp"}
