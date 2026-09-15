@@ -2,39 +2,56 @@
 
 [![crates.io](https://img.shields.io/badge/crates.io-coming--soon-orange)](https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md)
 [![PyPI](https://img.shields.io/badge/PyPI-coming--soon-orange)](https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md)
-[![docs.rs](https://img.shields.io/docsrs/pdftract-core)](https://docs.rs/pdftract-core)
+[![docs.rs](https://img.shields.io/badge/docs.rs-coming--soon-orange)](#documentation)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 [![MSRV](https://img.shields.io/badge/MSRV-1.78-orange)](https://blog.rust-lang.org/2024/05/02/Rust-1.78.0.html)
 
 **pdftract** is a pure-Rust PDF text extraction library built for the cases where other tools give up: scanned documents, unusual font encodings, multi-column layouts, footnotes, mixed-mode pages, and encrypted files. Where most extractors treat PDF text extraction as a coordinate sort, pdftract runs a full reading-order pipeline — segmenting layout regions, recovering broken font encodings, routing each page to the right extraction mode (vector, OCR, or hybrid), and emitting structured JSON with per-span provenance. If your PDFs are academic papers, legal filings, financial reports, or anything else that wasn't typeset in a word processor, pdftract is what you want.
 
+> **⚠️ Development status (evidence-audited 2026-09-15).** pdftract is pre-release and mid-stabilization (tracked in bead `pdftract-f19fd721`). The tables below describe the *designed* capability set; what is actually verified today:
+>
+> - **Extraction is broken at HEAD** — `pdftract extract` fails on the fixture corpus with `No /Root reference in trailer` (a page-tree parse regression). Every extraction-dependent path is blocked behind this fix. Evidence: `crates/pdftract-py/conformance-report.json` (2026-09-05: 32 conformance cases, **0 passing**); re-confirmed at HEAD on 2026-09-15 by direct CLI run.
+> - **`pdftract serve` is broken at HEAD** — every request, including `GET /health`, returns HTTP 500 (missing axum `ConnectInfo` wiring; re-confirmed at HEAD on 2026-09-15).
+> - **CI is not wired to git events yet** — nothing runs automatically on push/PR (bead `pdftract-a8d7bd1d`, open), and no completed end-to-end CI run has been retained — the CI cluster holds zero pdftract workflow runs (the stabilization baseline records "no retained end-to-end CI proof").
+> - **Nothing is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels, images, or release archives exist yet (the single `v0.1.0-test` tag exists for release-cascade testing only).
+
 ## How it compares
 
 | Capability | pdftract | pdfplumber | pypdf | pdfminer |
 |---|---|---|---|---|
-| Multi-column reading order | ✅ Full layout segmentation | ⚠ Heuristic | ❌ | ⚠ Partial |
-| Footnotes & sidebars | ✅ | ❌ | ❌ | ❌ |
-| Font encoding recovery | ✅ Glyph name → fingerprint → shape | ⚠ ToUnicode only | ⚠ ToUnicode only | ⚠ ToUnicode only |
-| Scanned / mixed PDF (OCR) | ✅ Per-page hybrid routing | ❌ | ❌ | ❌ |
-| PDF/UA structure tree | ✅ | ❌ | ⚠ Partial | ❌ |
-| PDF decryption (RC4/AES) | ✅ (`decrypt` feature) | ⚠ Partial | ⚠ Partial | ⚠ Partial |
-| Per-span bounding boxes + confidence | ✅ | ✅ | ❌ | ⚠ Partial |
-| Streaming extraction (large files) | ✅ | ❌ | ❌ | ❌ |
-| CJK scripts | ✅ (`cjk` feature) | ⚠ | ⚠ | ⚠ |
-| HTTP microservice mode | ✅ (`serve`) | ❌ | ❌ | ❌ |
+| Multi-column reading order | 🚧 Full layout segmentation¹ | ⚠ Heuristic | ❌ | ⚠ Partial |
+| Footnotes & sidebars | 🚧¹ | ❌ | ❌ | ❌ |
+| Font encoding recovery | 🚧 Glyph name → fingerprint → shape¹ | ⚠ ToUnicode only | ⚠ ToUnicode only | ⚠ ToUnicode only |
+| Scanned / mixed PDF (OCR) | 🚧 Per-page hybrid routing² | ❌ | ❌ | ❌ |
+| PDF/UA structure tree | 🚧³ | ❌ | ⚠ Partial | ❌ |
+| PDF decryption (RC4/AES) | 🚧 (`decrypt` feature)⁴ | ⚠ Partial | ⚠ Partial | ⚠ Partial |
+| Per-span bounding boxes + confidence | 🚧¹ | ✅ | ❌ | ⚠ Partial |
+| Streaming extraction (large files) | 🚧⁵ | ❌ | ❌ | ❌ |
+| CJK scripts | ❌⁶ (`cjk` feature) | ⚠ | ⚠ | ⚠ |
+| HTTP microservice mode | ❌⁷ (`serve`) | ❌ | ❌ | ❌ |
 | Language | Rust + Python + C ABI | Python | Python | Python |
+
+🚧 = implemented in the source tree, not yet verified end-to-end · ❌ = not working at HEAD · third-party columns unchanged
+
+¹ Implemented, but unverifiable until the page-tree parse regression is fixed (see development status above): `pdftract extract` currently fails on all fixtures, including these paths.
+² Page classification/routing implemented; the OCR acceptance corpus and its WER <3% gate are still open (bead `bf-33zjo`).
+³ Structure-tree parser implemented and tagged-PDF corpus ready (bead `bf-5pyzm`); end-to-end verification pending the parse fix.
+⁴ RC4/AES-128/AES-256 implemented with unit-test coverage (bead `pdftract-4mdfv`: 217/217 parser tests at close, 2026-06-03); the end-to-end encrypted-file path is blocked by the parse regression.
+⁵ Lazy per-page decode implemented (bead `bf-2y2rp`); bounded-memory behavior on real documents is unverifiable until the parse fix.
+⁶ Feature flag, corpus, and acceptance tests all exist; the acceptance tests fail in the most recent recorded run (0/5, `notes/bf-1wczm-cjk_encoding-run.log`).
+⁷ Every request returns HTTP 500 at HEAD, including `GET /health` (see development status above).
 
 ## Platform Support
 
 | Platform | Status |
 |----------|--------|
-| Linux x86_64 | Fully CI-tested on every PR |
-| Linux aarch64 | Fully CI-tested on every PR |
-| macOS x86_64 | Build-tested; manually smoke-tested per release |
-| macOS aarch64 | Build-tested; manually smoke-tested per release |
-| Windows x86_64 | Build-tested; manually smoke-tested per release |
+| Linux x86_64 | Primary development platform — the test suite runs here during development; automated PR CI not yet wired (see development status above) |
+| Linux aarch64 | Cross-compile build target in the CI pipeline; tests are not executed on-device; CI trigger wiring pending |
+| macOS x86_64 | Cross-compile target defined in CI; no completed CI build recorded yet; manual smoke procedure documented for first release |
+| macOS aarch64 | Cross-compile target defined in CI; no completed CI build recorded yet; manual smoke procedure documented for first release |
+| Windows x86_64 | Cross-compile target defined in CI; no completed CI build recorded yet; manual smoke procedure documented for first release |
 
-See [docs/operations/manual-platform-smoke.md](docs/operations/manual-platform-smoke.md) for the per-release smoke procedure.
+See [docs/operations/manual-platform-smoke.md](docs/operations/manual-platform-smoke.md) for the per-release smoke procedure (no release has shipped yet).
 
 ## Installation
 
@@ -70,7 +87,7 @@ cargo add pdftract-core
 cargo install pdftract
 ```
 
-*Status: Not yet published to crates.io — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+*Status: not yet published to crates.io.*
 
 #### pip
 
@@ -78,7 +95,7 @@ cargo install pdftract
 pip install pdftract
 ```
 
-*Status: Not yet published to PyPI — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+*Status: not yet published to PyPI (verified 2026-09-15: the package does not exist on PyPI yet).*
 
 #### Docker
 
@@ -106,21 +123,23 @@ arm64) manifest lists; no floating `:latest` tag exists. The image digest
 above is the integrity pin for the container itself. The aggregate
 `SHA256SUMS` checksum file (covering the binary archives, wheels, sdist, and
 SBOM) plus its cosign signature `SHA256SUMS.sig` are published alongside each
-release once bead `pdftract-1wfp` lands, and verify in one shot:
+release and verify in one shot (generation is implemented — bead
+`pdftract-1wfp`, closed — but no release has shipped yet, so no file exists
+yet):
 
 ```bash
 cosign verify-blob --signature SHA256SUMS.sig SHA256SUMS
 ```
 
-*Status: Not yet published to Docker Hub — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+*Status: not yet published to Docker Hub (verified 2026-09-15: the repository does not exist on Docker Hub yet).*
 
 #### Homebrew
 
 ```bash
-brew install pdftract
+brew install jedarden/tap/pdftract
 ```
 
-*Status: Not yet submitted to Homebrew — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
+*Status: tap live at [jedarden/homebrew-tap](https://github.com/jedarden/homebrew-tap). Formulas are generated from the versioned release archives and SHA256SUMS and pushed by the `pdftract-homebrew-publish` step of the release cascade (`.ci/argo-workflows/pdftract-homebrew-publish.yaml`), which also verifies `brew install` and `pdftract --version` in a pinned Homebrew container for each release. The first formula lands with the first milestone release. A homebrew-core submission for plain `brew install pdftract` can follow once the project meets homebrew-core notability criteria.*
 
 ## Quickstart
 
@@ -128,30 +147,31 @@ brew install pdftract
 
 ```rust
 use pdftract_core::{extract_pdf, ExtractionOptions};
+use std::path::Path;
 
 let opts = ExtractionOptions::default();
-let doc = extract_pdf("report.pdf", &opts)?;
+let doc = extract_pdf(Path::new("report.pdf"), &opts)?;
 
 for page in &doc.pages {
-    println!("Page {}: {} spans", page.number, page.spans.len());
+    println!("Page {}: {} spans", page.page_number, page.spans.len());
 }
 ```
 
-Streaming extraction for large files:
+Streaming extraction for large files (callback-based; return `false` to stop early):
 
 ```rust
 use pdftract_core::extract_pdf_streaming;
 
-for page in extract_pdf_streaming("large.pdf", &opts)? {
-    let page = page?;
+extract_pdf_streaming(Path::new("large.pdf"), &opts, |page| {
     process(page);
-}
+    true // keep going
+})?;
 ```
 
 NDJSON output (one JSON object per page on stdout):
 
 ```rust
-pdftract_core::extract_pdf_ndjson("report.pdf", &opts, std::io::stdout())?;
+pdftract_core::extract_pdf_ndjson(Path::new("report.pdf"), &opts, std::io::stdout())?;
 ```
 
 ### Python
@@ -180,7 +200,8 @@ pdftract extract report.pdf --text -
 pdftract extract report.pdf --markdown -
 
 # Run as an HTTP microservice (POST /extract, GET /health)
-pdftract serve --port 8080
+# NOTE: broken at HEAD — see the development-status note above
+pdftract serve --bind 127.0.0.1:8080
 
 # Compare two PDFs structurally
 pdftract compare original.pdf revised.pdf
@@ -225,7 +246,7 @@ pdftract mcp
 
 ## Features
 
-All extraction functionality works out of the box. Optional features unlock heavier dependencies:
+The full extraction pipeline compiles from source out of the box; extraction *correctness* is mid-stabilization — see the development-status note above for what is currently verified. Optional features unlock heavier dependencies:
 
 | Feature | What it adds | Enable with |
 |---|---|---|
@@ -234,7 +255,7 @@ All extraction functionality works out of the box. Optional features unlock heav
 | `cjk` | CJK script support (Chinese, Japanese, Korean) | `cargo add pdftract-core --features cjk` |
 | `full-render` | Full-page rasterization for assisted OCR and inspect UI | `cargo add pdftract-core --features full-render` |
 
-In the Python wheel and Docker image, `ocr`, `decrypt`, and `cjk` are pre-enabled.
+When the Python wheels and Docker image ship, they will come with `ocr`, `decrypt`, and `cjk` pre-enabled (no wheels or images exist yet — see the development-status note above).
 
 ## What it does
 
@@ -261,14 +282,14 @@ pdftract ships multiple integration surfaces from a single Rust core:
 | Python bindings | [`pdftract`](https://pypi.org/project/pdftract/) on PyPI | PyO3-based, wheels for Linux/macOS/Windows — **🚧 coming soon** |
 | C shared library | `libpdftract` | Stable C ABI; use `pdftract codegen` to generate FFI headers for your language — **🚧 coming soon** |
 | Docker image | [`ronaldraygun/pdftract`](https://hub.docker.com/r/ronaldraygun/pdftract) | Includes `serve` mode HTTP microservice — **🚧 coming soon** |
-| HTTP microservice | `pdftract serve` | REST API for language-agnostic integration (build from source) |
+| HTTP microservice | `pdftract serve` | REST API for language-agnostic integration (build from source) — ⚠ broken at HEAD, see status note above |
 
 Additional language SDK packages (Go, Node.js, Ruby) are in progress, built on top of the C ABI.
 
 ## Documentation
 
 - **User guide:** [pdftract.com](https://pdftract.com) — **🚧 coming soon, live after the first tagged release** (until then, see [docs/user-docs/src/](docs/user-docs/src/) for the full user guide)
-- **API reference:** [docs.rs/pdftract-core](https://docs.rs/pdftract-core)
+- **API reference:** docs.rs/pdftract-core — 🚧 coming soon (crate not yet published)
 - **Extraction output schema:** [docs/research/extraction-output-schema.md](docs/research/extraction-output-schema.md)
 - **SDK architecture:** [docs/notes/sdk-architecture.md](docs/notes/sdk-architecture.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
