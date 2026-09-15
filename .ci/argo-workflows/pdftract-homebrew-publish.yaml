@@ -1,0 +1,444 @@
+# pdftract-homebrew-publish WorkflowTemplate
+#
+# Homebrew distribution channel: renders Formula/pdftract.rb from
+# packaging/homebrew/pdftract.rb.template at the versioned release tag (the
+# tag's own tree is the formula source of truth), fills the <VERSION> and
+# <SHA256> placeholders -- the SHA256 is computed at render time by hashing
+# the exact bytes the formula's url serves -- validates the rendered formula,
+# pushes it to the Forgejo tap repo (source of truth), waits for the
+# Forgejo->GitHub push mirror to catch up, then verifies the channel
+# end-to-end through the client-facing path: `brew tap jedarden/tap` against
+# the GitHub mirror, `brew install jedarden/tap/pdftract`, `pdftract
+# --version` reporting the released version.
+#
+# Runs as a step of the release cascade (pdftract-release-cascade) after
+# pdftract-github-release has published the release (where the cascade's
+# continueOn makes a tap failure non-fatal for the release), and can be
+# invoked standalone for a repaired/re-run channel (the tap is then that
+# run's deliverable and failures are fatal):
+#
+#   argo submit --from workflowtemplate/pdftract-homebrew-publish \
+#     -p tag=vX.Y.Z -p version=X.Y.Z
+#
+# A dry run renders the formula against a stub archive and stops before any
+# push (no credential needed):
+#
+#   argo submit --from workflowtemplate/pdftract-homebrew-publish \
+#     -p tag=v9.9.9 -p version=9.9.9 -p dry_run=true
+#
+# Version policy (docs/notes/homebrew-tap-strategy.md §6): the leg gates on
+# immutable, non-prerelease versioned tags vX.Y.Z only. The
+# versioned-tag-gate step SKIPS anything else -- rc/prerelease tags,
+# :latest-style aliases, branch names and bare git SHAs are never published
+# to the tap. Every container image this template runs is pinned to a semver
+# tag; :latest is rejected org-wide.
+#
+# Hosting (strategy §4): the tap's source of truth is Forgejo
+# (git.ardenone.com/jedarden/homebrew-tap); GitHub hosts the read-only
+# Forgejo push mirror that Homebrew clients actually fetch. CI writes ONLY
+# to the Forgejo origin.
+#
+# Credential (strategy §8.3, as corrected 2026-09-15): the tap push token
+# travels by reference. The push-tap step injects it from the
+# `homebrew-tap-push-token` k8s Secret, synced by ExternalSecret from OpenBao
+# at secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token (the rs-manager
+# instance -- the one iad-ci's ClusterSecretStore "openbao" reads; the
+# strategy note's original ardenone-cluster path cannot be served by that
+# store), and hands it to git through a credential helper -- no value appears
+# in this manifest, in any argv, or in any log line. That ExternalSecret
+# (homebrew-tap-push-token-externalsecret.yml.disabled alongside this file
+# in declarative-config) must be enabled -- and the token provisioned, and
+# the eso-iad-ci policy taught the new prefix -- for a live push; until then
+# the leg runs in dry_run only. The value must never be printed; verification
+# is by downstream effect (git push succeeds, the mirror reflects the
+# commit).
+#
+# Formula shape (strategy §5): build-from-source against the versioned-tag
+# source archive with depends_on "rust" -- no bottles in the first
+# iteration. The rendered formula is generated content; hand fixes go to
+# packaging/homebrew/pdftract.rb.template in jedarden/pdftract, never to the
+# tap.
+#
+# Bead: pdftract-da3c85cd
+# Strategy: docs/notes/homebrew-tap-strategy.md (§4 hosting, §5 formula,
+#           §6 version policy, §7 cascade placement, §8 prerequisites)
+# Plan section: Release Engineering / Argo WorkflowTemplates, line 3393
+#
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pdftract-homebrew-publish
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-homebrew-publish
+    app.kubernetes.io/component: ci
+    app.kubernetes.io/part-of: pdftract
+spec:
+  entrypoint: homebrew-pipeline
+  serviceAccountName: argo-workflow
+
+  # Backstop: sum of per-step deadlines x attempts = 6780s, +50% headroom.
+  # Per-step activeDeadlineSeconds does not cover a pod that hangs before it
+  # starts; without a workflow-level cap such a run is never terminated.
+  activeDeadlineSeconds: 10200
+
+  podGC: OnPodCompletion
+
+  ttlSecondsAfterFinished:
+    success: 1800
+    failure: 7200
+
+  arguments:
+    parameters:
+      - name: repo
+        value: jedarden/pdftract
+        description: "Source mirror slug on GitHub; the template and the tag source archive are fetched from it anonymously"
+      - name: tap-repo
+        value: jedarden/homebrew-tap
+        description: "Tap repo slug (Forgejo origin and GitHub mirror share it)"
+      - name: tap-url
+        value: https://git.ardenone.com/jedarden/homebrew-tap.git
+        description: "Forgejo tap repo (source of truth) -- the only thing CI pushes to"
+      - name: tag
+        value: ""
+        description: "Versioned git tag (vX.Y.Z). Anything else is skipped by the gate."
+      - name: version
+        value: ""
+        description: "Version from the tag, no leading v (X.Y.Z)"
+      - name: dry_run
+        value: "false"
+        description: "'true' renders against a stub archive and stops before any push -- no credential needed"
+      - name: brew-image
+        value: homebrew/brew:4.6.20
+        description: "Pinned Homebrew image (semver tag, never :latest) used for install verification"
+
+  templates:
+    # === Top-level DAG ===
+    # gate -> render -> push -> wait-for-mirror -> brew-verify.
+    # Every step after the gate is omitted for non-versioned tags, and the
+    # push/verify steps are additionally omitted in dry_run, so a dry run or
+    # a non-versioned ref completes Succeeded with nothing published.
+    - name: homebrew-pipeline
+      dag:
+        tasks:
+          - name: versioned-tag-gate
+            template: versioned-tag-gate
+
+          - name: render-formula
+            template: render-formula
+            dependencies: [versioned-tag-gate]
+            when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true"
+
+          - name: push-tap
+            template: push-tap
+            dependencies: [versioned-tag-gate, render-formula]
+            when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"
+            arguments:
+              artifacts:
+                - name: formula
+                  from: "{{tasks.render-formula.outputs.artifacts.formula}}"
+
+          - name: wait-for-mirror
+            template: wait-for-mirror
+            dependencies: [versioned-tag-gate, push-tap]
+            when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"
+            arguments:
+              parameters:
+                - name: tap-commit
+                  value: "{{tasks.push-tap.outputs.parameters.tap-commit}}"
+
+          - name: brew-verify
+            template: brew-verify
+            dependencies: [versioned-tag-gate, wait-for-mirror]
+            when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"
+
+    # === Versioned-Tag Gate ===
+    # Publishes to the tap only for immutable, non-prerelease versioned tags
+    # vX.Y.Z (strategy §6). Anything else -- rc tags, :latest-style aliases,
+    # branch names, bare SHAs, empty -- SKIPS the leg (proceed=false): a
+    # skipped leg is a Succeeded workflow with every downstream step omitted,
+    # never a failed release.
+    - name: versioned-tag-gate
+      activeDeadlineSeconds: 60
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            TAG="{{workflow.parameters.tag}}"
+            if [ -z "${TAG}" ]; then
+              echo "Gate SKIP: no tag parameter -- the tap leg publishes versioned vX.Y.Z tags only"
+              echo false > /tmp/proceed
+              exit 0
+            fi
+            if printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Gate PASS: ${TAG} is a non-prerelease versioned tag"
+              echo true > /tmp/proceed
+            else
+              echo "Gate SKIP: '${TAG}' is not a vX.Y.Z versioned tag."
+              echo "  rc/prerelease tags, :latest-style aliases, branch names and bare"
+              echo "  git SHAs are never published to the tap"
+              echo "  (docs/notes/homebrew-tap-strategy.md §6)."
+              echo false > /tmp/proceed
+            fi
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+      outputs:
+        parameters:
+          - name: proceed
+            valueFrom:
+              path: /tmp/proceed
+
+    # === Render Formula ===
+    # Fetches packaging/homebrew/pdftract.rb.template from the tag's own tree
+    # (the tag ships the formula shape it was released with), downloads the
+    # source archive the formula url points at, hashes those exact bytes, and
+    # substitutes <VERSION>/<SHA256>. The rendered formula must contain no
+    # leftover placeholder, exactly one 64-hex sha256 line, and parse as Ruby
+    # (ruby -c) before it can become an output artifact -- a formula that
+    # fails validation must never reach the push step.
+    #
+    # dry_run=true stubs the archive download (nothing is fetched, nothing is
+    # pushed downstream) so the render+validate path is exercisable before the
+    # first real release exists.
+    - name: render-formula
+      activeDeadlineSeconds: 600
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            apk add --no-cache curl git ruby
+
+            REPO="{{workflow.parameters.repo}}"
+            TAG="{{workflow.parameters.tag}}"
+            VERSION="{{workflow.parameters.version}}"
+            DRY_RUN="{{workflow.parameters.dry_run}}"
+
+            # Defense in depth: the DAG gate already skipped non-versioned
+            # tags; re-check here so no code path can render past policy.
+            printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              || { echo "ERROR: refusing to render for non-versioned tag '${TAG}'" >&2; exit 1; }
+            [ "v${VERSION}" = "${TAG}" ] \
+              || { echo "ERROR: version '${VERSION}' does not match tag '${TAG}'" >&2; exit 1; }
+
+            URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "=== DRY RUN: stubbing the source archive for ${TAG} (no fetch) ==="
+              printf 'pdftract dry-run source-archive stub for tag %s\n' "${TAG}" > /tmp/source.tar.gz
+              printf '(stub archive; real runs hash the bytes %s serves)\n' "${URL}" >> /tmp/source.tar.gz
+            else
+              echo "=== Downloading ${URL} ==="
+              curl -fsSL --retry 3 "${URL}" -o /tmp/source.tar.gz
+              gzip -t /tmp/source.tar.gz \
+                || { echo "ERROR: ${URL} did not serve a gzip archive" >&2; exit 1; }
+            fi
+            [ "$(wc -c < /tmp/source.tar.gz)" -gt 32 ] \
+              || { echo "ERROR: archive is implausibly small" >&2; exit 1; }
+            SHA256="$(sha256sum /tmp/source.tar.gz | awk '{print $1}')"
+            echo "=== source archive sha256: ${SHA256}"
+
+            echo "=== Fetching packaging/homebrew/pdftract.rb.template from ${TAG} ==="
+            git clone --quiet --depth 1 --branch "${TAG}" "https://github.com/${REPO}.git" /src
+            TEMPLATE="/src/packaging/homebrew/pdftract.rb.template"
+            [ -f "${TEMPLATE}" ] \
+              || { echo "ERROR: ${TEMPLATE} is not present at ${TAG}" >&2; exit 1; }
+
+            mkdir -p /formula/Formula
+            sed -e "s|<VERSION>|${VERSION}|g" -e "s|<SHA256>|${SHA256}|g" \
+              "${TEMPLATE}" > /formula/Formula/pdftract.rb
+
+            if grep -Eq '<VERSION>|<SHA256>' /formula/Formula/pdftract.rb; then
+              echo "ERROR: unsubstituted placeholder left in rendered formula" >&2
+              exit 1
+            fi
+            [ "$(grep -c 'sha256 "' /formula/Formula/pdftract.rb)" = "1" ] \
+              || { echo "ERROR: expected exactly one sha256 line in the formula" >&2; exit 1; }
+            grep -Eq 'sha256 "[0-9a-f]{64}"' /formula/Formula/pdftract.rb \
+              || { echo "ERROR: sha256 line is not a 64-hex digest" >&2; exit 1; }
+            ruby -c /formula/Formula/pdftract.rb \
+              || { echo "ERROR: rendered formula does not parse as Ruby" >&2; exit 1; }
+
+            echo "=== Rendered Formula/pdftract.rb for ${TAG} (dry_run=${DRY_RUN}) ==="
+            cat /formula/Formula/pdftract.rb
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      outputs:
+        artifacts:
+          - name: formula
+            path: /formula
+
+    # === Push to Tap ===
+    # Commits the rendered formula to the Forgejo tap repo (source of truth)
+    # with the org git identity and pushes to main. Idempotent: re-runs with
+    # an unchanged formula push nothing (the mirror wait then also no-ops).
+    #
+    # The push token is injected as an env var from the homebrew-tap-push-token
+    # Secret (ExternalSecret synced from OpenBao -- see the header) and passed
+    # to git through a credential helper, so it never appears in a URL, in
+    # argv, or in output.
+    - name: push-tap
+      inputs:
+        artifacts:
+          - name: formula
+            path: /input/formula
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            apk add --no-cache git
+
+            VERSION="{{workflow.parameters.version}}"
+            TAP_URL="{{workflow.parameters.tap-url}}"
+
+            git clone --quiet "${TAP_URL}" /tap
+            mkdir -p /tap/Formula
+            cp /input/formula/Formula/pdftract.rb /tap/Formula/pdftract.rb
+
+            cd /tap
+            git config user.name jedarden
+            git config user.email github@jedarden.com
+
+            git add Formula/pdftract.rb
+            if git diff --cached --quiet; then
+              echo "Formula unchanged since the last push -- nothing to commit (idempotent re-run)"
+              echo UNCHANGED > /tmp/tap-commit
+              exit 0
+            fi
+
+            git commit --quiet -m "pdftract v${VERSION}" \
+              -m "Formula rendered from packaging/homebrew/pdftract.rb.template in jedarden/pdftract by the pdftract-homebrew-publish leg of the release cascade. Generated file -- do not edit by hand."
+            git push --quiet origin main
+            COMMIT="$(git rev-parse HEAD)"
+            echo "=== Pushed ${COMMIT} to the Forgejo tap (main) ==="
+            echo "${COMMIT}" > /tmp/tap-commit
+        env:
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: credential.helper
+          - name: GIT_CONFIG_VALUE_0
+            value: '!f() { test "$1" = get && echo "username=jedarden" && echo "password=$TAP_TOKEN"; }; f'
+          - name: TAP_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: homebrew-tap-push-token
+                key: token
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      outputs:
+        parameters:
+          - name: tap-commit
+            valueFrom:
+              path: /tmp/tap-commit
+
+    # === Wait for Mirror ===
+    # CI pushes to the Forgejo origin; Homebrew clients fetch the GitHub push
+    # mirror. Bounded-poll the mirror (strategy §8.6) until it reflects the
+    # commit we just pushed -- on timeout, fail with a mirror-lag message,
+    # not a generic failure. sync_on_commit makes this seconds in the normal
+    # case; 5 minutes is the ceiling.
+    - name: wait-for-mirror
+      inputs:
+        parameters:
+          - name: tap-commit
+      activeDeadlineSeconds: 420
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            apk add --no-cache git
+
+            TAP_REPO="{{workflow.parameters.tap-repo}}"
+            COMMIT="{{inputs.parameters.tap-commit}}"
+
+            if [ "${COMMIT}" = "UNCHANGED" ]; then
+              echo "Formula already on the tap -- nothing new to wait for"
+              exit 0
+            fi
+
+            MIRROR="https://github.com/${TAP_REPO}.git"
+            echo "=== Polling ${MIRROR} (main) for ${COMMIT} ==="
+            i=0
+            until git ls-remote --quiet "${MIRROR}" refs/heads/main | grep -q "^${COMMIT}"; do
+              i=$((i + 1))
+              if [ "${i}" -gt 30 ]; then
+                echo "ERROR: GitHub mirror did not reflect tap commit ${COMMIT} within 5 minutes" >&2
+                echo "  (Forgejo->GitHub push-mirror lag; check the mirror config on" >&2
+                echo "  git.ardenone.com/jedarden/${TAP_REPO} before re-running)" >&2
+                exit 1
+              fi
+              sleep 10
+            done
+            echo "=== Mirror reflects ${COMMIT} after ~$((i * 10))s ==="
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+    # === Brew Install Verification ===
+    # Post-release verification through the client-facing path users take
+    # (strategy §7): from a clean pinned Homebrew container, tap the GitHub
+    # mirror, install the formula, and require `pdftract --version` to run
+    # and report the released version. The tap and the source archive are
+    # public, so no credential is needed here. The formula builds from
+    # source (depends_on "rust"), so brew pulls the rust toolchain first --
+    # hence the generous deadline and memory.
+    - name: brew-verify
+      activeDeadlineSeconds: 5400
+      container:
+        image: "{{workflow.parameters.brew-image}}"
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+
+            TAP_REPO="{{workflow.parameters.tap-repo}}"
+            VERSION="{{workflow.parameters.version}}"
+
+            echo "=== brew verify: tapping jedarden/tap from github.com/${TAP_REPO} ==="
+            brew tap jedarden/tap "https://github.com/${TAP_REPO}.git"
+
+            echo "=== brew install jedarden/tap/pdftract ==="
+            brew install jedarden/tap/pdftract
+
+            echo "=== pdftract --version ==="
+            INSTALLED_VERSION="$(pdftract --version)"
+            echo "${INSTALLED_VERSION}"
+            echo "${INSTALLED_VERSION}" | grep -q "${VERSION}" \
+              || { echo "ERROR: installed pdftract does not report ${VERSION}" >&2; exit 1; }
+
+            echo "=== brew verify PASS: pdftract ${VERSION} installed and runs ==="
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 8Gi

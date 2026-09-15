@@ -261,12 +261,22 @@ Checked 2026-09-14; owners in parentheses.
    archive itself; `SHA256SUMS` is the built-artifact verification surface and is not
    modified post-signature. (pdftract-da3c85cd)
 3. **Tap push credential — OpenBao path reference, never a literal:**
-   `secret/ardenone-cluster/forgejo-iad-ci/homebrew-tap-push-token` on the
-   **openbao-v2** instance (ardenone-cluster owns `secret/ardenone-cluster/*`).
+   `secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token` on the
+   **rs-manager** instance.
+   *(Corrected 2026-09-15: this note originally specified
+   `secret/ardenone-cluster/forgejo-iad-ci/homebrew-tap-push-token` on
+   openbao-v2, but iad-ci's ClusterSecretStore `openbao`
+   (`k8s/iad-ci/external-secrets/cluster-secret-store.yml`) serves the
+   rs-manager prefix — every live iad-ci ExternalSecret reads
+   `rs-manager/iad-ci/*` — so an ardenone-cluster path cannot be synced into
+   the cluster. The provisioning identity in the command below is likewise
+   `rs-manager-provision`, which does not exist yet (rs-manager has only the
+   read identity until its reconciler bootstraps it) — provisioning is blocked
+   on that operator setup.)*
    Contents: a Forgejo token scoped to repo `jedarden/homebrew-tap` write only.
    Provisioning follows the secrets-by-reference rule: generate and store via pipe —
-   `openssl rand -base64 32 | bao-as openbao-v2-provision bao kv put -cas=N
-   secret/ardenone-cluster/forgejo-iad-ci/homebrew-tap-push-token token=-` — verify
+   `openssl rand -base64 32 | bao-as rs-manager-provision bao kv put -cas=N
+   secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token token=-` — verify
    by property (`bao kv metadata get ... | jq .data.current_version`), and sync it to
    the `argo-workflows` namespace on iad-ci via an ExternalSecret. The workflow step
    references the path / secret name only; grep the diff to prove no value appears.
