@@ -322,33 +322,12 @@ spec:
       # from 2026-09-05 12:54Z onward and left ~200 live WorkflowTemplates
       # drifted from git. The bound this line was meant to provide already
       # exists one level down: post-final-status-forgejo inherits the 200s
-      # leaf deadline on forgejo-commit-status/post, and map-state is inline sh
-      # with no network I/O. Do not re-add it at template level.
+      # leaf deadline on forgejo-commit-status/post, and map-forgejo-state is
+      # a bounded local script with no network I/O. Do not re-add it at
+      # template level.
       steps:
         - - name: map-state
-            script:
-              image: alpine:3.21
-              command: [sh]
-              source: |
-                set -eu
-                ARGOS_PHASE="{{workflow.status}}"
-                echo "Workflow: {{workflow.name}}"
-                echo "Commit:   {{workflow.parameters.commit-sha}}"
-                echo "Ref:      {{workflow.parameters.ref}}"
-                echo "Phase:    $ARGOS_PHASE"
-                case "$ARGOS_PHASE" in
-                  Succeeded)        FORGEJO_STATE=success ;;
-                  Failed)           FORGEJO_STATE=failure ;;
-                  Error|Terminated) FORGEJO_STATE=error ;;
-                  *)                FORGEJO_STATE=error ;;
-                esac
-                echo "Forgejo state: $FORGEJO_STATE"
-                printf '%s' "$FORGEJO_STATE" > /tmp/forgejo-state
-            outputs:
-              parameters:
-                - name: forgejo-state
-                  valueFrom:
-                    path: /tmp/forgejo-state
+            template: map-forgejo-state
         # Best-effort: a Forgejo outage must never fail an otherwise-green run.
         - - name: post-final-status-forgejo
             templateRef:
@@ -363,13 +342,42 @@ spec:
                 - name: sha
                   value: "{{workflow.parameters.commit-sha}}"
                 - name: state
-                  value: "{{tasks.map-state.outputs.parameters.forgejo-state}}"
+                  value: "{{steps.map-state.outputs.parameters.forgejo-state}}"
                 - name: context
                   value: iad-ci/pdftract-ci
                 - name: description
                   value: "pdftract CI {{workflow.status}}"
                 - name: target_url
                   value: "https://argo-ci.ardenone.com/workflows/argo-workflows/{{workflow.name}}"
+
+    # A steps task may only invoke a template; putting script or outputs on the
+    # task itself is silently pruned by the Kubernetes API. Keep the mapping in
+    # this leaf template so the following exit-handler step receives its output.
+    - name: map-forgejo-state
+      activeDeadlineSeconds: 30
+      script:
+        image: alpine:3.21
+        command: [sh]
+        source: |
+          set -eu
+          ARGOS_PHASE="{{workflow.status}}"
+          echo "Workflow: {{workflow.name}}"
+          echo "Commit:   {{workflow.parameters.commit-sha}}"
+          echo "Ref:      {{workflow.parameters.ref}}"
+          echo "Phase:    $ARGOS_PHASE"
+          case "$ARGOS_PHASE" in
+            Succeeded)        FORGEJO_STATE=success ;;
+            Failed)           FORGEJO_STATE=failure ;;
+            Error|Terminated) FORGEJO_STATE=error ;;
+            *)                FORGEJO_STATE=error ;;
+          esac
+          echo "Forgejo state: $FORGEJO_STATE"
+          printf '%s' "$FORGEJO_STATE" > /tmp/forgejo-state
+      outputs:
+        parameters:
+          - name: forgejo-state
+            valueFrom:
+              path: /tmp/forgejo-state
 
     # === Setup Step ===
     # Clones repo, fetches dependencies, warms cargo cache, uploads workflow metadata
