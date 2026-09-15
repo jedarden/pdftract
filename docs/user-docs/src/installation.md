@@ -45,9 +45,11 @@ If no wheel is available for your platform, pip will fall back to building from 
 
 ## Install via Homebrew
 
-**Note:** Homebrew formula is deferred to v1.1+. In the meantime, use `cargo install pdftract` or the Docker image.
+```bash
+brew install jedarden/tap/pdftract
+```
 
-See the [Non-Goals section](../../plan/plan.md#non-goals) in the project plan for the rationale.
+**Status:** the dedicated tap is live at [jedarden/homebrew-tap](https://github.com/jedarden/homebrew-tap), and the formula is generated from the versioned release archives and pushed by the `pdftract-homebrew-publish` step of the release cascade. The first formula lands with the first versioned (vX.Y.Z) release — until that release is cut, the command above is not yet installable; use `cargo install pdftract` or the Docker image. A homebrew-core submission for plain `brew install pdftract` remains deferred. Channel decisions and rationale: [`docs/notes/homebrew-tap-strategy.md`](../../notes/homebrew-tap-strategy.md).
 
 ## Install via Docker
 
