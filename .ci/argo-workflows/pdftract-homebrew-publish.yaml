@@ -20,8 +20,9 @@
 #   argo submit --from workflowtemplate/pdftract-homebrew-publish \
 #     -p tag=vX.Y.Z -p version=X.Y.Z
 #
-# A dry run renders the formula against a stub archive and stops before any
-# push (no credential needed):
+# A dry run renders the formula against a stub archive (the formula template
+# comes from the repo's default branch, since the stub tag has no ref to
+# clone) and stops before any push (no credential needed):
 #
 #   argo submit --from workflowtemplate/pdftract-homebrew-publish \
 #     -p tag=v9.9.9 -p version=9.9.9 -p dry_run=true
@@ -40,18 +41,19 @@
 #
 # Credential (strategy §8.3, as corrected 2026-09-15): the tap push token
 # travels by reference. The push-tap step injects it from the
-# `homebrew-tap-push-token` k8s Secret, synced by ExternalSecret from OpenBao
-# at secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token (the rs-manager
-# instance -- the one iad-ci's ClusterSecretStore "openbao" reads; the
-# strategy note's original ardenone-cluster path cannot be served by that
-# store), and hands it to git through a credential helper -- no value appears
-# in this manifest, in any argv, or in any log line. That ExternalSecret
-# (homebrew-tap-push-token-externalsecret.yml.disabled alongside this file
-# in declarative-config) must be enabled -- and the token provisioned, and
-# the eso-iad-ci policy taught the new prefix -- for a live push; until then
-# the leg runs in dry_run only. The value must never be printed; verification
-# is by downstream effect (git push succeeds, the mirror reflects the
-# commit).
+# `homebrew-tap-push-token` k8s Secret and hands it to git through a
+# credential helper -- no value appears in this manifest, in any argv, or in
+# any log line. The intended end state (authored by the credential sibling;
+# none of it exists yet): an ExternalSecret named homebrew-tap-push-token,
+# added alongside this template's copy in declarative-config, syncing the
+# OpenBao path secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token (the
+# rs-manager instance -- the one iad-ci's ClusterSecretStore "openbao" reads;
+# the strategy note's original ardenone-cluster path cannot be served by that
+# store) into that Secret. Enabling that ExternalSecret -- with the token
+# provisioned and the eso-iad-ci policy taught the new prefix -- is what
+# turns on live pushes; until it lands, the leg runs in dry_run only. The
+# value must never be printed; verification is by downstream effect (git
+# push succeeds, the mirror reflects the commit).
 #
 # Formula shape (strategy §5): build-from-source against the versioned-tag
 # source archive with depends_on "rust" -- no bottles in the first
@@ -204,9 +206,10 @@ spec:
     # (ruby -c) before it can become an output artifact -- a formula that
     # fails validation must never reach the push step.
     #
-    # dry_run=true stubs the archive download (nothing is fetched, nothing is
-    # pushed downstream) so the render+validate path is exercisable before the
-    # first real release exists.
+    # dry_run=true stubs the archive download and takes the template from the
+    # repo's default branch instead of the (fake) tag -- so the render+validate
+    # path is fully exercisable with a made-up version before the first real
+    # release exists, and no code path ever clones a nonexistent ref.
     - name: render-formula
       activeDeadlineSeconds: 600
       container:
@@ -246,11 +249,22 @@ spec:
             SHA256="$(sha256sum /tmp/source.tar.gz | awk '{print $1}')"
             echo "=== source archive sha256: ${SHA256}"
 
-            echo "=== Fetching packaging/homebrew/pdftract.rb.template from ${TAG} ==="
-            git clone --quiet --depth 1 --branch "${TAG}" "https://github.com/${REPO}.git" /src
+            # The template ships in the tag's own tree (the tag carries the
+            # formula shape it was released with) -- but a dry run's tag is
+            # deliberately fake (v9.9.9 et al.), so no such ref exists to
+            # clone. A dry run therefore takes the template from the repo's
+            # default branch: what is under test is the render+validate path,
+            # not the tag's tree.
+            TEMPLATE_REF="${TAG}"
+            if [ "${DRY_RUN}" = "true" ]; then
+              TEMPLATE_REF="main"
+              echo "=== DRY RUN: template from default branch 'main' (stub tag ${TAG} has no ref to clone) ==="
+            fi
+            echo "=== Fetching packaging/homebrew/pdftract.rb.template from ${TEMPLATE_REF} ==="
+            git clone --quiet --depth 1 --branch "${TEMPLATE_REF}" "https://github.com/${REPO}.git" /src
             TEMPLATE="/src/packaging/homebrew/pdftract.rb.template"
             [ -f "${TEMPLATE}" ] \
-              || { echo "ERROR: ${TEMPLATE} is not present at ${TAG}" >&2; exit 1; }
+              || { echo "ERROR: ${TEMPLATE} is not present at ${TEMPLATE_REF}" >&2; exit 1; }
 
             mkdir -p /formula/Formula
             sed -e "s|<VERSION>|${VERSION}|g" -e "s|<SHA256>|${SHA256}|g" \
@@ -287,9 +301,11 @@ spec:
     # an unchanged formula push nothing (the mirror wait then also no-ops).
     #
     # The push token is injected as an env var from the homebrew-tap-push-token
-    # Secret (ExternalSecret synced from OpenBao -- see the header) and passed
-    # to git through a credential helper, so it never appears in a URL, in
-    # argv, or in output.
+    # Secret and passed to git through a credential helper, so it never appears
+    # in a URL, in argv, or in output. That Secret is meant to be
+    # ExternalSecret-synced from OpenBao once the credential sibling lands it
+    # (see the header) -- the reference here does not depend on it existing
+    # yet, because this step never runs until a real (non-dry-run) push.
     - name: push-tap
       inputs:
         artifacts:
