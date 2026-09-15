@@ -217,7 +217,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-x86_64-musl}}"
 
           - name: bench-matrix
             template: bench-matrix
@@ -225,7 +225,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-x86_64-musl}}"
 
           - name: benchmark-pr-comment
             template: benchmark-pr-comment
@@ -243,7 +243,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-x86_64-musl}}"
 
           - name: regression-corpus
             template: regression-corpus
@@ -251,7 +251,7 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-binary
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-x86_64-musl}}"
 
           - name: generate-provenance
             template: generate-provenance
@@ -260,15 +260,15 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-linux-x86_64-musl
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-x86_64-musl}}"
                 - name: pdftract-linux-aarch64-musl
-                  from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-aarch64-musl}}"
                 - name: pdftract-darwin-x86_64
-                  from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-darwin-x86_64}}"
                 - name: pdftract-darwin-aarch64
-                  from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-darwin-aarch64}}"
                 - name: pdftract-windows-x86_64-gnu
-                  from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-windows-x86_64-gnu}}"
 
           - name: verify-provenance
             template: verify-provenance
@@ -286,15 +286,15 @@ spec:
             arguments:
               artifacts:
                 - name: pdftract-linux-x86_64-musl
-                  from: "{{tasks.build-matrix.tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-x86_64-musl}}"
                 - name: pdftract-linux-aarch64-musl
-                  from: "{{tasks.build-matrix.tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-linux-aarch64-musl}}"
                 - name: pdftract-darwin-x86_64
-                  from: "{{tasks.build-matrix.tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-darwin-x86_64}}"
                 - name: pdftract-darwin-aarch64
-                  from: "{{tasks.build-matrix.tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-darwin-aarch64}}"
                 - name: pdftract-windows-x86_64-gnu
-                  from: "{{tasks.build-matrix.tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
+                  from: "{{tasks.build-matrix.outputs.artifacts.pdftract-windows-x86_64-gnu}}"
                 - name: provenance
                   from: "{{tasks.generate-provenance.outputs.artifacts.provenance}}"
 
@@ -575,6 +575,21 @@ spec:
                   value: ".exe"
             continueOn:
               failed: true
+      # A parent DAG exposes only its declared outputs. Forward the per-target
+      # binaries here so pipeline-level consumers do not reach into the nested
+      # task scope (which Argo rejects at workflow submission time).
+      outputs:
+        artifacts:
+          - name: pdftract-linux-x86_64-musl
+            from: "{{tasks.build-linux-x86-64-musl.outputs.artifacts.pdftract-binary}}"
+          - name: pdftract-linux-aarch64-musl
+            from: "{{tasks.build-linux-aarch64-musl.outputs.artifacts.pdftract-binary}}"
+          - name: pdftract-darwin-x86_64
+            from: "{{tasks.build-darwin-x86-64.outputs.artifacts.pdftract-binary}}"
+          - name: pdftract-darwin-aarch64
+            from: "{{tasks.build-darwin-aarch64.outputs.artifacts.pdftract-binary}}"
+          - name: pdftract-windows-x86_64-gnu
+            from: "{{tasks.build-windows-x86-64-gnu.outputs.artifacts.pdftract-binary}}"
 
     # === Build Target Template ===
     # Single target build using cross (Docker-based)
