@@ -2478,8 +2478,9 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
 ///
 /// # Size
 ///
-/// The struct is 56 bytes (code: 2, byte_offset: 16, object_ref: 12, message: 24 + padding).
-/// Large parse failures may emit hundreds of diagnostics, so compact storage is important.
+/// The struct is 64 bytes on 64-bit targets (code: 2, byte_offset: 16,
+/// object_ref: 12, page_index: 8, message: 24 + padding). Large parse failures
+/// may emit hundreds of diagnostics, so compact storage is important.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     /// Diagnostic code identifying the type of error
@@ -2488,6 +2489,9 @@ pub struct Diagnostic {
     pub byte_offset: Option<u64>,
     /// Object reference where the error occurred (None if not applicable)
     pub object_ref: Option<ObjRef>,
+    /// Zero-based index of the page the diagnostic applies to
+    /// (None for document-level diagnostics)
+    pub page_index: Option<u32>,
     /// Human-readable message (static messages don't allocate)
     pub message: Cow<'static, str>,
 }
@@ -2500,6 +2504,7 @@ impl Diagnostic {
             code,
             byte_offset: Some(byte_offset),
             object_ref: None,
+            page_index: None,
             message: Cow::Borrowed(message),
         }
     }
@@ -2511,6 +2516,7 @@ impl Diagnostic {
             code,
             byte_offset: None,
             object_ref: None,
+            page_index: None,
             message: Cow::Borrowed(message),
         }
     }
@@ -2522,6 +2528,7 @@ impl Diagnostic {
             code,
             byte_offset: Some(byte_offset),
             object_ref: None,
+            page_index: None,
             message: Cow::Owned(message),
         }
     }
@@ -2533,6 +2540,7 @@ impl Diagnostic {
             code,
             byte_offset: None,
             object_ref: None,
+            page_index: None,
             message: Cow::Owned(message),
         }
     }
@@ -2555,6 +2563,17 @@ impl Diagnostic {
         self.object_ref = Some(object_ref);
         self
     }
+
+    /// Set the zero-based page index for this diagnostic.
+    ///
+    /// The argument is the 1-based page number the diagnostic applies to minus
+    /// one (i.e. the page index as it appears in extraction output). PDF page
+    /// counts far exceed `u32`, so truncation is not a practical concern.
+    #[inline]
+    pub fn with_page_index(mut self, page_index: usize) -> Self {
+        self.page_index = Some(page_index as u32);
+        self
+    }
 }
 
 impl fmt::Debug for Diagnostic {
@@ -2563,6 +2582,7 @@ impl fmt::Debug for Diagnostic {
             .field("code", &self.code)
             .field("byte_offset", &self.byte_offset)
             .field("object_ref", &self.object_ref)
+            .field("page_index", &self.page_index)
             .field("message", &self.message.as_ref())
             .finish()
     }

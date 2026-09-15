@@ -171,6 +171,7 @@ pub mod content_stream;
 pub mod decoder;
 pub mod detection;
 pub mod diagnostics;
+pub mod diagnostics_compat;
 pub mod document;
 #[cfg(feature = "ocr")]
 pub mod dpi;
