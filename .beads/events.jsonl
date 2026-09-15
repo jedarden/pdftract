@@ -7779,3 +7779,12 @@
 {"bead":"pdftract-8c4bed00","event":"claim","strand":"explore","ts":"2026-09-15T08:29:32.856607365+00:00","worker":"glm-tradegraph"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a42f-9ab1-78c1-b881-335c8824a68a","bead":"pdftract-8c4bed00","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T08:29:38.353602952+00:00","worker":"glm-tradegraph"}
 {"bead":"pdftract-fc90d8fa","duration_ms":3602550,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-15T08:31:27.223764776+00:00","worker":"glm-tgp"}
+{"bead":"pdftract-d0e30c13","event":"claim","strand":"explore","ts":"2026-09-15T08:44:05.946929494+00:00","worker":"glm-roam-24"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a43c-d96b-74e2-bd4f-2e45ee92abbc","bead":"pdftract-d0e30c13","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T08:44:06.379120281+00:00","worker":"glm-roam-24"}
+{"bead":"pdftract-a126b61f","event":"claim","strand":"explore","ts":"2026-09-15T08:57:43.166201811+00:00","worker":"glm-roam-22"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a449-51a1-7693-a228-47a9601f6284","bead":"pdftract-a126b61f","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T08:57:43.585114627+00:00","worker":"glm-roam-22"}
+{"bead":"pdftract-456c2b02","duration_ms":3333325,"event":"fail","exit_code":0,"outcome":"failure","strand":"pluck","ts":"2026-09-15T09:16:48.376595220+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-3898462e","event":"claim","strand":"pluck","ts":"2026-09-15T09:16:53.624732302+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a45a-dfbf-7213-aac7-2599810990b8","bead":"pdftract-3898462e","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-15T09:16:54.079251401+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-8c4bed00","duration_ms":2953720,"event":"fail","exit_code":0,"outcome":"failure","strand":"explore","ts":"2026-09-15T09:18:52.230574266+00:00","worker":"glm-tradegraph"}
+{"bead":"pdftract-a126b61f","duration_ms":2206041,"event":"fail","exit_code":0,"outcome":"failure","strand":"explore","ts":"2026-09-15T09:34:29.757524563+00:00","worker":"glm-roam-22"}
