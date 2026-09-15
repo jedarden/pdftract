@@ -20,7 +20,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::diagnostics::Diagnostic;
 use crate::layout::correction::CorrectableText;
 use crate::receipts::Receipt;
 use crate::signature::Signature;
@@ -808,6 +807,8 @@ impl From<Signature> for SignatureJson {
 ///
 /// This struct wraps the internal Diagnostic type for JSON serialization,
 /// providing stable error codes and human-readable messages for consumers.
+/// The conversion lives in [`crate::diagnostics`] (`impl From<&Diagnostic>`),
+/// which also owns `DiagCode::from_name` — the inverse of the `code` mapping.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DiagnosticJson {
@@ -844,29 +845,6 @@ pub struct ObjectLocationJson {
 
     /// Generation number (incremented on each save).
     pub generation_number: u16,
-}
-
-/// Convert a typed [`Diagnostic`] into its structured JSON form.
-///
-/// Field mapping follows the canonical-surface contract in
-/// `crate::diagnostics_compat`: `code` is the `DiagCode` name, `message` is
-/// verbatim, `severity` is the code-derived Severity string, and
-/// `page_index`/`location` carry the typed optional fields. The legacy
-/// string surface carries no hint, so the hint is `None` here.
-impl From<&Diagnostic> for DiagnosticJson {
-    fn from(diag: &Diagnostic) -> Self {
-        DiagnosticJson {
-            code: diag.code.to_string(),
-            message: diag.message.as_ref().to_string(),
-            severity: diag.severity().to_string(),
-            page_index: diag.page_index.map(|page| page as usize),
-            location: diag.object_ref.map(|r| ObjectLocationJson {
-                object_number: r.object,
-                generation_number: r.generation,
-            }),
-            hint: None,
-        }
-    }
 }
 
 /// JSON representation of an outline node (bookmark).

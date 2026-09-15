@@ -9,7 +9,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use pdftract_core::diagnostics::{DiagCode, DiagInfo, DIAGNOSTIC_CATALOG};
+use pdftract_core::diagnostics::{DiagCode, DiagInfo, Diagnostic, DIAGNOSTIC_CATALOG};
+use pdftract_core::schema::DiagnosticJson;
 
 const SRC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
 const DIAGNOSTICS_SRC: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/diagnostics.rs");
@@ -497,6 +498,15 @@ fn catalog_covers_every_compiled_enum_variant() {
         }
     }
     for (ident, info) in &catalog {
+        let actual_category = info.code.category();
+        if info.category != actual_category {
+            let _ = writeln!(
+                problems,
+                "DIAGNOSTIC_CATALOG entry for {ident} says category {:?}, but DiagCode::category() is {:?}",
+                info.category,
+                actual_category
+            );
+        }
         let actual = info.code.severity();
         if info.severity != actual {
             let _ = writeln!(
@@ -508,6 +518,113 @@ fn catalog_covers_every_compiled_enum_variant() {
         }
     }
     assert!(problems.is_empty(), "enum to catalog drift:\n{problems}");
+}
+
+#[test]
+fn category_severity_classification_is_stable() {
+    // Categories intentionally contain more than one severity in a few cases
+    // (for example STRUCT has both recoverable warnings and informational
+    // fallback notices). Keep the allowed severity set explicit so adding a
+    // code cannot silently broaden a category's contract.
+    let mut expected: BTreeMap<&str, BTreeSet<String>> = [
+        ("STRUCT", &["info", "warning"][..]),
+        ("XREF", &["info", "warning"][..]),
+        ("STREAM", &["error", "warning"][..]),
+        ("ENCRYPTION", &["fatal"][..]),
+        ("PAGE", &["error", "warning"][..]),
+        ("FONT", &["warning"][..]),
+        ("OCR", &["warning"][..]),
+        ("IMG", &["warning"][..]),
+        ("REMOTE", &["error", "fatal", "warning"][..]),
+        ("GSTATE", &["warning"][..]),
+        ("LAYOUT", &["info", "warning"][..]),
+        ("MCP", &["error"][..]),
+        ("CACHE", &["warning"][..]),
+        ("MARKED_CONTENT", &["info"][..]),
+        ("INLINE_IMAGE", &["warning"][..]),
+        ("PROFILE", &["error"][..]),
+        ("REPAIR", &["info"][..]),
+        ("SECURITY", &["info"][..]),
+    ]
+    .into_iter()
+    .map(|(category, severities)| {
+        (
+            category,
+            severities
+                .iter()
+                .copied()
+                .map(str::to_owned)
+                .collect::<BTreeSet<_>>(),
+        )
+    })
+    .collect();
+    if cfg!(feature = "cjk") {
+        expected.insert("CJK", ["warning".to_owned()].into_iter().collect());
+    }
+
+    let mut observed: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+    for info in DIAGNOSTIC_CATALOG {
+        observed
+            .entry(info.category)
+            .or_default()
+            .insert(info.severity.to_string());
+    }
+
+    // A catalog category must have a policy entry and exactly the expected
+    // severity set. The all-features run also covers the CJK category.
+    assert_eq!(observed, expected);
+
+    // Keep this test tied to the public classification methods as well as the
+    // catalog copy used for documentation and CLI output.
+    for info in DIAGNOSTIC_CATALOG {
+        assert_eq!(info.code.category(), info.category);
+        assert_eq!(info.code.severity(), info.severity);
+    }
+
+    // The declaration-order ALL list and the catalog must cover the same
+    // compiled code set: `catalog_covers_every_compiled_enum_variant`
+    // re-derives the catalog side from source, this ties `DiagCode::ALL`
+    // to it directly so the two cannot drift apart.
+    assert_eq!(
+        DiagCode::ALL.len(),
+        DIAGNOSTIC_CATALOG.len(),
+        "DiagCode::ALL and DIAGNOSTIC_CATALOG cover different code sets"
+    );
+}
+
+#[test]
+fn actionable_catalog_codes_have_structured_hints() {
+    let mut actionable = 0;
+
+    for info in DIAGNOSTIC_CATALOG {
+        assert!(
+            !info.suggested_action.trim().is_empty(),
+            "{} has an empty catalog action",
+            info.code.name()
+        );
+
+        // Entries beginning with "None" explicitly tell the caller that no
+        // remediation is needed. Every other catalog entry is user-actionable
+        // and must carry that action through the structured JSON envelope.
+        if info.suggested_action.starts_with("None") {
+            continue;
+        }
+        actionable += 1;
+
+        let diagnostic = Diagnostic::with_static_no_offset(info.code, "test diagnostic");
+        let structured = DiagnosticJson::from(&diagnostic);
+        assert_eq!(
+            structured.hint.as_deref(),
+            Some(info.suggested_action),
+            "{} lost its catalog hint during JSON conversion",
+            info.code.name()
+        );
+    }
+
+    assert!(
+        actionable > 0,
+        "the catalog has no actionable diagnostics to test"
+    );
 }
 
 #[test]
@@ -563,6 +680,10 @@ fn emission_sites_are_documented_with_matching_severity() {
 fn documented_codes_are_emitted_or_explicitly_reserved() {
     let catalog = catalog_by_ident();
     let features = variant_features();
+    let catalog_codes: BTreeSet<String> = catalog
+        .values()
+        .map(|info| info.code.name().to_string())
+        .collect();
     let source_idents: BTreeSet<String> = emission_sites()
         .into_iter()
         .filter(|site| !feature_is_disabled(&features, &site.ident))
@@ -588,6 +709,14 @@ fn documented_codes_are_emitted_or_explicitly_reserved() {
             continue;
         }
         if row.feature.as_deref().and_then(feature_enabled) == Some(false) {
+            continue;
+        }
+        if !catalog_codes.contains(&row.code) {
+            let _ = writeln!(
+                problems,
+                "{} (doc line {}) is not present in DIAGNOSTIC_CATALOG",
+                row.code, row.line_no
+            );
             continue;
         }
         if !source_codes.contains(&row.code) {

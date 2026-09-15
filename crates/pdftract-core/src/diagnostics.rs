@@ -52,6 +52,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::schema::{DiagnosticJson, ObjectLocationJson};
+
 /// Reference to an indirect PDF object.
 ///
 /// An `ObjRef` uniquely identifies an object in a PDF document by its
@@ -1504,6 +1506,256 @@ impl DiagCode {
             Severity::Warning | Severity::Error | Severity::Fatal
         )
     }
+
+    /// Every diagnostic code, in declaration order.
+    ///
+    /// The complete machine-readable code set: use it to iterate all codes
+    /// (catalog tooling, doc round-trip tests) and to guarantee that
+    /// [`DiagCode::from_name`] resolves every variant.
+    pub const ALL: &[DiagCode] = &[
+        DiagCode::StructInvalidName,
+        DiagCode::StructInvalidHex,
+        DiagCode::StructInvalidOctal,
+        DiagCode::StructInvalidStreamHeader,
+        DiagCode::StructUnexpectedByte,
+        DiagCode::StructUnexpectedEof,
+        DiagCode::StructUnterminatedString,
+        DiagCode::StructMissingKey,
+        DiagCode::StructCircularRef,
+        DiagCode::StructXobjectCycle,
+        DiagCode::StructDepthExceeded,
+        DiagCode::StructInvalidDictValue,
+        DiagCode::StructInvalidDictKey,
+        DiagCode::StructInvalidIndirectHeader,
+        DiagCode::StructIntegerOverflow,
+        DiagCode::StructRealInvalid,
+        DiagCode::StructInvalidNumber,
+        DiagCode::StructInvalidAscii85,
+        DiagCode::StructInvalidObjstm,
+        DiagCode::StructInvalidGeometry,
+        DiagCode::StructInvalidType,
+        DiagCode::StructInvalidUtf16,
+        DiagCode::StructUnresolvedDestination,
+        DiagCode::StructNonGotoOutline,
+        DiagCode::StructInvalidPdfDocEncoding,
+        DiagCode::StructHybridConflict,
+        DiagCode::StructIncompleteCoverage,
+        DiagCode::XrefInvalidHeader,
+        DiagCode::XrefInvalidEntry,
+        DiagCode::XrefInvalidSubsectionHeader,
+        DiagCode::XrefObjectZeroNotFree,
+        DiagCode::XrefTrailerNotFound,
+        DiagCode::XrefTruncated,
+        DiagCode::XrefRepaired,
+        DiagCode::XrefLinearizedNoForwardScan,
+        DiagCode::XrefRemoteNoForwardScan,
+        DiagCode::XrefInvalidStreamFormat,
+        DiagCode::XrefInvalidStreamEntry,
+        DiagCode::StructInvalidPrevOffset,
+        DiagCode::StructInvalidHintStream,
+        DiagCode::StreamDecodeError,
+        DiagCode::StreamBomb,
+        DiagCode::StreamUnknownFilter,
+        DiagCode::StreamInvalidParams,
+        DiagCode::StreamInvalidJpeg,
+        DiagCode::StreamInvalidCcitt,
+        DiagCode::StreamInvalidJpx,
+        DiagCode::EncryptionUnsupported,
+        DiagCode::EncryptionWrongPassword,
+        DiagCode::EncryptionInvalidDict,
+        DiagCode::PageOutOfRange,
+        DiagCode::PageInvalidCount,
+        DiagCode::PageInvalidRotate,
+        DiagCode::FontGlyphUnmapped,
+        DiagCode::FontNotFound,
+        DiagCode::FontInvalidCmap,
+        DiagCode::FontParseFailed,
+        DiagCode::FontUnsupported,
+        DiagCode::FontCidtogidmapTruncated,
+        DiagCode::FontEncodingDifferenceOutOfRange,
+        DiagCode::CmapInvalidCodespace,
+        DiagCode::FontType3WidthsLengthMismatch,
+        #[cfg(feature = "cjk")]
+        DiagCode::CjkDecodeMalformed,
+        #[cfg(feature = "cjk")]
+        DiagCode::CjkTokenizeUnknownByte,
+        DiagCode::OcrJbig2Unsupported,
+        DiagCode::OcrJpxUnsupported,
+        DiagCode::OcrCcittUnsupported,
+        DiagCode::OcrTesseractFailed,
+        DiagCode::OcrBrokenVectorUnavailable,
+        DiagCode::OcrLanguageUnavailable,
+        DiagCode::ImgSoftmaskUnsupported,
+        DiagCode::ImgUnsupportedFormat,
+        DiagCode::ImgDeskewOutOfRange,
+        DiagCode::ImgSourceMixed,
+        DiagCode::StreamTruncated,
+        DiagCode::RemoteFetchInterrupted,
+        DiagCode::RemoteNoRangeSupport,
+        DiagCode::RemoteTlsFailed,
+        DiagCode::RemoteDnsFailed,
+        DiagCode::RemoteUrlPrivateNetwork,
+        DiagCode::RemoteInsufficientDisk,
+        DiagCode::GstateStackOverflow,
+        DiagCode::GstateStackUnderflow,
+        DiagCode::GstateBtEtMismatch,
+        DiagCode::CmArgCount,
+        DiagCode::CmDegenerate,
+        DiagCode::HorizScalingZero,
+        DiagCode::TextRenderingModeClamped,
+        DiagCode::TstarZeroLeading,
+        DiagCode::FontResourceNotFound,
+        DiagCode::FontSizeZeroOrNegative,
+        DiagCode::BtNested,
+        DiagCode::EtWithoutBt,
+        DiagCode::TextShowOutsideBt,
+        DiagCode::LayoutTaggedPdfDeferred,
+        DiagCode::LayoutReadingOrderAmbiguous,
+        DiagCode::LayoutLowReadability,
+        DiagCode::McpToolInvalidParams,
+        DiagCode::McpPathTraversal,
+        DiagCode::CacheEntryCorrupt,
+        DiagCode::CacheIntegrityFail,
+        DiagCode::CacheWriteFailed,
+        DiagCode::EmcWithoutBmc,
+        DiagCode::MarkedContentDepthExceeded,
+        DiagCode::UnknownMarkedContentProps,
+        DiagCode::StructInvalidBdcOperand,
+        DiagCode::McidRedefined,
+        DiagCode::InlineImageIdWhitespaceMissing,
+        DiagCode::InlineImageNoEi,
+        DiagCode::ProfileSecretsForbidden,
+        DiagCode::ProfileInvalid,
+        DiagCode::RepairRescuedFromBackwardsXref,
+        DiagCode::SecurityJavascriptPresent,
+    ];
+
+    /// Look up a diagnostic code by its string name (the [`DiagCode::name`]
+    /// form, e.g. `"STRUCT_INVALID_NAME"`). Returns `None` for unknown names.
+    ///
+    /// This is the inverse of [`DiagCode::name`] and is how the `code` field
+    /// of a serialized diagnostic round-trips back into the typed enum.
+    #[inline]
+    pub fn from_name(name: &str) -> Option<DiagCode> {
+        match name {
+            "STRUCT_INVALID_NAME" => Some(DiagCode::StructInvalidName),
+            "STRUCT_INVALID_HEX" => Some(DiagCode::StructInvalidHex),
+            "STRUCT_INVALID_OCTAL" => Some(DiagCode::StructInvalidOctal),
+            "STRUCT_INVALID_STREAM_HEADER" => Some(DiagCode::StructInvalidStreamHeader),
+            "STRUCT_UNEXPECTED_BYTE" => Some(DiagCode::StructUnexpectedByte),
+            "STRUCT_UNEXPECTED_EOF" => Some(DiagCode::StructUnexpectedEof),
+            "STRUCT_UNTERMINATED_STRING" => Some(DiagCode::StructUnterminatedString),
+            "STRUCT_MISSING_KEY" => Some(DiagCode::StructMissingKey),
+            "STRUCT_CIRCULAR_REF" => Some(DiagCode::StructCircularRef),
+            "STRUCT_XOBJECT_CYCLE" => Some(DiagCode::StructXobjectCycle),
+            "STRUCT_DEPTH_EXCEEDED" => Some(DiagCode::StructDepthExceeded),
+            "STRUCT_INVALID_DICT_VALUE" => Some(DiagCode::StructInvalidDictValue),
+            "STRUCT_INVALID_DICT_KEY" => Some(DiagCode::StructInvalidDictKey),
+            "STRUCT_INVALID_INDIRECT_HEADER" => Some(DiagCode::StructInvalidIndirectHeader),
+            "STRUCT_INTEGER_OVERFLOW" => Some(DiagCode::StructIntegerOverflow),
+            "STRUCT_REAL_INVALID" => Some(DiagCode::StructRealInvalid),
+            "STRUCT_INVALID_NUMBER" => Some(DiagCode::StructInvalidNumber),
+            "STRUCT_INVALID_ASCII85" => Some(DiagCode::StructInvalidAscii85),
+            "STRUCT_INVALID_OBJSTM" => Some(DiagCode::StructInvalidObjstm),
+            "STRUCT_INVALID_GEOMETRY" => Some(DiagCode::StructInvalidGeometry),
+            "STRUCT_INVALID_TYPE" => Some(DiagCode::StructInvalidType),
+            "STRUCT_INVALID_UTF16" => Some(DiagCode::StructInvalidUtf16),
+            "STRUCT_UNRESOLVED_DESTINATION" => Some(DiagCode::StructUnresolvedDestination),
+            "STRUCT_NON_GOTO_OUTLINE" => Some(DiagCode::StructNonGotoOutline),
+            "STRUCT_INVALID_PDFDOC_ENCODING" => Some(DiagCode::StructInvalidPdfDocEncoding),
+            "STRUCT_HYBRID_CONFLICT" => Some(DiagCode::StructHybridConflict),
+            "STRUCT_INCOMPLETE_COVERAGE" => Some(DiagCode::StructIncompleteCoverage),
+            "XREF_INVALID_HEADER" => Some(DiagCode::XrefInvalidHeader),
+            "XREF_INVALID_ENTRY" => Some(DiagCode::XrefInvalidEntry),
+            "XREF_INVALID_SUBSECTION_HEADER" => Some(DiagCode::XrefInvalidSubsectionHeader),
+            "XREF_OBJECT_ZERO_NOT_FREE" => Some(DiagCode::XrefObjectZeroNotFree),
+            "XREF_TRAILER_NOT_FOUND" => Some(DiagCode::XrefTrailerNotFound),
+            "XREF_TRUNCATED" => Some(DiagCode::XrefTruncated),
+            "XREF_REPAIRED" => Some(DiagCode::XrefRepaired),
+            "XREF_LINEARIZED_NO_FORWARD_SCAN" => Some(DiagCode::XrefLinearizedNoForwardScan),
+            "XREF_REMOTE_NO_FORWARD_SCAN" => Some(DiagCode::XrefRemoteNoForwardScan),
+            "XREF_INVALID_STREAM_FORMAT" => Some(DiagCode::XrefInvalidStreamFormat),
+            "XREF_INVALID_STREAM_ENTRY" => Some(DiagCode::XrefInvalidStreamEntry),
+            "STRUCT_INVALID_PREV_OFFSET" => Some(DiagCode::StructInvalidPrevOffset),
+            "STRUCT_INVALID_HINT_STREAM" => Some(DiagCode::StructInvalidHintStream),
+            "STREAM_DECODE_ERROR" => Some(DiagCode::StreamDecodeError),
+            "STREAM_BOMB" => Some(DiagCode::StreamBomb),
+            "STREAM_UNKNOWN_FILTER" => Some(DiagCode::StreamUnknownFilter),
+            "STREAM_INVALID_PARAMS" => Some(DiagCode::StreamInvalidParams),
+            "STREAM_INVALID_JPEG" => Some(DiagCode::StreamInvalidJpeg),
+            "STREAM_INVALID_CCITT" => Some(DiagCode::StreamInvalidCcitt),
+            "STREAM_INVALID_JPX" => Some(DiagCode::StreamInvalidJpx),
+            "ENCRYPTION_UNSUPPORTED" => Some(DiagCode::EncryptionUnsupported),
+            "ENCRYPTION_WRONG_PASSWORD" => Some(DiagCode::EncryptionWrongPassword),
+            "ENCRYPTION_INVALID_DICT" => Some(DiagCode::EncryptionInvalidDict),
+            "PAGE_OUT_OF_RANGE" => Some(DiagCode::PageOutOfRange),
+            "PAGE_INVALID_COUNT" => Some(DiagCode::PageInvalidCount),
+            "PAGE_INVALID_ROTATE" => Some(DiagCode::PageInvalidRotate),
+            "FONT_GLYPH_UNMAPPED" => Some(DiagCode::FontGlyphUnmapped),
+            "FONT_NOT_FOUND" => Some(DiagCode::FontNotFound),
+            "FONT_INVALID_CMAP" => Some(DiagCode::FontInvalidCmap),
+            "FONT_PARSE_FAILED" => Some(DiagCode::FontParseFailed),
+            "FONT_UNSUPPORTED" => Some(DiagCode::FontUnsupported),
+            "FONT_CIDTOGIDMAP_TRUNCATED" => Some(DiagCode::FontCidtogidmapTruncated),
+            "ENCODING_DIFFERENCE_OUT_OF_RANGE" => Some(DiagCode::FontEncodingDifferenceOutOfRange),
+            "CMAP_INVALID_CODESPACE" => Some(DiagCode::CmapInvalidCodespace),
+            "FONT_TYPE3_WIDTHS_LENGTH_MISMATCH" => Some(DiagCode::FontType3WidthsLengthMismatch),
+            #[cfg(feature = "cjk")]
+            "CJK_DECODE_MALFORMED" => Some(DiagCode::CjkDecodeMalformed),
+            #[cfg(feature = "cjk")]
+            "CJK_TOKENIZE_UNKNOWN_BYTE" => Some(DiagCode::CjkTokenizeUnknownByte),
+            "OCR_JBIG2_UNSUPPORTED" => Some(DiagCode::OcrJbig2Unsupported),
+            "OCR_JPX_UNSUPPORTED" => Some(DiagCode::OcrJpxUnsupported),
+            "OCR_CCITT_UNSUPPORTED" => Some(DiagCode::OcrCcittUnsupported),
+            "OCR_TESSERACT_FAILED" => Some(DiagCode::OcrTesseractFailed),
+            "OCR_BROKENVECTOR_UNAVAILABLE" => Some(DiagCode::OcrBrokenVectorUnavailable),
+            "OCR_LANGUAGE_UNAVAILABLE" => Some(DiagCode::OcrLanguageUnavailable),
+            "IMG_SOFTMASK_UNSUPPORTED" => Some(DiagCode::ImgSoftmaskUnsupported),
+            "IMG_UNSUPPORTED_FORMAT" => Some(DiagCode::ImgUnsupportedFormat),
+            "IMG_DESKEW_OUT_OF_RANGE" => Some(DiagCode::ImgDeskewOutOfRange),
+            "IMG_SOURCE_MIXED" => Some(DiagCode::ImgSourceMixed),
+            "STREAM_TRUNCATED" => Some(DiagCode::StreamTruncated),
+            "REMOTE_FETCH_INTERRUPTED" => Some(DiagCode::RemoteFetchInterrupted),
+            "REMOTE_NO_RANGE_SUPPORT" => Some(DiagCode::RemoteNoRangeSupport),
+            "REMOTE_TLS_FAILED" => Some(DiagCode::RemoteTlsFailed),
+            "REMOTE_DNS_FAILED" => Some(DiagCode::RemoteDnsFailed),
+            "REMOTE_URL_PRIVATE_NETWORK" => Some(DiagCode::RemoteUrlPrivateNetwork),
+            "REMOTE_INSUFFICIENT_DISK" => Some(DiagCode::RemoteInsufficientDisk),
+            "GSTATE_STACK_OVERFLOW" => Some(DiagCode::GstateStackOverflow),
+            "GSTATE_STACK_UNDERFLOW" => Some(DiagCode::GstateStackUnderflow),
+            "GSTATE_BT_ET_MISMATCH" => Some(DiagCode::GstateBtEtMismatch),
+            "CM_ARG_COUNT" => Some(DiagCode::CmArgCount),
+            "CM_DEGENERATE" => Some(DiagCode::CmDegenerate),
+            "HORIZ_SCALING_ZERO" => Some(DiagCode::HorizScalingZero),
+            "TEXT_RENDERING_MODE_CLAMPED" => Some(DiagCode::TextRenderingModeClamped),
+            "TSTAR_ZERO_LEADING" => Some(DiagCode::TstarZeroLeading),
+            "FONT_RESOURCE_NOT_FOUND" => Some(DiagCode::FontResourceNotFound),
+            "FONT_SIZE_ZERO_OR_NEGATIVE" => Some(DiagCode::FontSizeZeroOrNegative),
+            "BT_NESTED" => Some(DiagCode::BtNested),
+            "ET_WITHOUT_BT" => Some(DiagCode::EtWithoutBt),
+            "TEXT_SHOW_OUTSIDE_BT" => Some(DiagCode::TextShowOutsideBt),
+            "TAGGED_PDF_STRUCT_TREE_DEFERRED" => Some(DiagCode::LayoutTaggedPdfDeferred),
+            "LAYOUT_READING_ORDER_AMBIGUOUS" => Some(DiagCode::LayoutReadingOrderAmbiguous),
+            "LAYOUT_LOW_READABILITY" => Some(DiagCode::LayoutLowReadability),
+            "MCP_TOOL_INVALID_PARAMS" => Some(DiagCode::McpToolInvalidParams),
+            "MCP_PATH_TRAVERSAL" => Some(DiagCode::McpPathTraversal),
+            "CACHE_ENTRY_CORRUPT" => Some(DiagCode::CacheEntryCorrupt),
+            "CACHE_INTEGRITY_FAIL" => Some(DiagCode::CacheIntegrityFail),
+            "CACHE_WRITE_FAILED" => Some(DiagCode::CacheWriteFailed),
+            "EMC_WITHOUT_BMC" => Some(DiagCode::EmcWithoutBmc),
+            "MARKED_CONTENT_DEPTH_EXCEEDED" => Some(DiagCode::MarkedContentDepthExceeded),
+            "UNKNOWN_MARKED_CONTENT_PROPS" => Some(DiagCode::UnknownMarkedContentProps),
+            "STRUCT_INVALID_BDC_OPERAND" => Some(DiagCode::StructInvalidBdcOperand),
+            "MCID_REDEFINED" => Some(DiagCode::McidRedefined),
+            "INLINE_IMAGE_ID_WHITESPACE_MISSING" => Some(DiagCode::InlineImageIdWhitespaceMissing),
+            "INLINE_IMAGE_NO_EI" => Some(DiagCode::InlineImageNoEi),
+            "PROFILE_SECRETS_FORBIDDEN" => Some(DiagCode::ProfileSecretsForbidden),
+            "PROFILE_INVALID" => Some(DiagCode::ProfileInvalid),
+            "REPAIR_RESCUED_FROM_BACKWARDS_XREF" => Some(DiagCode::RepairRescuedFromBackwardsXref),
+            "JAVASCRIPT_PRESENT" => Some(DiagCode::SecurityJavascriptPresent),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for DiagCode {
@@ -2464,6 +2716,17 @@ pub const DIAGNOSTIC_CATALOG: &[DiagInfo] = &[
     },
 ];
 
+/// Look up the catalog's suggested user action for a diagnostic code.
+///
+/// Returns `None` when the code has no catalog entry. This is the source of
+/// the `hint` field on serialized diagnostics.
+pub fn suggested_action(code: DiagCode) -> Option<&'static str> {
+    DIAGNOSTIC_CATALOG
+        .iter()
+        .find(|info| info.code == code)
+        .map(|info| info.suggested_action)
+}
+
 /// A diagnostic message emitted during PDF parsing and extraction.
 ///
 /// Per INV-8, all errors are emitted as diagnostics rather than panicking.
@@ -2598,6 +2861,30 @@ impl fmt::Display for Diagnostic {
             write!(f, " [{}]", obj_ref)?;
         }
         Ok(())
+    }
+}
+
+/// Convert a typed diagnostic into its structured JSON form.
+///
+/// This is the canonical path from the internal [`Diagnostic`] to the
+/// structured format documented in `docs/integrations/diagnostics-codes.md`:
+/// `code` and `severity` come from the typed enum, `page_index` and `location`
+/// from the corresponding fields, and `hint` from the code's catalog entry.
+/// Fields that do not apply are omitted by the JSON serializer
+/// (`skip_serializing_if = "Option::is_none"`).
+impl From<&Diagnostic> for DiagnosticJson {
+    fn from(d: &Diagnostic) -> Self {
+        DiagnosticJson {
+            code: d.code.name().to_string(),
+            message: d.message.as_ref().to_string(),
+            severity: d.severity().to_string(),
+            page_index: d.page_index.map(|p| p as usize),
+            location: d.object_ref.map(|r| ObjectLocationJson {
+                object_number: r.object,
+                generation_number: r.generation,
+            }),
+            hint: suggested_action(d.code).map(str::to_string),
+        }
     }
 }
 
@@ -3048,5 +3335,107 @@ mod collector_tests {
 
         let diagnostics = collector.into_vec();
         assert_eq!(diagnostics.len(), 8);
+    }
+}
+
+/// Round-trip tests for the structured JSON diagnostic surface documented in
+/// `docs/integrations/diagnostics-codes.md` (bead pdftract-d79310ab).
+///
+/// These pin the contract between the typed [`Diagnostic`] and the serialized
+/// [`DiagnosticJson`]: every emittable code converts with its catalog
+/// severity, catalog hint, and (when set) page index and object location, and
+/// the `code` string round-trips through [`DiagCode::from_name`]. The legacy
+/// string form's documented shape (`CODE: message (byte offset N)?`) is
+/// pinned by [`Self::display_matches_documented_string_form`].
+#[cfg(test)]
+mod diagnostic_json_round_trip_tests {
+    use super::*;
+    use crate::schema::{DiagnosticJson, ObjectLocationJson};
+
+    /// A diagnostic with every optional field populated.
+    fn fully_populated(code: DiagCode) -> Diagnostic {
+        Diagnostic::with_static(code, 1234, "sample message")
+            .with_object_ref(ObjRef::new(7, 0))
+            .with_page_index(3)
+    }
+
+    #[test]
+    fn every_code_round_trips_through_structured_json() {
+        for code in DiagCode::ALL {
+            let json = DiagnosticJson::from(&fully_populated(*code));
+
+            assert_eq!(json.code, code.name());
+            assert_eq!(DiagCode::from_name(&json.code), Some(*code));
+            assert_eq!(json.severity, code.severity().to_string());
+            assert_eq!(json.page_index, Some(3));
+            assert_eq!(
+                json.location,
+                Some(ObjectLocationJson {
+                    object_number: 7,
+                    generation_number: 0,
+                })
+            );
+
+            let hint = json
+                .hint
+                .as_ref()
+                .unwrap_or_else(|| panic!("{}: every catalogued code has a hint", code.name()));
+            assert_eq!(hint, suggested_action(*code).unwrap());
+            assert!(!hint.trim().is_empty());
+
+            // Serde round-trip preserves every documented field.
+            let serialized = serde_json::to_string(&json).expect("serialize");
+            let deserialized: DiagnosticJson =
+                serde_json::from_str(&serialized).expect("deserialize");
+            assert_eq!(deserialized, json);
+        }
+    }
+
+    #[test]
+    fn from_name_resolves_every_code_and_rejects_unknown() {
+        assert!(!DiagCode::ALL.is_empty());
+        for code in DiagCode::ALL {
+            assert_eq!(DiagCode::from_name(code.name()), Some(*code));
+        }
+        assert_eq!(DiagCode::from_name("NOT_A_REAL_CODE"), None);
+        assert_eq!(DiagCode::from_name(""), None);
+    }
+
+    #[test]
+    fn absent_optional_fields_are_omitted_from_serialization() {
+        let json = DiagnosticJson::from(&Diagnostic::with_static_no_offset(
+            DiagCode::XrefRepaired,
+            "xref rebuilt",
+        ));
+        assert_eq!(json.page_index, None);
+        assert_eq!(json.location, None);
+
+        let value = serde_json::to_value(&json).unwrap();
+        assert!(value.get("page_index").is_none(), "{value}");
+        assert!(value.get("location").is_none(), "{value}");
+        // code/message/severity/hint are always present.
+        for key in ["code", "message", "severity", "hint"] {
+            assert!(value.get(key).is_some(), "{key} missing from {value}");
+        }
+    }
+
+    #[test]
+    fn display_matches_documented_string_form() {
+        // docs/errors-array-format.md: "{CODE}: {message} (byte offset {N})?"
+        let with_offset = Diagnostic::with_static(DiagCode::StructInvalidName, 67890, "boom");
+        assert_eq!(
+            with_offset.to_string(),
+            "STRUCT_INVALID_NAME: boom (byte offset 67890)"
+        );
+
+        // The optional object location renders as " [obj gen R]".
+        let with_object = fully_populated(DiagCode::StreamDecodeError);
+        assert_eq!(
+            with_object.to_string(),
+            "STREAM_DECODE_ERROR: sample message (byte offset 1234) [7 0 R]"
+        );
+
+        let bare = Diagnostic::with_static_no_offset(DiagCode::XrefRepaired, "xref rebuilt");
+        assert_eq!(bare.to_string(), "XREF_REPAIRED: xref rebuilt");
     }
 }
