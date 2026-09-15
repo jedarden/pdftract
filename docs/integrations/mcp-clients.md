@@ -164,10 +164,11 @@ if __name__ == "__main__":
 
 ### Error Handling
 
-- **Parse errors:** Server sends a JSON-RPC error response (`-32700`, with `id: null`) and continues running — subsequent valid requests are served normally
-- **Invalid params:** Server returns a `-32602` error whose `data` carries a `reason` string explaining the rejection (e.g. `tools/call` without a `name` field)
+- **Parse errors:** Unparseable JSON gets a JSON-RPC error response pinned to `-32700`, with `id: null` and no `result`, and the server continues running — subsequent valid requests are served normally
+- **Malformed requests:** JSON that parses but is not a valid single request — a bare string, an empty batch array, a wrong `jsonrpc` version, or a batch (batches are unsupported) — is likewise answered with an error envelope carrying `id: null`, whose `code` sits in the spec-reserved server-error range (`-32700` through `-32000`); the frame stream stays in sync and the connection remains usable
+- **Invalid params:** Server returns a `-32602` error whose `data` carries a non-empty `reason` string explaining the rejection (e.g. `tools/call` without a `name` field). `--root` boundary rejections instead carry a `code` string in `data` (`PATH_ESCAPES_ROOT`, `ABSOLUTE_PATH_NOT_PERMITTED`)
 - **Unknown tool:** Calling a tool that is not in the `tools/list` catalog returns `-32601` (method not found)
-- **Stdio corruption:** Any non-JSON-RPC on stdout breaks the connection; restart subprocess
+- **Resilience:** None of the above kill the server — every error response still echoes the request `id`, the server keeps serving valid requests afterwards, and it still exits cleanly on stdin EOF. Only a genuinely broken pipe or a dead subprocess requires restarting.
 
 These behaviors are asserted end-to-end by the `mcp-client-lifecycle` integration test (`crates/pdftract-cli/tests/mcp-client-lifecycle.rs`).
 
