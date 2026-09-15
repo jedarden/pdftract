@@ -3071,7 +3071,8 @@ spec:
 
             REF="{{workflow.parameters.ref}}"
             TAG="${REF#refs/tags/}"
-            REPO="{{workflow.parameters.repo-url%.git}}"
+            REPO_URL="{{workflow.parameters.repo-url}}"
+            REPO="${REPO_URL%.git}"
             ARTIFACTS_DIR="/artifacts"
             RELEASE_NOTES_FILE="/tmp/release-notes.md"
             SHA256SUMS_FILE="/tmp/SHA256SUMS"
@@ -3309,7 +3310,8 @@ spec:
             COMMIT_SHA="{{workflow.parameters.commit-sha}}"
             REF="{{workflow.parameters.ref}}"
             TAG="${REF#refs/tags/}"
-            REPO="{{workflow.parameters.repo-url%.git}}"
+            REPO_URL="{{workflow.parameters.repo-url}}"
+            REPO="${REPO_URL%.git}"
             ARTIFACTS_DIR="/artifacts"
             PROVENANCE_FILE="/tmp/multiple.intoto.jsonl"
 
