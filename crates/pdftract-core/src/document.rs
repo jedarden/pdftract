@@ -1958,9 +1958,11 @@ impl<'a> Iterator for PageIter<'a> {
 /// // Use catalog, resolver, source for custom processing
 /// ```
 #[cfg(feature = "remote")]
-pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
+pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn ParserPdfSource>> {
+    use crate::parser::stream::SourceAdapter;
     use crate::source::open_remote as open_remote_source;
-    open_remote_source(url, &RemoteOpts::new(), None)
+    let source = open_remote_source(url, &RemoteOpts::new(), None)?;
+    Ok(Box::new(SourceAdapter::new(source)))
 }
 
 /// Open a PDF from a remote HTTP/HTTPS URL with options.
@@ -2002,9 +2004,11 @@ pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
 pub fn open_remote_url_with_opts(
     url: &str,
     opts: &RemoteOpts,
-) -> std::io::Result<Box<dyn PdfSource>> {
+) -> std::io::Result<Box<dyn ParserPdfSource>> {
+    use crate::parser::stream::SourceAdapter;
     use crate::source::open_remote as open_remote_source;
-    open_remote_source(url, opts, None)
+    let source = open_remote_source(url, opts, None)?;
+    Ok(Box::new(SourceAdapter::new(source)))
 }
 
 #[cfg(test)]
