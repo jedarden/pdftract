@@ -113,3 +113,27 @@ there is no remaining work to decompose. Fresh checks (this session):
 All PASS items unchanged; the single WARN (operator WebAuthn mint of a
 dedicated `write:repository` token → write as next KV version) remains
 documented in §2 and the manifest header.
+
+## Second re-verification addendum (2026-09-15, second split order, epoch 5)
+
+Redispatched again after quarantine expiry
+(`quarantine-until:2026-09-15T22:16:21Z`), this time as a second auto-split
+order ("failed 4 times"). Forensic checkpoint contradicts the premise:
+`failure-count:4` is fed entirely by **reason-less reopens** — the event
+history shows 4 `closed` → `reopened` cycles by 4 different workers, every
+prior attempt resolved `verified_success`, and the `verification-failed`
+label was stamped by the reopens themselves, not by any failed gate. There
+is no work left to decompose (this bead is already a terminal `split-child`
+of umbrella pdftract-d0e30c13), so the split was declined again and the bead
+is re-closed on fresh evidence:
+
+- OpenBao `secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token` via
+  `rs-manager-provision` (metadata only; value never read):
+  `current_version=1`, `version_count=1`, `created_time=19:35:23Z`,
+  deletion_time unstamped.
+- ESO on iad-ci: `Ready=True reason=SecretSynced`
+  (`lastTransition=2026-09-15T19:49:37Z`).
+- declarative-config `origin/main` (fetched, no merge): enabled manifest
+  present at the tip, `.disabled` variant absent.
+
+All PASS items hold; the operator-mint WARN stands as documented.
