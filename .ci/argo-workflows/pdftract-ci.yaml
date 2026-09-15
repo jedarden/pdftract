@@ -389,7 +389,9 @@ spec:
     - name: setup
       activeDeadlineSeconds: 600
       container:
-        image: alpine:3.19
+        # Provides git without a runtime package install; the CI pod policy runs as
+        # a non-root user, so apk cannot write Alpine's package database here.
+        image: alpine/git:v2.54.0
         command: [sh, -c]
         args:
           - |
@@ -398,9 +400,6 @@ spec:
             echo "=========================================="
             echo "Setup: Cloning repo and caching dependencies"
             echo "=========================================="
-
-            # Install git
-            apk add --no-cache git
 
             REPO_URL="{{workflow.parameters.repo-url}}"
             COMMIT_SHA="{{workflow.parameters.commit-sha}}"
@@ -425,6 +424,9 @@ spec:
             GIT_DESCRIBE=$(git describe --always --abbrev=40 --dirty 2>/dev/null || echo "$COMMIT_SHA")
             GIT_AUTHOR=$(git log -1 --format='%an <%ae>' "$COMMIT_SHA" 2>/dev/null || echo "unknown")
             GIT_COMMIT_MSG=$(git log -1 --format='%s' "$COMMIT_SHA" 2>/dev/null || echo "unknown")
+            # A subject is one line; normalize the remaining JSON-disallowed
+            # whitespace and escape JSON metacharacters without needing jq.
+            GIT_COMMIT_MSG_JSON=$(printf '%s' "$GIT_COMMIT_MSG" | tr '\t\r' '  ' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
 
             echo "Git remote: $GIT_REMOTE_URL"
             echo "Git describe: $GIT_DESCRIBE"
@@ -457,7 +459,7 @@ spec:
               "git_remote_url": "$GIT_REMOTE_URL",
               "git_describe": "$GIT_DESCRIBE",
               "git_author": "$GIT_AUTHOR",
-              "git_commit_message": $(echo "$GIT_COMMIT_MSG" | jq -Rs .),
+              "git_commit_message": "$GIT_COMMIT_MSG_JSON",
               "pdftract_ci_template_sha": "$PDFTRACT_CI_SHA",
               "workflow_parameters": {
                 "commit-sha": "$COMMIT_SHA",
@@ -477,7 +479,7 @@ spec:
             EOF
 
             echo "=== Workflow metadata ==="
-            cat /workspace/workflow-metadata.json | jq '.'
+            test -s /workspace/workflow-metadata.json
 
             echo ""
             echo "=== Repository ready ==="
