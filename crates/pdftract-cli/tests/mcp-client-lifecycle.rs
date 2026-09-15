@@ -440,6 +440,27 @@ fn assert_error_envelope<'a>(response: &'a Value, what: &str, code: Option<i64>)
     error
 }
 
+/// Extract `error.data.reason` as a non-empty string — the documented
+/// invalid-params contract: "a `-32602` error whose `data` carries a `reason`
+/// string explaining the rejection" (docs/integrations/mcp-clients.md,
+/// "Error Handling"). Applies to the *general* invalid-params envelope; the
+/// `--root` boundary rejections carry `data.code` instead.
+fn assert_data_reason<'a>(what: &str, response: &'a Value) -> &'a str {
+    let reason = response
+        .get("error")
+        .and_then(|error| error.get("data"))
+        .and_then(|data| data.get("reason"))
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| {
+            panic!("{what} must carry a string data.reason (documented contract): {response}")
+        });
+    assert!(
+        !reason.is_empty(),
+        "{what} data.reason must be a non-empty string: {response}"
+    );
+    reason
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -770,10 +791,10 @@ fn parse_errors_get_error_responses_and_server_continues() {
 }
 
 /// Documented "Error Handling" contract, invalid-params half: `tools/call`
-/// with unusable params is rejected with `-32602` carrying a `data.reason`
-/// string, the error response still echoes the request id, and the server
-/// keeps serving. This is the *general* envelope contract — the `--root`
-/// boundary-specific `data.code` rejections are covered by
+/// with unusable params is rejected with `-32602` carrying a non-empty
+/// `data.reason` string, the error response still echoes the request id, and
+/// the server keeps serving. This is the *general* envelope contract — the
+/// `--root` boundary-specific `data.code` rejections are covered by
 /// `out_of_root_and_invalid_params_rejected_with_32602` above.
 #[test]
 fn invalid_params_rejected_with_32602_data_reason() {
@@ -792,11 +813,8 @@ fn invalid_params_rejected_with_32602_data_reason() {
 
     // tools/call with no params object at all (`request` omits null params).
     let bare = server.request("tools/call", Value::Null);
-    let error = assert_error_envelope(&bare, "params-less tools/call", Some(-32602));
-    assert!(
-        error["data"]["reason"].is_string(),
-        "params-less tools/call must carry data.reason (documented contract): {bare}"
-    );
+    assert_error_envelope(&bare, "params-less tools/call", Some(-32602));
+    assert_data_reason("params-less tools/call", &bare);
     assert_eq!(
         bare.get("id").and_then(Value::as_u64),
         Some(2), // second request of the session (initialize was id 1)
@@ -808,22 +826,13 @@ fn invalid_params_rejected_with_32602_data_reason() {
         "tools/call",
         json!({"arguments": {"path": "somewhere.pdf"}}),
     );
-    let error = assert_error_envelope(&unnamed, "name-less tools/call", Some(-32602));
-    let reason = error["data"]["reason"].as_str().unwrap_or_else(|| {
-        panic!("name-less tools/call must carry data.reason (documented contract): {unnamed}")
-    });
-    assert!(
-        !reason.is_empty(),
-        "data.reason must be a non-empty string: {unnamed}"
-    );
+    assert_error_envelope(&unnamed, "name-less tools/call", Some(-32602));
+    assert_data_reason("name-less tools/call", &unnamed);
 
     // tools/call with a non-string name (wrong type, not just missing).
     let mistyped = server.request("tools/call", json!({"name": 42, "arguments": {}}));
-    let error = assert_error_envelope(&mistyped, "non-string tool name", Some(-32602));
-    assert!(
-        error["data"]["reason"].is_string(),
-        "non-string name must carry data.reason (documented contract): {mistyped}"
-    );
+    assert_error_envelope(&mistyped, "non-string tool name", Some(-32602));
+    assert_data_reason("non-string tool name", &mistyped);
 
     // A name that parses but is not in the tools/list catalog is rejected
     // with -32601 (method not found) — the documented "Unknown tool" bullet —
