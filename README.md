@@ -82,8 +82,34 @@ pip install pdftract
 
 #### Docker
 
+Pin to a released semver tag — never `:latest`:
+
 ```bash
-docker pull ronaldraygun/pdftract:latest
+docker pull ronaldraygun/pdftract:X.Y.Z          # default build
+docker pull ronaldraygun/pdftract:ocr-X.Y.Z      # with OCR
+docker pull ronaldraygun/pdftract:full-X.Y.Z     # all features
+```
+
+For reproducible consumption (CI, deployment manifests), pin the immutable
+digest instead of the tag:
+
+```bash
+# Resolve the digest for a tag first
+docker buildx imagetools inspect ronaldraygun/pdftract:X.Y.Z
+
+# Then pull by digest — this is what you record in your Dockerfile / manifest
+docker pull ronaldraygun/pdftract@sha256:<digest>
+```
+
+Images are published as cosign-signed, version-tagged multi-arch (amd64 +
+arm64) manifest lists; no floating `:latest` tag exists. The image digest
+above is the integrity pin for the container itself. The aggregate
+`SHA256SUMS` checksum file (covering the binary archives, wheels, sdist, and
+SBOM) plus its cosign signature `SHA256SUMS.sig` are published alongside each
+release once bead `pdftract-1wfp` lands, and verify in one shot:
+
+```bash
+cosign verify-blob --signature SHA256SUMS.sig SHA256SUMS
 ```
 
 *Status: Not yet published to Docker Hub — tracked in [bf-10qd4](https://github.com/jedarden/pdftract/commit/bf-10qd4)*
