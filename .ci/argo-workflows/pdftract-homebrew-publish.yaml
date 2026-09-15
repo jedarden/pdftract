@@ -84,11 +84,19 @@ spec:
   # starts; without a workflow-level cap such a run is never terminated.
   activeDeadlineSeconds: 10200
 
-  podGC: OnPodCompletion
+  # Object form + ttlStrategy: the string podGC and the Job-style
+  # ttlSecondsAfterFinished keys are not valid against this cluster's Argo
+  # CRD -- the string podGC failed the WorkflowTemplate apply outright
+  # ("spec.podGC in body must be of type object", argo-workflows-ns-iad-ci
+  # sync Failed 2026-09-15), and ttlSecondsAfterFinished is not an Argo field
+  # at all (silently pruned; the TTL never applied). Same shape as the SDK
+  # publish siblings in this directory.
+  podGC:
+    strategy: OnPodCompletion
 
-  ttlSecondsAfterFinished:
-    success: 1800
-    failure: 7200
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
 
   arguments:
     parameters:
