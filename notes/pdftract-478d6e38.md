@@ -101,3 +101,31 @@ absent, nothing to remove. `src/` untouched — test + doc only.
   subprocess; unknown-tool `-32601` added).
 - `docs/integrations/mcp-clients.md` updated where it diverges — **PASS**
   (validation text, SDK example, Error Handling bullets, framing snippet).
+
+## Re-derivation at HEAD (attempt 2, 2026-09-15)
+
+The evidence-bearing close of 10:43:56Z was reopened at 10:49:07Z by the
+dispatcher as `work_failure` with no reason recorded — the known
+close-reopen treadmill, not a defect report. Re-derived rather than assumed:
+
+- **Artifacts intact at HEAD (`49d9dd0e`):** `git diff cc5a2975 HEAD` over
+  `crates/pdftract-cli/tests/mcp-client-lifecycle.rs`,
+  `docs/integrations/mcp-clients.md`, and this note is empty — nothing landed
+  or moved since the executed verdict.
+- **Fresh PASS against pristine HEAD:** the shared checkout carries other
+  workers' in-flight edits, so the run was made from a `git archive HEAD`
+  extraction with a private hardlink-seeded `CARGO_TARGET_DIR`
+  (`/build/target-478d6e38`), timeout-wrapped at 1200s:
+  4/4 tests pass in 0.06s, `TEST-EXIT: 0` (including
+  `parse_errors_get_error_responses_and_server_continues` and
+  `invalid_params_rejected_with_32602_data_reason`). Extraction and private
+  target dir removed afterward; orphan check
+  (`pgrep -af 'pdftract[ ]mcp|mcp[_-]client[_-]lifecycle'`) empty.
+- **Tool catalog re-verified:** the 10 unprefixed names claimed by the doc
+  (`extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`,
+  `hash`, `get_table`, `get_form_fields`, `get_attachments`, `classify`) match
+  the `fn name()` implementations in `tools/registry.rs` under
+  `crates/pdftract-cli/src/mcp/tools/`.
+
+Both acceptance criteria remain **PASS** on identical evidence, now re-run at
+the current tip.
