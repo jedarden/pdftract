@@ -41,6 +41,13 @@ path = "fuzz_targets/xref.rs"
 name = "stream_decoder"
 path = "fuzz_targets/stream_decoder.rs"
 
+# ADR-003 compensating control for RUSTSEC-2020-0144: exercises the
+# LZWDecode /DecodeParms space (/EarlyChange, TIFF+PNG predictors) that the
+# generic stream_decoder target only reaches with default parameters.
+[[bin]]
+name = "lzw_decode"
+path = "fuzz_targets/lzw_decode.rs"
+
 [[bin]]
 name = "cmap_parser"
 path = "fuzz_targets/cmap_parser.rs"

@@ -1,7 +1,9 @@
 # pdftract-nightly-fuzz CronWorkflow
 #
 # Nightly fuzzing job for pdftract using cargo-fuzz with libFuzzer.
-# Runs for 24 CPU-hours across 5 fuzz targets, seeded from malformed fixtures.
+# Runs ~38 CPU-hours across 8 fuzz targets (~4.8h wall clock each, in
+# parallel), seeded from malformed fixtures and checked-in per-target seeds
+# (fuzz/seeds/<target>/).
 # New crashes are filed as STRUCT_* diagnostic regressions via issue-reporter.
 #
 # === Schedule ===
@@ -12,10 +14,12 @@
 # - object_parser: Direct/indirect object parsing
 # - xref: Cross-reference table parsing (EC-07 corrupt xref, EC-08 circular refs)
 # - stream_decoder: Decompression filters (EC-10 decompression bomb)
+# - lzw_decode: LZWDecode /DecodeParms space (/EarlyChange, TIFF+PNG
+#   predictors) - ADR-003 compensating control for RUSTSEC-2020-0144
 # - cmap_parser: CMap name and string handling
 #
 # === Resource Budget ===
-# 24 CPU-hours total split across 5 targets = ~4.8 hours each
+# 8 targets x 4.8h in parallel = ~38 CPU-hours
 # Time limit per target: 6 hours (allows some overlap)
 #
 # === Crash Handling ===
@@ -64,7 +68,7 @@ spec:
     # to prevent hangs on network issues or build problems. Fixed storage
     # classes (sata-large -> sata for <100Gi volumes). Adjusted workflow
     # deadline from 24h to match actual runtime.
-    activeDeadlineSeconds: 86400  # 24 hours absolute max (5 targets × 4.8h + overhead)
+    activeDeadlineSeconds: 86400  # 24 hours absolute max (8 targets × 4.8h + overhead)
     podGC: OnPodCompletion
     ttlSecondsAfterFinished:
       success: 43200   # 12 hours for success
@@ -155,7 +159,7 @@ spec:
             echo "Duration: {{workflow.duration}}"
             echo "Crashes found: {{workflow.parameters.crash-count}}"
             echo "Artifacts available in workflow artifact store"
-      activeDeadlineSeconds: 300
+        activeDeadlineSeconds: 300
 
       # === Setup Step ===
       # Clone repo and install cargo-fuzz
@@ -228,7 +232,11 @@ spec:
 
               # Seed each fuzz target corpus with relevant fixtures
               # All targets get basic malformed PDFs for general robustness
-              for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
+              # Checked-in curated seeds (fuzz/seeds/<target>/, e.g. the real
+              # LZW streams for lzw_decode per ADR-003) are copied on top so
+              # they are always present regardless of fixture churn.
+              SEEDS_DIR="/workspace/fuzz/seeds"
+              for target in lexer object_parser xref stream_decoder lzw_decode cmap_parser content profile_yaml; do
                 TARGET_CORPUS="$CORPUS_BASE/$target"
                 mkdir -p "$TARGET_CORPUS"
 
@@ -238,6 +246,10 @@ spec:
                     cp "$fixture" "$TARGET_CORPUS/"
                   fi
                 done
+
+                if [ -d "$SEEDS_DIR/$target" ]; then
+                  cp "$SEEDS_DIR/$target"/* "$TARGET_CORPUS/" 2>/dev/null || true
+                fi
 
                 echo "  $target corpus: $(ls -1 "$TARGET_CORPUS" | wc -l) files"
               done
@@ -255,9 +267,9 @@ spec:
               memory: 512Mi
 
       # === Fuzz Matrix ===
-      # Run all 5 fuzz targets in parallel, 4.8 CPU-hours each
+      # Run all 8 fuzz targets in parallel, 4.8 CPU-hours each
       - name: fuzz-matrix
-        activeDeadlineSeconds: 28800  # 8 hours hard limit (5 targets × 4.8h in parallel = ~4.8h, plus overhead)
+        activeDeadlineSeconds: 28800  # 8 hours hard limit (8 targets × 4.8h in parallel = ~4.8h, plus overhead)
         dag:
           onExit: fuzz-matrix-exit
           tasks:
@@ -331,6 +343,16 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+            - name: fuzz-lzw-decode
+              template: fuzz-target
+              arguments:
+                parameters:
+                  - name: target
+                    value: "lzw_decode"
+                  - name: timeout
+                    value: "17400"
+              continueOn:
+                failed: true
 
       # === Fuzz Target Template ===
       # Run cargo-fuzz on a single target with address sanitizer
@@ -375,7 +397,7 @@ spec:
               mkdir -p "$ARTIFACT_DIR"
 
               echo "=== Building fuzz harness for $TARGET ==="
-              cargo fuzz build --features fuzzing "$TARGET"
+              cargo fuzz build "$TARGET"
 
               echo "=== Starting fuzz run for $TARGET (max $TIMEOUT seconds) ==="
               echo "Corpus: fuzz/corpus/$TARGET"
@@ -413,7 +435,6 @@ spec:
                   # -malloc_limit_mb enforces total malloc budget
                   # These limits implement the memory ceiling gate (bf-1g1fd)
                   cargo fuzz run "$TARGET" \
-                    --features fuzzing \
                     -timeout=0 \
                     -max_total_time="$TIMEOUT" \
                     -max_len=10000 \
@@ -463,7 +484,6 @@ spec:
 
                   # Run fuzzer with timeout and memory limits
                   cargo fuzz run "$TARGET" \
-                    --features fuzzing \
                     -timeout=0 \
                     -max_total_time="$TIMEOUT" \
                     -max_len=10000 \
@@ -494,7 +514,6 @@ spec:
 
                 # Run fuzzer with libfuzzer memory limits only
                 cargo fuzz run "$TARGET" \
-                  --features fuzzing \
                   -timeout=0 \
                   -max_total_time="$TIMEOUT" \
                   -max_len=10000 \
@@ -577,7 +596,7 @@ spec:
 
             TOTAL_CRASHES=0
 
-            for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
+            for target in lexer object_parser xref stream_decoder lzw_decode cmap_parser content profile_yaml; do
               CRASH_FILE="/workspace/crashes-$target.tar.gz"
               if [ -f "$CRASH_FILE" ]; then
                 echo "Found crash artifacts: $target"
@@ -622,7 +641,7 @@ spec:
               # The sidecar pattern would be implemented in a follow-up bead
               # For now, we just collect and list the crash artifacts
 
-              for target in lexer object_parser xref stream_decoder cmap_parser content profile_yaml; do
+              for target in lexer object_parser xref stream_decoder lzw_decode cmap_parser content profile_yaml; do
                 CRASH_FILE="/workspace/crashes-$target.tar.gz"
                 if [ -f "$CRASH_FILE" ]; then
                   echo "=== $target crashes ==="
