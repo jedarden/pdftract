@@ -91,3 +91,25 @@ pdftract-da3c85cd (release-channel bead).
 - OpenBao (rs-manager): `secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token` v1, field `token`
 - declarative-config (Forgejo origin/main): `1b7e985c`, `1dd760f4`
 - Manifest: `k8s/iad-ci/argo-workflows/homebrew-tap-push-token-externalsecret.yml` (ESO → Secret `homebrew-tap-push-token`, key `token`, consumed by `pdftract-homebrew-publish.yaml` step `push-tap` via `TAP_TOKEN` credential helper)
+
+## Re-verification addendum (2026-09-15, post-reopen re-issue)
+
+The bead's evidence-bearing close was reopened without a recorded reason
+(4th claim epoch; labels `failure-count:3`/`verification-failed` were stamped
+by the reopens themselves — all three prior attempts resolved
+`verified_success`). A dispatcher re-issue asked for an auto-split; that was
+declined because every acceptance criterion re-verifies PASS live at HEAD and
+there is no remaining work to decompose. Fresh checks (this session):
+
+- OpenBao metadata via `rs-manager-provision`: `current_version=1`, single
+  version, `created_time=2026-09-15T19:35:23Z` — value never read.
+- `kubectl --server=http://traefik-iad-ci:8001 get externalsecret
+  homebrew-tap-push-token -n argo-workflows`: `STORE openbao, REFRESH 1h,
+  STATUS SecretSynced, READY True`, `Ready=True reason=SecretSynced`, last
+  sync 44m before the check.
+- declarative-config `origin/main` (fetched, no merge): enabled manifest
+  present (`1b7e985c`, `1dd760f4` in its history), `.disabled` variant absent.
+
+All PASS items unchanged; the single WARN (operator WebAuthn mint of a
+dedicated `write:repository` token → write as next KV version) remains
+documented in §2 and the manifest header.
