@@ -16,5 +16,9 @@ pub mod frames;
 pub mod pipeline;
 
 pub use buffer::OutOfOrderBuffer;
-pub use frames::{write_frame, FooterFrame, HeaderFrame, NdjsonFrame, PageFrame};
+pub use frames::{FooterFrame, HeaderFrame, NdjsonFrame, PageFrame};
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
+pub use frames::write_frame;
+#[cfg(feature = "serde")]
 pub use pipeline::{extract_streaming, footer_errors};

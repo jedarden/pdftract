@@ -27,6 +27,8 @@
 
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -39,7 +41,8 @@ pub const ATTACHMENT_MAX_DECODED_BYTES: usize = 50 * 1024 * 1024;
 /// Audit record schema.
 ///
 /// Each record is a single-line JSON object written to the audit log.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AuditRecord {
     /// ISO-8601 RFC3339 UTC timestamp
     pub ts: String,
@@ -139,6 +142,7 @@ impl AuditLogWriter {
     /// The record is serialized as a single-line JSON object.
     /// The write is flushed immediately for crash safety.
     /// Log-policy enforcement is applied to prevent sensitive content leakage.
+    #[cfg(feature = "serde")]
     pub fn write_record(&self, record: &AuditRecord) -> Result<()> {
         let json = serde_json::to_string(record).context("Failed to serialize audit record")?;
         // Apply log-policy enforcement to prevent sensitive content leakage
@@ -154,6 +158,7 @@ impl AuditLogWriter {
     }
 
     /// Write an audit record from components.
+    #[cfg(feature = "serde")]
     pub fn log(
         &self,
         tool: &str,
@@ -180,7 +185,6 @@ impl AuditLogWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn test_audit_record_new() {

@@ -6,21 +6,24 @@
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 use secrecy::SecretString;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// Receipt generation mode.
 ///
 /// Controls whether visual citation receipts are generated during extraction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum ReceiptsMode {
     /// No receipts generated (default).
     Off,
     /// Lite mode: minimal receipts (~120 bytes each) with fingerprint, page index, bbox, and content hash.
     Lite,
     /// SVG mode: extended receipts that include an SVG clip rendering the glyphs.
-    #[serde(rename = "svg")]
+    #[cfg_attr(feature = "serde", serde(rename = "svg"))]
     SvgClip,
 }
 
@@ -98,9 +101,10 @@ impl ReceiptsMode {
 /// assert!(opts.include_headers);
 /// assert!(opts.include_footers);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct OutputOptions {
     /// Include header blocks in output.
     ///
@@ -235,8 +239,9 @@ impl OutputOptions {
 /// assert_eq!(opts.max_parallel_pages, 8);
 /// assert_eq!(opts.memory_budget_mb, 1024);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct ExtractionOptions {
     /// Receipt generation mode.
     pub receipts: ReceiptsMode,
@@ -393,7 +398,7 @@ pub struct ExtractionOptions {
     ///
     /// If both attempts fail, an ENCRYPTION_UNSUPPORTED diagnostic is emitted
     /// and extraction fails with exit code 3.
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub password: Option<SecretString>,
 
     /// Custom HTTP headers for remote PDF sources.
@@ -422,7 +427,7 @@ pub struct ExtractionOptions {
     /// ];
     /// options.http_headers = Some(headers);
     /// ```
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub http_headers: Option<Vec<(String, String)>>,
 }
 

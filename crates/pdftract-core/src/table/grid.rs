@@ -3,6 +3,8 @@
 //! A GridCandidate represents a potential table reconstructed from
 //! horizontal and vertical ruling lines.
 
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// Epsilon tolerance for floating point comparison.
@@ -11,7 +13,8 @@ const EPSILON: f32 = 0.1;
 /// A candidate table grid reconstructed from path segments.
 ///
 /// Represents a bounded rectangular grid with row and column boundaries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GridCandidate {
     /// Bounding box [x0, y0, x1, y1] in PDF user space.
     pub bbox: [f32; 4],
@@ -22,12 +25,12 @@ pub struct GridCandidate {
     /// Sorted in ascending order (left to right).
     pub col_xs: Vec<f32>,
     /// The path segments that contributed to this grid.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Vec::is_empty"))]
     pub segments: Vec<super::Segment>,
     /// Number of contiguous header rows from the top of the table.
     /// Detected via bold font detection or StructTree TH tags.
     /// Set to 0 if no header rows are detected.
-    #[serde(skip_serializing_if = "is_zero_header_rows")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "is_zero_header_rows"))]
     pub header_rows: u32,
 }
 

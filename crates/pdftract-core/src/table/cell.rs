@@ -7,6 +7,8 @@
 //! - Spans not contained in any cell become orphans
 //! - Within each cell, sort spans by (round(y0/2), x0) for reading order
 
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// Y-bucket size for span ordering within cells (2 pt).
@@ -541,7 +543,8 @@ fn merge_cells_down(
 ///
 /// Minimal span representation used during cell assignment.
 /// This is independent of the hybrid::Span type used in OCR processing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TableSpan {
     /// Bounding box [x0, y0, x1, y1] in PDF user space.
     pub bbox: [f64; 4],
@@ -591,7 +594,8 @@ impl TableSpan {
 ///
 /// Represents a single cell in a detected table grid, including
 /// its position and the text spans assigned to it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cell {
     /// Bounding box [x0, y0, x1, y1] in PDF user space.
     pub bbox: [f32; 4],

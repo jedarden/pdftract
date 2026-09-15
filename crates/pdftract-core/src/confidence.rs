@@ -36,6 +36,8 @@
 //! original resolution from the PDF. OCR is never affected by corrections.
 
 use crate::font::resolver::UnicodeSource;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// The source of confidence for an extracted text span.
@@ -68,8 +70,9 @@ use serde::{Deserialize, Serialize};
 /// { "confidence_source": "heuristic" }
 /// { "confidence_source": "ocr" }
 /// ```
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum ConfidenceSource {
     /// Native PDF encoding: ToUnicode CMap, Adobe Glyph List, or font fingerprinting.
     Native,

@@ -28,6 +28,8 @@ use crate::schema::{
     SpanJson, TableJson, ThreadJson, AttachmentJson, AnnotationJson,
 };
 use crate::parser::outline::{Outline, DestAnchor};
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde_json::{json, Value};
 
 /// Convert an `ExtractionResult` to the full JSON `Output` schema.
@@ -55,8 +57,8 @@ use serde_json::{json, Value};
 /// - `links`: Document-scoped hyperlinks from the extraction result
 /// - `pages`: Array of page objects with full schema fields
 /// - `extraction_quality`: Aggregate quality metrics
-/// - `errors`: Structured diagnostics (`metadata.diagnostics_detailed`);
-///   the legacy string form is parsed only as a fallback
+/// - `errors`: Structured diagnostics (code/severity/page_index/location/hint),
+///   taken from `metadata.diagnostics_detailed`
 ///
 /// # Page-level fields populated
 ///
@@ -78,14 +80,10 @@ pub fn result_to_output(result: &ExtractionResult) -> Output {
         .map(|page| page_result_to_page_json(page))
         .collect();
 
-    // The errors array carries the structured diagnostics when the producer
-    // populated them; results that only carry the legacy strings (built by
-    // hand or by older producers) fall back to parsing those.
-    let errors: Vec<DiagnosticJson> = if result.metadata.diagnostics_detailed.is_empty() {
-        convert_diagnostics(&result.metadata.diagnostics)
-    } else {
-        result.metadata.diagnostics_detailed.clone()
-    };
+    // Structured diagnostics are assembled by the extraction pipeline; the
+    // legacy string array in `metadata.diagnostics` mirrors them for
+    // line-oriented consumers (see docs/errors-array-format.md).
+    let errors: Vec<DiagnosticJson> = result.metadata.diagnostics_detailed.clone();
 
     // Compute extraction quality
     let extraction_quality = compute_extraction_quality(result);
@@ -145,45 +143,6 @@ fn convert_tables(raw_tables: &Vec<TableJson>) -> Vec<TableJson> {
                 continued: false,
                 continued_from_prev: false,
                 page_index: table.page_index,
-            }
-        })
-        .collect()
-}
-
-/// Convert diagnostics strings to `DiagnosticJson` format.
-///
-/// Since the current extraction stores diagnostics as strings, we parse them
-/// to extract code, severity, and page_index when possible.
-fn convert_diagnostics(diagnostics: &[String]) -> Vec<DiagnosticJson> {
-    diagnostics
-        .iter()
-        .map(|diag_str| {
-            // Try to parse the diagnostic string
-            // Format: "CODE: message" or just "message"
-            let (code, message) = if let Some(colon_pos) = diag_str.find(':') {
-                let code_part = &diag_str[..colon_pos];
-                let message_part = &diag_str[colon_pos + 1..].trim();
-                (code_part.trim().to_string(), message_part.to_string())
-            } else {
-                ("UNKNOWN".to_string(), diag_str.clone())
-            };
-
-            // Determine severity from code
-            let severity = if code.starts_with("ERROR_") || code.contains("ERROR") {
-                "error".to_string()
-            } else if code.starts_with("WARN_") || code.contains("WARN") {
-                "warning".to_string()
-            } else {
-                "info".to_string()
-            };
-
-            DiagnosticJson {
-                code,
-                message,
-                severity,
-                page_index: None, // TODO: Extract page_index from diagnostics
-                location: None,
-                hint: None,
             }
         })
         .collect()
@@ -372,22 +331,81 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_diagnostics() {
-        let diagnostics = vec![
-            "FONT_GLYPH_UNMAPPED: Glyph could not be mapped".to_string(),
-            "WARN_OCR_LOW_CONFIDENCE: OCR confidence below threshold".to_string(),
-            "INFO_FALLBACK_USING_VECTOR: Using vector text".to_string(),
-        ];
+    fn test_errors_flow_from_structured_diagnostics() {
+        use crate::diagnostics::{DiagCode, Diagnostic, ObjRef};
 
-        let error_json = convert_diagnostics(&diagnostics);
+        let mut result = ExtractionResult {
+            fingerprint: "test-fingerprint".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 0,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                diagnostics_detailed: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
 
-        assert_eq!(error_json.len(), 3);
-        assert_eq!(error_json[0].code, "FONT_GLYPH_UNMAPPED");
-        assert_eq!(error_json[0].severity, "error");
-        assert_eq!(error_json[1].code, "WARN_OCR_LOW_CONFIDENCE");
-        assert_eq!(error_json[1].severity, "warning");
-        assert_eq!(error_json[2].code, "INFO_FALLBACK_USING_VECTOR");
-        assert_eq!(error_json[2].severity, "info");
+        let diag = Diagnostic::with_dynamic_no_offset(
+            DiagCode::PageOutOfRange,
+            "page 12 exceeds document page count (10)".to_string(),
+        )
+        .with_object_ref(ObjRef::new(4, 0))
+        .with_page_index(11);
+        result.metadata.diagnostics = vec![diag.to_string()];
+        result.metadata.diagnostics_detailed = vec![DiagnosticJson::from(&diag)];
+
+        let output = result_to_output(&result);
+
+        assert_eq!(output.errors.len(), 1);
+        assert_eq!(output.errors[0].code, "PAGE_OUT_OF_RANGE");
+        assert_eq!(
+            output.errors[0].message,
+            "page 12 exceeds document page count (10)"
+        );
+        assert_eq!(output.errors[0].severity, "error");
+        assert_eq!(output.errors[0].page_index, Some(11));
+        assert_eq!(
+            output.errors[0].location,
+            Some(crate::schema::ObjectLocationJson {
+                object_number: 4,
+                generation_number: 0,
+            })
+        );
+        assert!(output.errors[0].hint.is_some());
+
+        // Serialization follows the format block in
+        // docs/integrations/diagnostics-codes.md: always-present code/message/
+        // severity/hint keys, and absent (not null) optional keys this
+        // diagnostic does not carry.
+        let serialized = serde_json::to_value(&output.errors[0]).unwrap();
+        assert_eq!(serialized["code"], "PAGE_OUT_OF_RANGE");
+        assert!(serialized.get("hint").is_some());
+        assert_eq!(serialized["location"]["object_number"], 4);
+
+        // The compact extraction JSON surface exposes the same structured
+        // object beside the legacy string array.
+        let compact = crate::extract::result_to_json(&result);
+        let compact_diag = &compact["metadata"]["diagnostics_detailed"][0];
+        assert_eq!(compact_diag["code"], "PAGE_OUT_OF_RANGE");
+        assert_eq!(compact_diag["severity"], "error");
+        assert_eq!(compact_diag["page_index"], 11);
+        assert_eq!(compact_diag["location"]["generation_number"], 0);
+        assert_eq!(compact["metadata"]["diagnostics"][0], diag.to_string());
     }
 
     #[test]

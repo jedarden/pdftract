@@ -230,9 +230,12 @@ pub use confidence::{map_confidence_source, ConfidenceSource};
 pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
 pub use page_helper::{extract_all_pages, extract_page, extract_page_range, page_count, PageError};
 pub use extract::{
-    extract_pdf, extract_pdf_ndjson, extract_pdf_streaming, extract_text, ExtractionMetadata,
+    extract_pdf, extract_pdf_streaming, extract_text, ExtractionMetadata,
     ExtractionResult, PageResult, page_helpers,
 };
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
+pub use extract::extract_pdf_ndjson;
 pub use font::std14::{get_std14_metrics, NamedEncoding, Std14Metrics};
 pub use forms::{
     combine, walk_acroform_fields, AcroFieldType, AcroFormField, ChoiceValue, FormFieldValue,

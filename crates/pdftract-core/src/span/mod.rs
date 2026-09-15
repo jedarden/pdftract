@@ -26,6 +26,8 @@ use crate::confidence::ConfidenceSource;
 use crate::font::UnicodeSource;
 use crate::glyph::Glyph;
 use crate::graphics_state::Color;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -46,7 +48,8 @@ use std::sync::Arc;
 /// let invalid = CssHexColor::new("red");
 /// assert!(invalid.is_err());
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CssHexColor(pub String);
 
 impl CssHexColor {
@@ -178,7 +181,8 @@ pub mod span_flags {
 ///   JSON serializes as null.
 /// - INV: lang is None until Phase 7 fills it from /Lang or detected script.
 /// - INV: flags is initially 0; Phase 4.1 flag detector sets bits.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Span {
     /// Concatenated text content of the span.
     pub text: String,
@@ -1276,7 +1280,6 @@ mod tests {
     #[test]
     fn test_merge_glyphs_to_spans_empty_glyph_list() {
         // AC: Empty glyph list: returns empty Vec<Span> (no error)
-        use crate::font::UnicodeSource;
 
         let glyphs: Vec<Glyph> = vec![];
         let spans = merge_glyphs_to_spans(&glyphs);

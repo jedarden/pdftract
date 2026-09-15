@@ -3,13 +3,16 @@
 //! Segments are extracted from PDF path operators (m, l, re) terminated
 //! by stroke (S/s) or fill (f/F/B/B*) operators.
 
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A path segment in PDF user space.
 ///
 /// Segments are axis-aligned (horizontal or vertical) and represent
 /// potential table ruling lines.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Segment {
     /// Start point (x0, y0).
     pub x0: f32,
@@ -173,7 +176,8 @@ impl Segment {
 }
 
 /// Orientation of a path segment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentOrientation {
     /// Horizontal orientation.
     Horizontal,

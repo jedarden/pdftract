@@ -25,6 +25,8 @@ use crate::parser::xref::{
 use crate::receipts::verifier::SpanData;
 use crate::source::FileSource;
 use anyhow::{anyhow, Context, Result};
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
@@ -1345,7 +1347,8 @@ impl PdfExtractor {
 ///
 /// This struct contains the minimal data needed for one page,
 /// designed to be dropped immediately after serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PageExtraction {
     /// 0-based page index
     pub index: usize,
@@ -1362,7 +1365,8 @@ pub struct PageExtraction {
 }
 
 /// Block data for extracted content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockData {
     /// Block kind (paragraph, heading, etc.)
     pub kind: String,
@@ -1958,11 +1962,9 @@ impl<'a> Iterator for PageIter<'a> {
 /// // Use catalog, resolver, source for custom processing
 /// ```
 #[cfg(feature = "remote")]
-pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn ParserPdfSource>> {
-    use crate::parser::stream::SourceAdapter;
+pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn PdfSource>> {
     use crate::source::open_remote as open_remote_source;
-    let source = open_remote_source(url, &RemoteOpts::new(), None)?;
-    Ok(Box::new(SourceAdapter::new(source)))
+    open_remote_source(url, &RemoteOpts::new(), None)
 }
 
 /// Open a PDF from a remote HTTP/HTTPS URL with options.
@@ -2004,11 +2006,9 @@ pub fn open_remote_url(url: &str) -> std::io::Result<Box<dyn ParserPdfSource>> {
 pub fn open_remote_url_with_opts(
     url: &str,
     opts: &RemoteOpts,
-) -> std::io::Result<Box<dyn ParserPdfSource>> {
-    use crate::parser::stream::SourceAdapter;
+) -> std::io::Result<Box<dyn PdfSource>> {
     use crate::source::open_remote as open_remote_source;
-    let source = open_remote_source(url, opts, None)?;
-    Ok(Box::new(SourceAdapter::new(source)))
+    open_remote_source(url, opts, None)
 }
 
 #[cfg(test)]

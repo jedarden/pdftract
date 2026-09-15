@@ -28,6 +28,8 @@ pub mod verifier;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A visual citation receipt for extracted text.
@@ -61,7 +63,8 @@ use serde::{Deserialize, Serialize};
 ///   "extraction_version": "1.0.0"
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Receipt {
     /// Phase 1.7 fingerprint of the source PDF.
@@ -109,7 +112,7 @@ pub struct Receipt {
     ///
     /// The SVG coordinate system is normalized to the bbox itself,
     /// so it renders correctly in isolation.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub svg_clip: Option<String>,
 }
 

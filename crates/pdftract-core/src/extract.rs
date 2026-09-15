@@ -18,11 +18,8 @@ use crate::attachment::associated_files::walk_af_array;
 use crate::attachment::filespec::extract_one;
 use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::diagnostics_compat::to_legacy_strings;
 use crate::document::compute_fingerprint_lazy;
-use crate::forms::{
-    acro_field_to_value, combine, walk_acroform_fields, FormFieldValue,
-};
+use crate::forms::{acro_field_to_value, combine, walk_acroform_fields, FormFieldValue};
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::page_extraction_error::PageExtractionError;
 use crate::parser::catalog::ReadingOrderAlgorithm;
@@ -43,10 +40,8 @@ use crate::schema::{
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
 use crate::source::PdfSource as SourcePdfSource;
-use crate::table::{
-    detect_two_page_tables, grid_to_table_json, GridCandidate, TableDetector,
-};
 use crate::table::TableCell as Cell;
+use crate::table::{detect_two_page_tables, grid_to_table_json, GridCandidate, TableDetector};
 
 // Phase 4 imports for full layout analysis pipeline
 use crate::glyph::Glyph;
@@ -60,7 +55,10 @@ use crate::span::CssHexColor;
 use anyhow::{Context, Result};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
 use serde_json::json;
 use std::sync::Arc;
 
@@ -170,6 +168,9 @@ fn decode_page_content_streams(
 /// * `page` - The page dictionary for resources
 /// * `resolver` - The xref resolver
 /// * `page_index` - The page index for diagnostics
+/// * `default_off_ocgs` - OCG refs that are OFF in the document's default
+///   configuration (from `Catalog::oc_properties`), used to resolve /OC
+///   marked-content visibility
 ///
 /// # Returns
 ///
@@ -184,8 +185,9 @@ fn decode_page_content_streams(
 fn process_content_stream_to_glyphs(
     decoded_streams: &[u8],
     page: &crate::parser::pages::PageDict,
-    _resolver: &crate::parser::xref::XrefResolver,
+    resolver: &crate::parser::xref::XrefResolver,
     page_index: usize,
+    default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
 ) -> Result<Vec<Glyph>, PageExtractionError> {
     use crate::content_stream::{process_with_mode, ProcessingMode};
     use crate::font::UnicodeSource;
@@ -201,7 +203,8 @@ fn process_content_stream_to_glyphs(
         &page.resources,
         ProcessingMode::Normal,
         None,
-        None,
+        default_off_ocgs,
+        Some(resolver),
     )
     .map_err(|e| PageExtractionError::GlyphExtractionFailed {
         page_index,
@@ -256,7 +259,7 @@ fn process_content_stream_to_glyphs(
             color,
             cg.is_word_boundary,
             cg.mcid,
-            false, // is_hidden - not tracked by content_stream processor
+            cg.is_hidden, // /OC marked content in a default-off OCG
         );
         glyphs.push(glyph);
     }
@@ -267,7 +270,8 @@ fn process_content_stream_to_glyphs(
 /// Result of a PDF extraction operation.
 ///
 /// Contains the extracted pages, spans, blocks, and metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExtractionResult {
     /// The PDF fingerprint (for receipt generation).
@@ -315,12 +319,13 @@ pub struct ExtractionResult {
     /// with their location and code excerpt. pdftract NEVER executes
     /// embedded JavaScript; this is for downstream security review.
     /// Empty when no JavaScript is present.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub javascript_actions: Vec<JavascriptActionJson>,
 }
 
 /// Result for a single page.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PageResult {
     /// 0-based page index.
@@ -333,22 +338,22 @@ pub struct PageResult {
     /// Human-readable label from PDF /PageLabels number tree.
     ///
     /// Examples: "iv", "A-3", "1". Null if the PDF defines no page labels.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_label: Option<String>,
     /// Page width in points (1/72 inch).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub width: Option<f32>,
     /// Page height in points (1/72 inch).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub height: Option<f32>,
     /// Page rotation in degrees clockwise (0, 90, 180, or 270).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub rotation: Option<u16>,
     /// Page classification from the page classifier.
     ///
     /// One of: "text", "scanned", "mixed", "broken_vector", "blank", "figure_only".
-    #[serde(rename = "type")]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_type: Option<String>,
     /// Extracted spans (text fragments with consistent styling).
     pub spans: Vec<SpanJson>,
@@ -364,10 +369,10 @@ pub struct PageResult {
     /// This array contains all non-link annotations on this page.
     /// Annotations are sorted by (rect.y0 desc, rect.x0) for deterministic output.
     /// Empty when the page has no annotations.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub annotations: Vec<AnnotationJson>,
     /// Error message if extraction failed for this page.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub error: Option<String>,
 }
 
@@ -426,7 +431,8 @@ impl From<PageResultInternal> for PageResult {
 }
 
 /// Metadata about the extraction process.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExtractionMetadata {
     /// Total number of pages in the document.
@@ -444,27 +450,28 @@ pub struct ExtractionMetadata {
     /// Number of pages that failed to extract.
     pub error_count: usize,
     /// Reading order algorithm used for this extraction.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub reading_order_algorithm: Option<String>,
     /// Diagnostics emitted during extraction (coverage warnings, etc.), in the
-    /// legacy string form documented in `crate::diagnostics_compat`
-    /// (message verbatim, one entry per diagnostic, in emission order).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// legacy string form documented in `docs/errors-array-format.md`
+    /// (`CODE: message (byte offset N)? [object generation R]?`).
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Vec::is_empty"))]
     pub diagnostics: Vec<String>,
     /// The same diagnostics in structured form (code/severity/page_index/
-    /// location/hint), as documented in `docs/integrations/diagnostics-codes.md`
-    /// and `crate::diagnostics_compat`. One entry per string in `diagnostics`,
-    /// in the same order; prefer this for machine consumption.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// location/hint), as documented in
+    /// `docs/integrations/diagnostics-codes.md`. Mirrors `diagnostics`
+    /// one-to-one; prefer this for machine consumption.
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub diagnostics_detailed: Vec<DiagnosticJson>,
     /// Profile name if a profile was applied (Phase 7.10)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub profile_name: Option<String>,
     /// Profile version if a profile was applied (Phase 7.10)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub profile_version: Option<String>,
     /// Extracted fields from profile if a profile was applied (Phase 7.10)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg(feature = "serde")]
     pub profile_fields: Option<serde_json::Value>,
 }
 
@@ -653,6 +660,10 @@ pub fn extract_pdf(
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
         })?;
+
+    // OCGs that are OFF in the document's default configuration (/OCProperties /D).
+    // Resolves /OC marked-content visibility during per-page extraction.
+    let default_off_ocgs = catalog.default_off_ocgs();
 
     // Resolve AcroForm if present for fingerprint computation
     let acroform = catalog.acroform_ref.and_then(|ref_| {
@@ -868,6 +879,7 @@ pub fn extract_pdf(
                 &options_arc,
                 Some(&source),
                 Some(&resolver_arc),
+                Some(&default_off_ocgs),
             )
         }));
 
@@ -971,7 +983,7 @@ pub fn extract_pdf(
     // Extract XFA fields if present (requires re-opening the source for stream access)
     let xfa_fields = if catalog.acroform_ref.is_some() {
         // Resolve the AcroForm dictionary
-        
+
         let acroform_ref = catalog.acroform_ref.unwrap();
         if let Ok(acroform_obj) = resolver_arc.resolve(acroform_ref) {
             if let Some(acroform_dict) = acroform_obj.as_dict() {
@@ -1070,13 +1082,17 @@ pub fn extract_pdf(
             cache_age_seconds: None,
             error_count,
             reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-            diagnostics: to_legacy_strings(&all_diagnostics_with_js),
+            diagnostics: all_diagnostics_with_js
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
             diagnostics_detailed: all_diagnostics_with_js
                 .iter()
                 .map(DiagnosticJson::from)
                 .collect(),
             profile_name: None,
             profile_version: None,
+            #[cfg(feature = "serde")]
             profile_fields: None,
         },
         signatures,
@@ -1525,6 +1541,7 @@ fn generate_receipt(
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(feature = "serde")]
 pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
     let pages: Vec<serde_json::Value> = result
         .pages
@@ -1695,6 +1712,7 @@ pub fn extract_text(pdf_path: &std::path::Path, options: &ExtractionOptions) -> 
 /// - The PDF file cannot be opened or read
 /// - The PDF structure is invalid or corrupted
 /// - Writing to the output fails
+#[cfg(feature = "serde")]
 pub fn extract_pdf_ndjson<W: std::io::Write>(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,
@@ -1733,6 +1751,10 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
         })?;
+
+    // OCGs that are OFF in the document's default configuration (/OCProperties /D).
+    // Resolves /OC marked-content visibility during per-page extraction.
+    let default_off_ocgs = catalog.default_off_ocgs();
 
     // Phase 4.5: Determine reading order algorithm
     // For v0.1.0-v0.3.0: Tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED and use XY-cut
@@ -1897,6 +1919,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 &options_arc,
                 Some(&source),
                 Some(&resolver_arc),
+                Some(&default_off_ocgs),
             )
         }));
 
@@ -1987,10 +2010,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         cache_age_seconds: None,
         error_count: error_count as usize,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: to_legacy_strings(&all_diagnostics),
+        diagnostics: all_diagnostics.iter().map(ToString::to_string).collect(),
         diagnostics_detailed: all_diagnostics.iter().map(DiagnosticJson::from).collect(),
         profile_name: None,
         profile_version: None,
+        #[cfg(feature = "serde")]
         profile_fields: None,
     })
 }
@@ -2088,6 +2112,10 @@ where
                 .unwrap_or("unknown error");
             anyhow::anyhow!("Failed to parse catalog: {}", msg)
         })?;
+
+    // OCGs that are OFF in the document's default configuration (/OCProperties /D).
+    // Resolves /OC marked-content visibility during per-page extraction.
+    let default_off_ocgs = catalog.default_off_ocgs();
 
     // Resolve AcroForm if present for fingerprint computation
     let acroform = catalog.acroform_ref.and_then(|ref_| {
@@ -2212,6 +2240,7 @@ where
                 &options_arc,
                 Some(&source),
                 Some(&resolver_arc),
+                Some(&default_off_ocgs),
             )
         }));
 
@@ -2296,10 +2325,11 @@ where
         cache_age_seconds: None,
         error_count,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: to_legacy_strings(&all_diagnostics),
+        diagnostics: all_diagnostics.iter().map(ToString::to_string).collect(),
         diagnostics_detailed: all_diagnostics.iter().map(DiagnosticJson::from).collect(),
         profile_name: None,
         profile_version: None,
+        #[cfg(feature = "serde")]
         profile_fields: None,
     })
 }
@@ -2365,6 +2395,9 @@ fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
 /// * `options` - Extraction options
 /// * `source` - The PDF source for reading stream data (optional, for lazy decode)
 /// * `resolver` - The xref resolver (optional, for lazy decode)
+/// * `default_off_ocgs` - OCG refs that are OFF in the document's default
+///   configuration (from `Catalog::oc_properties`), used to resolve /OC
+///   marked-content visibility
 ///
 /// # Returns
 ///
@@ -2388,6 +2421,7 @@ fn extract_page_from_dict(
     options: &ExtractionOptions,
     source: Option<&dyn crate::parser::stream::PdfSource>,
     resolver: Option<&crate::parser::xref::XrefResolver>,
+    default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
 ) -> Result<PageResultInternal, PageExtractionError> {
     // Validate media box
     let [x0, y0, x1, y1] = page.media_box;
@@ -2423,6 +2457,10 @@ fn extract_page_from_dict(
 
     // Lazy decode content streams if source and resolver are provided
     let decoded_streams = if let (Some(src), Some(res)) = (source, resolver) {
+        // Warm indirect /Properties targets before content processing: the
+        // cache-only resolve in the BDC path needs them present (bead
+        // pdftract-4f5ade3a).
+        page.resources.warm_indirect_properties(res, src);
         Some(decode_page_content_streams(
             page,
             res,
@@ -2439,9 +2477,18 @@ fn extract_page_from_dict(
 
     // Step 1: Extract glyphs from content streams (Phase 3)
     let glyphs = if let (Some(content_bytes), Some(res)) = (decoded_streams.as_ref(), resolver) {
-        process_content_stream_to_glyphs(content_bytes, page, res, page_index)?
+        process_content_stream_to_glyphs(content_bytes, page, res, page_index, default_off_ocgs)?
     } else {
         Vec::new()
+    };
+
+    // OCG visibility (plan EC-16): glyphs inside a default-off optional content
+    // group are flagged is_hidden by the content-stream processor. Suppress them
+    // unless the caller opted into hidden layers (OutputOptions::include_hidden_layers).
+    let glyphs: Vec<_> = if options.output.include_hidden_layers {
+        glyphs
+    } else {
+        glyphs.into_iter().filter(|g| !g.is_hidden).collect()
     };
 
     // Step 2: Merge glyphs into spans (Phase 4.1)
@@ -2579,7 +2626,8 @@ fn extract_page_from_dict(
                     options.receipts,
                     #[cfg(feature = "receipts")]
                     None,
-                ).map_err(|e| PageExtractionError::ReceiptGenerationFailed {
+                )
+                .map_err(|e| PageExtractionError::ReceiptGenerationFailed {
                     page_index,
                     message: format!("Failed to generate receipt for span: {:?}", e),
                 })?;
@@ -2631,7 +2679,8 @@ fn extract_page_from_dict(
             options.receipts,
             #[cfg(feature = "receipts")]
             None,
-        ).map_err(|e| PageExtractionError::ReceiptGenerationFailed {
+        )
+        .map_err(|e| PageExtractionError::ReceiptGenerationFailed {
             page_index,
             message: format!("Failed to generate receipt for block: {:?}", e),
         })?;
@@ -2670,7 +2719,8 @@ fn extract_page_from_dict(
             options.receipts,
             #[cfg(feature = "receipts")]
             None,
-        ).map_err(|e| PageExtractionError::ReceiptGenerationFailed {
+        )
+        .map_err(|e| PageExtractionError::ReceiptGenerationFailed {
             page_index,
             message: format!("Failed to generate receipt for table: {:?}", e),
         })?;
@@ -2823,11 +2873,7 @@ impl ExtractionResult {
     /// ```
     pub fn assert_exit_code(&self, expected: i32) -> Result<(), AssertionError> {
         // Compute exit code from metadata: 0 for success, 1 for any errors
-        let actual = if self.metadata.error_count == 0 {
-            0
-        } else {
-            1
-        };
+        let actual = if self.metadata.error_count == 0 { 0 } else { 1 };
 
         if actual == expected {
             Ok(())
@@ -2871,7 +2917,6 @@ pub mod page_helpers {
 
     use crate::extract::{ExtractionResult, PageResult};
     use crate::page_extraction_error::{PageExtractionError, PageResult as PageExtractionResult};
-    
 
     /// Extract all Page objects from an ExtractionResult.
     ///
@@ -3057,10 +3102,10 @@ pub mod page_helpers {
     /// }
     /// ```
     pub fn has_valid_dimensions(page: &PageResult) -> bool {
-        page.width.is_some() &&
-        page.height.is_some() &&
-        page.width.unwrap_or(0.0) > 0.0 &&
-        page.height.unwrap_or(0.0) > 0.0
+        page.width.is_some()
+            && page.height.is_some()
+            && page.width.unwrap_or(0.0) > 0.0
+            && page.height.unwrap_or(0.0) > 0.0
     }
 
     /// Get pages with valid dimensional data only.
@@ -3083,7 +3128,8 @@ pub mod page_helpers {
     /// println!("Found {} pages with valid dimensions", valid_pages.len());
     /// ```
     pub fn get_pages_with_valid_dimensions(result: &ExtractionResult) -> Vec<&PageResult> {
-        result.pages
+        result
+            .pages
             .iter()
             .filter(|page| has_valid_dimensions(page))
             .collect()
@@ -3213,7 +3259,8 @@ pub mod page_helpers {
     ) -> PageExtractionResult<()> {
         if let Some(rotation) = page.rotation {
             let rotation_i32 = rotation as i32;
-            if rotation_i32 != 0 && rotation_i32 != 90 && rotation_i32 != 180 && rotation_i32 != 270 {
+            if rotation_i32 != 0 && rotation_i32 != 90 && rotation_i32 != 180 && rotation_i32 != 270
+            {
                 return Err(PageExtractionError::InvalidRotation {
                     page_index,
                     rotation: rotation_i32,
@@ -3563,8 +3610,6 @@ startxref
     #[test]
     fn test_tagged_pdf_emits_deferred_diagnostic() {
         // Test that tagged PDFs emit TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic
-        use crate::diagnostics::DiagCode;
-
         let temp_dir = tempfile::tempdir().unwrap();
         let pdf_path = temp_dir.path().join("tagged_test.pdf");
 
@@ -3765,11 +3810,17 @@ startxref
         let error_result = result.assert_exit_code(0);
 
         // Assert the method returns an Err(...)
-        assert!(error_result.is_err(), "assert_exit_code(0) should return Err when exit code is 1");
+        assert!(
+            error_result.is_err(),
+            "assert_exit_code(0) should return Err when exit code is 1"
+        );
 
         // Verify the error message indicates the mismatch
         let error = error_result.unwrap_err();
-        assert_eq!(error.expected, 0, "Error should show expected exit code as 0");
+        assert_eq!(
+            error.expected, 0,
+            "Error should show expected exit code as 0"
+        );
         assert_eq!(error.actual, 1, "Error should show actual exit code as 1");
         assert!(
             error.description.contains("extraction result had"),
@@ -3973,10 +4024,10 @@ startxref
         #[test]
         fn test_get_pages_with_valid_dimensions() {
             let pages = vec![
-                create_test_page(0, Some(612.0), Some(792.0)),  // valid
-                create_test_page(1, None, Some(792.0)),          // invalid - no width
-                create_test_page(2, Some(612.0), Some(792.0)),  // valid
-                create_test_page(3, Some(612.0), None),          // invalid - no height
+                create_test_page(0, Some(612.0), Some(792.0)), // valid
+                create_test_page(1, None, Some(792.0)),        // invalid - no width
+                create_test_page(2, Some(612.0), Some(792.0)), // valid
+                create_test_page(3, Some(612.0), None),        // invalid - no height
             ];
             let result = create_test_result(pages);
 
@@ -4074,7 +4125,10 @@ startxref
 
             // Test dimension validation
             let valid_pages = page_helpers::get_pages_with_valid_dimensions(&result);
-            assert!(!valid_pages.is_empty(), "Should have at least one valid page");
+            assert!(
+                !valid_pages.is_empty(),
+                "Should have at least one valid page"
+            );
         }
 
         // Tests for updated PageExtractionError error handling
@@ -4095,7 +4149,10 @@ startxref
 
             let error = page_helpers::get_page(&result, 5).unwrap_err();
             match error {
-                PageExtractionError::IndexOutOfBounds { requested, available } => {
+                PageExtractionError::IndexOutOfBounds {
+                    requested,
+                    available,
+                } => {
                     assert_eq!(requested, 5);
                     assert_eq!(available, 1);
                 }
@@ -4125,7 +4182,11 @@ startxref
 
             let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
             match error {
-                PageExtractionError::InvalidDimensions { page_index, width, height } => {
+                PageExtractionError::InvalidDimensions {
+                    page_index,
+                    width,
+                    height,
+                } => {
                     assert_eq!(page_index, 0);
                     assert_eq!(width, 0.0);
                     assert_eq!(height, 792.0);
@@ -4141,7 +4202,11 @@ startxref
 
             let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
             match error {
-                PageExtractionError::InvalidDimensions { page_index, width, height } => {
+                PageExtractionError::InvalidDimensions {
+                    page_index,
+                    width,
+                    height,
+                } => {
                     assert_eq!(page_index, 0);
                     assert_eq!(width, 612.0);
                     assert_eq!(height, 0.0);
@@ -4157,7 +4222,9 @@ startxref
 
             let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
             match error {
-                PageExtractionError::InvalidDimensions { page_index, width, .. } => {
+                PageExtractionError::InvalidDimensions {
+                    page_index, width, ..
+                } => {
                     assert_eq!(page_index, 0);
                     assert_eq!(width, -100.0);
                 }
@@ -4172,7 +4239,11 @@ startxref
 
             let error = page_helpers::validate_page_dimensions(&page, 0).unwrap_err();
             match error {
-                PageExtractionError::InvalidDimensions { page_index, width, height } => {
+                PageExtractionError::InvalidDimensions {
+                    page_index,
+                    width,
+                    height,
+                } => {
                     assert_eq!(page_index, 0);
                     assert_eq!(width, 0.0);
                     assert_eq!(height, 792.0);
@@ -4199,7 +4270,10 @@ startxref
 
             let error = page_helpers::validate_page_rotation(&page, 0).unwrap_err();
             match error {
-                PageExtractionError::InvalidRotation { page_index, rotation } => {
+                PageExtractionError::InvalidRotation {
+                    page_index,
+                    rotation,
+                } => {
                     assert_eq!(page_index, 0);
                     assert_eq!(rotation, 45);
                 }
@@ -4318,8 +4392,8 @@ startxref
 
         #[test]
         fn test_page_extraction_error_implements_std_error() {
-            use std::error::Error;
             use crate::page_extraction_error::PageExtractionError;
+            use std::error::Error;
 
             let error = PageExtractionError::NoPagesInDocument;
             assert!(error.source().is_none());
@@ -4333,8 +4407,8 @@ startxref
 
         #[test]
         fn test_page_extraction_error_send_sync() {
-            use std::any::TypeId;
             use crate::page_extraction_error::PageExtractionError;
+            use std::any::TypeId;
 
             // Verify PageExtractionError implements Send and Sync
             assert!(TypeId::of::<PageExtractionError>() == TypeId::of::<PageExtractionError>());

@@ -18,6 +18,8 @@
 //! `BrokenVector`). This internal representation is distinct from the `page_type`
 //! strings emitted in JSON output (see Phase 5.1.1 page_type mapping table).
 
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -31,7 +33,8 @@ use std::collections::BTreeSet;
 ///
 /// Per INV-8, the constructor validates confidence range via `debug_assert` in dev
 /// builds; production code with out-of-range confidence should clamp silently.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PageClassification {
     /// The canonical page class.
     pub class: PageClass,
@@ -39,7 +42,7 @@ pub struct PageClassification {
     pub confidence: f32,
     /// For Hybrid pages, the set of image-heavy cells (row, col) on the 8×8 grid.
     /// `None` for non-Hybrid classes per the invariant below.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub hybrid_cells: Option<BTreeSet<(u8, u8)>>,
 }
 
@@ -84,7 +87,8 @@ impl PageClassification {
 ///
 /// This type derives `Hash` so it can be used as a key in `HashMap` and `HashSet`,
 /// which is required for Phase 6.9 cache keying and Phase 5 routing tables.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PageClass {
     /// Clean vector PDF with readable text encoding.
     Vector,
@@ -245,7 +249,6 @@ mod tests {
         assert_eq!(map.get(&PageClass::Vector), Some(&"text".to_string()));
 
         // Verify Hash::hash does not panic
-        use std::hash::Hasher;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         PageClass::Vector.hash(&mut hasher);
         PageClass::Scanned.hash(&mut hasher);

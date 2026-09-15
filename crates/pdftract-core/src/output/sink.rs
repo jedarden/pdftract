@@ -294,6 +294,8 @@ impl JsonSink {
     /// Emit the complete JSON output.
     ///
     /// This is called on close and writes the full Output schema.
+    // serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+    #[cfg(feature = "serde")]
     fn emit_output(&mut self, footer: &DocumentFooter) -> io::Result<()> {
         let writer = self.writer.as_mut().ok_or_else(|| {
             io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
@@ -346,6 +348,7 @@ impl OutputSink for JsonSink {
     }
 
     fn close(&mut self, footer: &DocumentFooter) -> io::Result<()> {
+        #[cfg(feature = "serde")]
         self.emit_output(footer)?;
         if let Some(writer) = self.writer.take() {
             writer.commit().map_err(|e| {
@@ -543,58 +546,67 @@ impl NdjsonSink {
 
 impl OutputSink for NdjsonSink {
     fn open(&mut self, header: &DocumentHeader) -> io::Result<()> {
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
-        })?;
+        #[cfg(feature = "serde")]
+        {
+            let writer = self.writer.as_mut().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
+            })?;
 
-        // Emit header frame
-        let header_frame = serde_json::json!({
-            "type": "header",
-            "document_fingerprint": header.document_fingerprint,
-            "page_count": header.page_count,
-            "schema_version": header.schema_version,
-        });
-        writeln!(writer, "{}", header_frame)?;
+            // Emit header frame
+            let header_frame = serde_json::json!({
+                "type": "header",
+                "document_fingerprint": header.document_fingerprint,
+                "page_count": header.page_count,
+                "schema_version": header.schema_version,
+            });
+            writeln!(writer, "{}", header_frame)?;
+        }
         Ok(())
     }
 
     fn page(&mut self, page: &Page) -> io::Result<()> {
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
-        })?;
+        #[cfg(feature = "serde")]
+        {
+            let writer = self.writer.as_mut().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
+            })?;
 
-        // Emit page frame
-        let page_frame = serde_json::json!({
-            "type": "page",
-            "page_index": page.page_index,
-            "page_number": page.page_number,
-            "page_label": page.page_label,
-            "width": page.width,
-            "height": page.height,
-            "rotation": page.rotation,
-            "page_type": page.page_type,
-            "blocks": page.blocks,
-            "spans": page.spans,
-        });
-        writeln!(writer, "{}", page_frame)?;
+            // Emit page frame
+            let page_frame = serde_json::json!({
+                "type": "page",
+                "page_index": page.page_index,
+                "page_number": page.page_number,
+                "page_label": page.page_label,
+                "width": page.width,
+                "height": page.height,
+                "rotation": page.rotation,
+                "page_type": page.page_type,
+                "blocks": page.blocks,
+                "spans": page.spans,
+            });
+            writeln!(writer, "{}", page_frame)?;
+        }
         Ok(())
     }
 
     fn close(&mut self, footer: &DocumentFooter) -> io::Result<()> {
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
-        })?;
+        #[cfg(feature = "serde")]
+        {
+            let writer = self.writer.as_mut().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::BrokenPipe, "writer already consumed")
+            })?;
 
-        // Emit footer frame
-        let footer_frame = serde_json::json!({
-            "type": "footer",
-            "overall_quality": footer.overall_quality,
-            "ocr_fraction": footer.ocr_fraction,
-            "avg_confidence": footer.avg_confidence,
-            "min_confidence": footer.min_confidence,
-            "error_count": footer.error_count,
-        });
-        writeln!(writer, "{}", footer_frame)?;
+            // Emit footer frame
+            let footer_frame = serde_json::json!({
+                "type": "footer",
+                "overall_quality": footer.overall_quality,
+                "ocr_fraction": footer.ocr_fraction,
+                "avg_confidence": footer.avg_confidence,
+                "min_confidence": footer.min_confidence,
+                "error_count": footer.error_count,
+            });
+            writeln!(writer, "{}", footer_frame)?;
+        }
 
         if let Some(writer) = self.writer.take() {
             writer.commit().map_err(|e| {

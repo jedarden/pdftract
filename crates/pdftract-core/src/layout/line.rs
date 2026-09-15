@@ -7,12 +7,15 @@
 //! `group_lines_into_blocks` function that applies 5 ordered heuristics
 //! to group lines into semantic blocks.
 
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use unicode_bidi::{bidi_class, BidiClass};
 
 /// Text direction for a line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum LineDirection {
     /// Left-to-right text (e.g., Latin, Cyrillic)
     Ltr,
@@ -27,7 +30,8 @@ pub enum LineDirection {
 /// Lines are the third-level structural unit in the extraction pipeline,
 /// after Glyphs and Spans. Line bbox drives column detection and reading
 /// order; baseline drives clustering.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Line<S> {
     /// Spans that make up this line, in reading order.
     pub spans: Vec<S>,
@@ -138,7 +142,8 @@ impl<S> LineMetadata for Line<S> {
 /// Blocks are the fourth-level structural unit in the extraction pipeline,
 /// after Glyphs, Spans, and Lines. Blocks represent semantic units like
 /// paragraphs, headings, and list items.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Block<S> {
     /// Lines that make up this block, in reading order.
     pub lines: Vec<Line<S>>,

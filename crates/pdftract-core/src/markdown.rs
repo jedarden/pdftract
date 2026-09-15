@@ -44,6 +44,8 @@ use crate::schema::{
     SpanJson, TableJson, ThreadJson,
 };
 use regex::Regex;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -111,7 +113,8 @@ fn anchor_regex() -> &'static Regex {
 ///
 /// Anchors are extracted from markdown output and provide a mapping from
 /// markdown text back to precise PDF locations.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Anchor {
     /// Zero-based page index.

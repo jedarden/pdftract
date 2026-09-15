@@ -14,6 +14,8 @@ use crate::options::ExtractionOptions;
 use crate::output::ndjson::frames::{FooterFrame, HeaderFrame, PageFrame};
 use crate::schema::ExtractionQuality;
 use anyhow::{Context, Result};
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde_json::json;
 use std::io::Write;
 use std::path::Path;
@@ -44,6 +46,7 @@ use std::path::Path;
 /// 1. Header frame (metadata, outline, page count)
 /// 2. Page frames (one per page, in order)
 /// 3. Footer frame (quality metrics, diagnostics)
+#[cfg(feature = "serde")]
 pub fn extract_streaming<W: Write>(
     pdf_path: &Path,
     options: &ExtractionOptions,
@@ -133,6 +136,7 @@ pub fn extract_streaming<W: Write>(
 /// identically to the `errors` array of the full JSON output. Factored out of
 /// [`extract_streaming`] so the ordering contract is unit-testable without a
 /// working extraction path.
+#[cfg(feature = "serde")]
 pub fn footer_errors(result: &crate::extract::ExtractionResult) -> Result<Vec<serde_json::Value>> {
     let mut errors: Vec<serde_json::Value> = result
         .pages

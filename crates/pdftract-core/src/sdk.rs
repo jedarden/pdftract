@@ -370,6 +370,8 @@ pub fn hash(pdf_path: &Path) -> Result<String> {
 /// - The pdftract binary fails to execute
 /// - The JSON output cannot be parsed
 /// - The page index is out of bounds
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification> {
     // Read the PDF file
     let pdf_bytes = std::fs::read(pdf_path)
@@ -421,6 +423,7 @@ pub fn classify(pdf_path: &Path, page_index: usize) -> Result<PageClassification
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(feature = "serde")]
 pub fn classify_page(pdf_bytes: &[u8], page_index: usize) -> Result<PageClassification> {
     // Create temporary file using the helper function
     let identifier = format!("page-{}", page_index);
@@ -433,6 +436,7 @@ pub fn classify_page(pdf_bytes: &[u8], page_index: usize) -> Result<PageClassifi
 ///
 /// This function handles the actual pdftract binary invocation and JSON parsing,
 /// using a temporary file that will be cleaned up by the provided guard.
+#[cfg(feature = "serde")]
 fn classify_from_temp_file(
     temp_file: &std::path::Path,
     page_index: usize,
@@ -735,6 +739,7 @@ fn find_pdftract_binary() -> Result<String> {
 /// # Returns
 ///
 /// A `VerificationResult` indicating success or the specific failure mode.
+#[cfg(feature = "serde")]
 pub fn verify_receipt_from_path(
     pdf_path: &Path,
     receipt_path: &Path,

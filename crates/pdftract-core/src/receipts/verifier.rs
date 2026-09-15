@@ -15,6 +15,8 @@
 //! - 1: extraction failed (PDF unreadable, encrypted without password, etc.)
 
 use crate::receipts::Receipt;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
@@ -210,7 +212,8 @@ pub fn check_version_compatibility(
 ///
 /// This represents a single text span extracted from a PDF page,
 /// with enough information to compute IoU and content hash.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpanData {
     /// The extracted text content.
     pub text: String,

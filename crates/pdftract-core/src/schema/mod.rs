@@ -18,6 +18,8 @@
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::layout::correction::CorrectableText;
@@ -57,7 +59,8 @@ use crate::signature::Signature;
 /// let json = serde_json::to_string(&span).unwrap();
 /// assert!(json.contains("Hello, world!"));
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SpanJson {
     /// The extracted text content.
@@ -79,7 +82,7 @@ pub struct SpanJson {
     ///
     /// Null for spot colors, patterns, or complex color spaces that cannot be
     /// accurately represented as RGB hex.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub color: Option<String>,
 
     /// PDF Tr operator value (0-7) indicating the text rendering mode.
@@ -87,7 +90,7 @@ pub struct SpanJson {
     /// 0 = fill, 1 = stroke, 2 = fill then stroke, 3 = invisible,
     /// 4 = fill to clip, 5 = stroke to clip, 6 = fill then stroke to clip,
     /// 7 = clip.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub rendering_mode: Option<u8>,
 
     /// Optional confidence score (0.0 to 1.0).
@@ -95,7 +98,7 @@ pub struct SpanJson {
     /// This field is present when OCR is used or when the extraction
     /// has uncertainty about the text. When confidence is not applicable,
     /// this field is `null`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub confidence: Option<f64>,
 
     /// Source of the confidence/text extraction.
@@ -103,34 +106,34 @@ pub struct SpanJson {
     /// One of: "vector" (native font decoding), "ocr" (pure OCR),
     /// "ocr-assisted" (OCR + vector correction), "ocr-fallback" (region-level fallback),
     /// "repaired" (text was repaired via heuristics).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub confidence_source: Option<String>,
 
     /// BCP-47 language tag if detected, otherwise null.
     ///
     /// Examples: "en", "en-US", "zh-Hans". Null when language detection
     /// is not available or not applicable.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub lang: Option<String>,
 
     /// Set of style flags applied to this span.
     ///
     /// Possible values: "bold", "italic", "smallcaps", "subscript", "superscript".
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub flags: Vec<String>,
 
     /// Optional cryptographic receipt for verification.
     ///
     /// This field is present when `--receipts=lite` or `--receipts=svg`
     /// is enabled. When receipts are disabled, the field is `null`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub receipt: Option<Receipt>,
 
     /// Column index (0-based) assigned by Phase 4.3 column detection.
     ///
     /// This field is `None` for spans outside any detected column
     /// (e.g., full-width headings, inter-column gaps).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub column: Option<u32>,
 }
 
@@ -168,7 +171,8 @@ impl CorrectableText for SpanJson {
 /// assert_eq!(paragraph.kind, "paragraph");
 /// assert_eq!(paragraph.spans.len(), 3);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BlockJson {
     /// The block kind/type.
@@ -189,27 +193,27 @@ pub struct BlockJson {
     ///
     /// This field is present only for heading blocks. For paragraphs
     /// and other block types, it is `null`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub level: Option<u8>,
 
     /// Optional table index for "table" kind blocks.
     ///
     /// This field is present only for table blocks and points to the
     /// corresponding entry in the page's `tables` array.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub table_index: Option<usize>,
 
     /// References to spans in the page's `spans` array.
     ///
     /// These indices point to the spans that make up this block's content.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub spans: Vec<usize>,
 
     /// Optional cryptographic receipt for verification.
     ///
     /// This field is present when `--receipts=lite` or `--receipts=svg`
     /// is enabled. When receipts are disabled, the field is `null`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub receipt: Option<Receipt>,
 }
 
@@ -244,7 +248,8 @@ pub type SpanRef = usize;
 /// assert_eq!(cell.col, 0);
 /// assert!(cell.is_header_row);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CellJson {
     /// Bounding box in PDF user-space points.
@@ -271,14 +276,14 @@ pub struct CellJson {
     ///
     /// Values greater than 1 indicate a merged cell that spans
     /// multiple rows vertically.
-    #[serde(default = "default_one")]
+    #[cfg_attr(feature = "serde", serde(default = "default_one"))]
     pub rowspan: u32,
 
     /// Number of columns this cell spans (default 1).
     ///
     /// Values greater than 1 indicate a merged cell that spans
     /// multiple columns horizontally.
-    #[serde(default = "default_one")]
+    #[cfg_attr(feature = "serde", serde(default = "default_one"))]
     pub colspan: u32,
 
     /// Whether this cell is in a header row.
@@ -296,7 +301,8 @@ fn default_one() -> u32 {
 ///
 /// A row contains a sequence of cells that form a horizontal strip
 /// in the table.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RowJson {
     /// Bounding box in PDF user-space points.
@@ -356,7 +362,8 @@ pub struct RowJson {
 /// assert_eq!(table.rows.len(), 1);
 /// assert_eq!(table.header_rows, 1);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct TableJson {
     /// Unique identifier for this table (e.g., "table_0").
@@ -403,7 +410,8 @@ pub struct TableJson {
 /// This structure appears in the document footer (NDJSON mode) or
 /// in the root metadata (full JSON mode). It provides aggregate
 /// quality signals across all pages.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExtractionQuality {
     /// Overall quality assessment: "high", "medium", "low", or "none".
@@ -421,31 +429,31 @@ pub struct ExtractionQuality {
     /// was performed on any page.
     ///
     /// Values: 200 (JBIG2), 300 (standard), 400 (fine print), or custom
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub dpi_used: Option<u32>,
 
     /// Fraction of pages that required OCR fallback [0.0, 1.0].
     ///
     /// This is the count of pages classified as "scanned" or "mixed"
     /// divided by the total page count.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub ocr_fraction: Option<f32>,
 
     /// Minimum confidence score across all spans [0.0, 1.0].
     ///
     /// This represents the weakest link in the extraction chain.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub min_confidence: Option<f32>,
 
     /// Average confidence score across all spans [0.0, 1.0].
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub avg_confidence: Option<f32>,
 
     /// Per-page readability score (char-weighted median of span scores) [0.0, 1.0].
     ///
     /// This is the median of per-span readability scores, weighted by character count.
     /// A score below 0.5 may indicate mojibake, encoding issues, or broken text layers.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub readability: Option<f32>,
 }
 
@@ -553,7 +561,8 @@ impl Default for ExtractionQuality {
 /// assert_eq!(text_field.name, "employee_name");
 /// assert_eq!(text_field.required, true);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FormFieldJson {
     /// The absolute (dot-joined) field name from the AcroForm.
@@ -561,7 +570,7 @@ pub struct FormFieldJson {
     pub name: String,
 
     /// The field type variant (text, button, choice, or signature).
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
     pub field_type: FormFieldTypeJson,
 
     /// The current value of the form field.
@@ -576,20 +585,20 @@ pub struct FormFieldJson {
     /// The default value (/DV entry) if present.
     ///
     /// Matches the structure of `value` but represents the field's default state.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub default: Option<FormFieldValueJson>,
 
     /// Zero-based page index where this field's widget appears.
     ///
     /// None if the field has no visual representation (form-only field).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_index: Option<usize>,
 
     /// Bounding box in PDF user-space points.
     ///
     /// Format: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.
     /// None if the field has no visual appearance.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub rect: Option<[f32; 4]>,
 
     /// Whether this field is required (bit 2 of /Ff flags).
@@ -600,46 +609,46 @@ pub struct FormFieldJson {
 
     /// Whether this text field supports multiple lines (bit 13 of /Ff).
     /// Only present for text fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub multiline: Option<bool>,
 
     /// Maximum length for text fields (/MaxLen entry).
     /// Only present for text fields that have a max length set.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub max_length: Option<u32>,
 
     /// Available options for choice fields.
     ///
     /// Each option is a [export_value, display_name] pair.
     /// Only present for choice fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub options: Option<Vec<[String; 2]>>,
 
     /// Whether this choice field supports multiple selections (bit 21 of /Ff).
     /// Only present for choice fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub multi_select: Option<bool>,
 
     /// Selected state for button fields.
     /// True = checked/selected, False = unchecked.
     /// Only present for button fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub selected: Option<bool>,
 
     /// Appearance state name for button fields.
     /// E.g., "Yes", "Off", or custom state names.
     /// Only present for button fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub state_name: Option<String>,
 
     /// Whether this button is a pushbutton (bit 26 of /Ff).
     /// Only present for button fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub pushbutton: Option<bool>,
 
     /// Whether this button is a radio button (bit 25 of /Ff).
     /// Only present for button fields.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub radio: Option<bool>,
 }
 
@@ -647,8 +656,9 @@ pub struct FormFieldJson {
 ///
 /// This enum uses serde's "tag" representation to produce a JSON string
 /// indicating the field type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum FormFieldTypeJson {
     /// Text field (/FT /Tx) - single-line or multi-line text input.
@@ -665,8 +675,9 @@ pub enum FormFieldTypeJson {
 ///
 /// This enum captures the current value of a form field, with the variant
 /// type matching the field_type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(untagged))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum FormFieldValueJson {
     /// Text field value (string or null).
@@ -683,8 +694,9 @@ pub enum FormFieldValueJson {
 ///
 /// Choice fields can have either a single selected value or multiple
 /// selected values (for multi-select list boxes).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(untagged))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum ChoiceValueJson {
     /// Single selected option.
@@ -724,7 +736,8 @@ pub enum ChoiceValueJson {
 /// assert_eq!(sig.signer_name, "John Doe");
 /// assert_eq!(sig.validation_status, "not_checked");
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SignatureJson {
     /// The absolute (dot-joined) field name from the AcroForm.
@@ -742,33 +755,33 @@ pub struct SignatureJson {
     /// malformed, or the field is unsigned.
     ///
     /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub signing_date: Option<String>,
 
     /// The reason for signing from the /Reason entry.
     ///
     /// None if /Reason is absent.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub reason: Option<String>,
 
     /// The location of signing from the /Location entry.
     ///
     /// None if /Location is absent.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub location: Option<String>,
 
     /// The signature format / filter from the /SubFilter entry.
     ///
     /// Indicates the signature format: "adbe.pkcs7.detached", "adbe.x509.rsa.sha1", etc.
     /// None if /SubFilter is absent.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub sub_filter: Option<String>,
 
     /// The /ByteRange array defining which bytes of the file are signed.
     ///
     /// Format: array of 4 integers [offset, length, offset, length] defining two byte ranges.
     /// None if /ByteRange is missing or malformed.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub byte_range: Option<Vec<u64>>,
 
     /// Fraction of the file covered by the signature (0.0 to 1.0).
@@ -777,7 +790,7 @@ pub struct SignatureJson {
     /// None if /ByteRange is missing, malformed, or file_size is unknown.
     ///
     /// Values < 1.0 indicate partial signatures (a common red flag for tampered docs).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub coverage_fraction: Option<f64>,
 
     /// Validation status — always "not_checked" in v1.
@@ -809,7 +822,8 @@ impl From<Signature> for SignatureJson {
 /// providing stable error codes and human-readable messages for consumers.
 /// The conversion lives in [`crate::diagnostics`] (`impl From<&Diagnostic>`),
 /// which also owns `DiagCode::from_name` — the inverse of the `code` mapping.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DiagnosticJson {
     /// Stable string identifier for this diagnostic (e.g., "FONT_GLYPH_UNMAPPED").
@@ -822,22 +836,23 @@ pub struct DiagnosticJson {
     pub severity: String,
 
     /// Page index where this diagnostic occurred, or `null` for document-level events.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_index: Option<usize>,
 
     /// PDF object reference where the issue originated, if applicable.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub location: Option<ObjectLocationJson>,
 
     /// Optional hint for resolving the diagnostic (e.g., "Install Tesseract for OCR recovery").
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub hint: Option<String>,
 }
 
 /// JSON representation of a PDF object reference.
 ///
 /// Identifies a specific PDF indirect object by its object and generation numbers.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ObjectLocationJson {
     /// Object number (zero-based index in the xref table).
@@ -851,7 +866,8 @@ pub struct ObjectLocationJson {
 ///
 /// Represents a single node in the document's outline hierarchy, with support
 /// for nested children via the `children` field.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct OutlineNode {
     /// The outline title text (decoded to UTF-8).
@@ -861,46 +877,47 @@ pub struct OutlineNode {
     pub level: u8,
 
     /// Zero-based page index this outline points to, if resolved.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_index: Option<u32>,
 
     /// Destination type and coordinates within the page.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub destination: Option<DestinationJson>,
 
     /// Nested child outlines (empty array for leaf nodes).
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub children: Vec<OutlineNode>,
 }
 
 /// JSON representation of a destination anchor.
 ///
 /// Describes a specific location within a PDF page.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DestinationJson {
     /// Destination type: "xyz", "fit", "fith", "fitv", "fitr", "fitb", "fitbh", "fitbv".
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
     pub dest_type: String,
 
     /// Left coordinate (user-space points), present for "xyz", "fitv", "fitr", "fitbv".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub left: Option<f64>,
 
     /// Top coordinate (user-space points), present for "xyz", "fith", "fitr", "fitbh".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub top: Option<f64>,
 
     /// Right coordinate (user-space points), present only for "fitr".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub right: Option<f64>,
 
     /// Bottom coordinate (user-space points), present only for "fitr".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub bottom: Option<f64>,
 
     /// Zoom factor, present only for "xyz".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub zoom: Option<f64>,
 }
 
@@ -909,7 +926,8 @@ pub struct DestinationJson {
 /// Represents a single JavaScript action discovered during extraction.
 /// Per TH-04, pdftract NEVER executes embedded JavaScript; this struct
 /// surfaces the JS for downstream security review.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct JavascriptActionJson {
     /// Location of the JavaScript action in the PDF structure.
@@ -930,46 +948,47 @@ pub struct JavascriptActionJson {
 ///
 /// Contains all standard PDF document information dictionary fields along
 /// with derived signals from the document catalog.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DocumentMetadata {
     /// PDF /Title - document title.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub title: Option<String>,
 
     /// PDF /Author - name of the person who created the document.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub author: Option<String>,
 
     /// PDF /Subject - subject matter summary.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub subject: Option<String>,
 
     /// PDF /Keywords - space- or comma-delimited keyword list.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub keywords: Option<String>,
 
     /// PDF /Creator - the authoring application (e.g., "Microsoft Word 2019").
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub creator: Option<String>,
 
     /// PDF /Producer - the PDF-writing library (e.g., "Acrobat Distiller 23.0").
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub producer: Option<String>,
 
     /// PDF /CreationDate - ISO-8601 string from /CreationDate.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub creation_date: Option<String>,
 
     /// PDF /ModDate - ISO-8601 string from /ModDate.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub modification_date: Option<String>,
 
     /// Total number of pages in the document.
     pub page_count: u32,
 
     /// PDF version (e.g., "1.7", "2.0").
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub pdf_version: Option<String>,
 
     /// True if /MarkInfo /Marked: true is present.
@@ -982,7 +1001,7 @@ pub struct DocumentMetadata {
     ///
     /// One of: "none", "PDF-A-1a", "PDF-A-1b", "PDF-A-2a", "PDF-A-2b", "PDF-A-2u",
     /// "PDF-A-3a", "PDF-A-3b", "PDF-A-3u", "PDF-UA-1", "PDF-UA-2", "PDF-X-1a".
-    #[serde(default = "default_conformance")]
+    #[cfg_attr(feature = "serde", serde(default = "default_conformance"))]
     pub conformance: String,
 
     /// True if JavaScript actions are present in the document.
@@ -992,7 +1011,7 @@ pub struct DocumentMetadata {
     ///
     /// Per TH-04, this array contains all discovered JavaScript actions
     /// with their location and code excerpt. Empty when no JS is present.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub javascript_actions: Vec<JavascriptActionJson>,
 
     /// True if XFA forms are present.
@@ -1002,7 +1021,7 @@ pub struct DocumentMetadata {
     pub ocg_present: bool,
 
     /// Heuristic string identifying the producing application.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub generator: Option<String>,
 }
 
@@ -1020,7 +1039,8 @@ fn default_conformance() -> String {
 ///
 /// * `page_index` - 0-based index of the page containing this bead
 /// * `rect` - Bounding rectangle of the bead region in PDF user-space coordinates [x0, y0, x1, y1]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BeadJson {
     /// 0-based page index where this bead is located.
@@ -1042,28 +1062,29 @@ pub struct BeadJson {
 /// Per the plan (Phase 7.7), threads are extracted and emitted at the
 /// document level in the `/threads` array. The bead chain is walked by
 /// following `/N` (next bead) links from the first bead until termination.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ThreadJson {
     /// Thread title from /I/Title.
     ///
     /// - `Some("")` if /I/Title is present but empty string
     /// - `None` if /I is missing or /Title is absent
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub title: Option<String>,
 
     /// Thread author from /I/Author.
     ///
     /// - `Some("")` if /I/Author is present but empty string
     /// - `None` if /I is missing or /Author is absent
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub author: Option<String>,
 
     /// Thread subject from /I/Subject.
     ///
     /// - `Some("")` if /I/Subject is present but empty string
     /// - `None` if /I is missing or /Subject is absent
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub subject: Option<String>,
 
     /// Thread keywords from /I/Keywords.
@@ -1071,7 +1092,7 @@ pub struct ThreadJson {
     /// Per PDF spec, this is a comma-separated convention (not an array).
     /// - `Some("")` if /I/Keywords is present but empty string
     /// - `None` if /I is missing or /Keywords is absent
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub keywords: Option<String>,
 
     /// Beads in this thread chain, in traversal order.
@@ -1079,7 +1100,7 @@ pub struct ThreadJson {
     /// Each bead represents a region on a page that is part of this article.
     /// The beads are ordered by following `/N` (next bead) links from the
     /// first bead through the chain until termination.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub beads: Vec<BeadJson>,
 }
 
@@ -1096,18 +1117,19 @@ pub struct ThreadJson {
 /// The JSON Schema declares `contentEncoding: base64` for the `data` field,
 /// enabling JSON Schema validators and code generation tools to understand
 /// the encoding.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct AttachmentJson {
     /// Attachment filename from /UF (Unicode, preferred) or /F (system-independent).
     pub name: String,
 
     /// Description from /Desc (None if absent, not empty string).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub description: Option<String>,
 
     /// MIME type from stream /Subtype (None if absent, no guessing from extension).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub mime_type: Option<String>,
 
     /// Original decoded size in bytes (always populated, even when truncated).
@@ -1120,20 +1142,20 @@ pub struct AttachmentJson {
     /// Creation date from /Params /CreationDate as ISO 8601 string (None if absent).
     ///
     /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub created: Option<String>,
 
     /// Modification date from /Params /ModDate as ISO 8601 string (None if absent).
     ///
     /// Format: "YYYY-MM-DDTHH:MM:SS+HH:MM" or "YYYY-MM-DDTHH:MM:SSZ"
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub modified: Option<String>,
 
     /// MD5 checksum from /Params /CheckSum as hex string (None if absent).
     ///
     /// Per PDF spec, /CheckSum is a 16-byte binary string (MD5), hex-encoded
     /// as 32 lowercase hex characters.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub checksum_md5: Option<String>,
 
     /// Base64-encoded attachment content (null if truncated or empty).
@@ -1147,7 +1169,7 @@ pub struct AttachmentJson {
     ///
     /// In the Python API (PyO3), this field is returned as a `bytes` object
     /// (PyO3 automatically decodes the base64 string).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub data: Option<String>,
 
     /// Whether the attachment content was truncated due to the 50 MB size limit.
@@ -1164,7 +1186,8 @@ pub struct AttachmentJson {
 ///
 /// Per the plan (Phase 7.6.4), links are emitted at the document level in the
 /// `/links` array, sorted by (page_index, rect.y0 desc, rect.x0) for deterministic output.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LinkJson {
     /// Zero-based page index containing this link.
@@ -1179,42 +1202,44 @@ pub struct LinkJson {
     ///
     /// Present for URI links and JavaScript actions (prefixed with "javascript:").
     /// Null for internal destination links.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub uri: Option<String>,
 
     /// The internal destination name (from /Dest as a name string).
     ///
     /// Present for named destination links. Null for URI links or explicit destinations.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub dest: Option<String>,
 
     /// Explicit destination array (from /Dest as an array or resolved name tree).
     ///
     /// Present when the link target can be resolved to explicit coordinates.
     /// Null for URI links or unresolved named destinations.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub dest_array: Option<DestArrayJson>,
 }
 
 /// JSON representation of an explicit destination array.
 ///
 /// Describes a specific location within a PDF page.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct DestArrayJson {
     /// Zero-based page index within the document.
     pub page_index: usize,
 
     /// Destination type and coordinates.
-    #[serde(flatten)]
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub dest: DestTypeJson,
 }
 
 /// JSON representation of a destination type.
 ///
 /// Uses serde's "tag" representation for unambiguous variant discrimination.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "fit", rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "fit", rename_all = "lowercase"))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum DestTypeJson {
     /// XYZ destination with optional left, top, zoom.
@@ -1222,13 +1247,13 @@ pub enum DestTypeJson {
     /// Null values mean "retain current view" for that parameter.
     Xyz {
         /// Left coordinate (null = retain current left).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         left: Option<f64>,
         /// Top coordinate (null = retain current top).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         top: Option<f64>,
         /// Zoom factor (null = retain current zoom).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         zoom: Option<f64>,
     },
     /// Fit page to window.
@@ -1236,13 +1261,13 @@ pub enum DestTypeJson {
     /// Fit horizontally with optional top coordinate.
     FitH {
         /// Top coordinate to position at top of window (null = retain current).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         top: Option<f64>,
     },
     /// Fit vertically with optional left coordinate.
     FitV {
         /// Left coordinate to position at left of window (null = retain current).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         left: Option<f64>,
     },
     /// Fit rectangle (left, bottom, right, top).
@@ -1261,13 +1286,13 @@ pub enum DestTypeJson {
     /// Fit bounding box horizontally with optional top coordinate.
     FitBH {
         /// Top edge of window in PDF user space units.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         top: Option<f64>,
     },
     /// Fit bounding box vertically with optional left coordinate.
     FitBV {
         /// Left edge of window in PDF user space units.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         left: Option<f64>,
     },
 }
@@ -1276,7 +1301,8 @@ pub enum DestTypeJson {
 ///
 /// Contains all page-level fields including geometry, classification,
 /// and content arrays (spans, blocks, tables, annotations).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PageJson {
     /// Zero-based page index, canonical for programmatic use.
@@ -1293,7 +1319,7 @@ pub struct PageJson {
     /// Human-readable label from PDF /PageLabels number tree.
     ///
     /// Examples: "iv", "A-3", "1". Null if the PDF defines no page labels.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_label: Option<String>,
 
     /// Page width in points (1/72 inch).
@@ -1308,25 +1334,25 @@ pub struct PageJson {
     /// Page classification from the page classifier.
     ///
     /// One of: "text", "scanned", "mixed", "broken_vector", "blank", "figure_only".
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
     pub page_type: String,
 
     /// Text spans (atomic units with consistent font and styling).
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub spans: Vec<SpanJson>,
 
     /// Semantic blocks (paragraphs, headings, lists, tables, etc.).
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub blocks: Vec<BlockJson>,
 
     /// Parallel table structure objects.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub tables: Vec<TableJson>,
 
     /// Page-level annotations (highlights, stamps, notes, links).
     ///
     /// Empty until Phase 7.2; always present as an array.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub annotations: Vec<AnnotationJson>,
 }
 
@@ -1337,62 +1363,63 @@ pub struct PageJson {
 ///
 /// Per the plan (Phase 7.6.4), annotations are emitted at the page level in the
 /// `/pages[i]/annotations` array, sorted by (rect.y0 desc, rect.x0) for deterministic output.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct AnnotationJson {
     /// Annotation subtype (e.g., "Text", "Highlight", "Stamp", "FreeText").
     ///
     /// Per INV: stable taxonomy of annotation subtypes.
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "serde", serde(rename = "type"))]
     pub subtype: String,
 
     /// Bounding box in PDF user-space points.
     ///
     /// Format: [x0, y0, x1, y1] where (x0, y0) is the bottom-left corner.
     /// None if the /Rect entry is missing or invalid.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub rect: Option<[f32; 4]>,
 
     /// The annotation's content text (from /Contents).
     ///
     /// None if /Contents is missing or not a string.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub contents: Option<String>,
 
     /// The annotation's author (from /T).
     ///
     /// None if /T is missing or not a string.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub author: Option<String>,
 
     /// The modification date (from /M) as an ISO 8601 string.
     ///
     /// None if /M is missing, malformed, or fails to parse.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub modified: Option<String>,
 
     /// The color array (from /C) as RGB/Grayscale components.
     ///
     /// None if /C is missing. Length is 1 (grayscale), 3 (RGB), or 4 (CMYK).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub color: Option<Vec<f32>>,
 
     /// The opacity (from /CA).
     ///
     /// None if not specified (defaults to 1.0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub opacity: Option<f32>,
 
     /// The name identifier (from /NM).
     ///
     /// None if /NM is missing.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub name_id: Option<String>,
 
     /// The subject (from /Subj).
     ///
     /// None if /Subj is missing.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub subject: Option<String>,
 
     /// Subtype-specific fields.
@@ -1407,13 +1434,14 @@ pub struct AnnotationJson {
     /// - Polygon/PolyLine: contains "vertices" array
     /// - FileAttachment: contains "fs_ref" field
     /// - Other subtypes: null or omitted
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub specific: Option<AnnotationSpecificJson>,
 }
 
 /// JSON representation of subtype-specific annotation fields.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "kind", rename_all = "snake_case"))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub enum AnnotationSpecificJson {
     /// Text markup annotations (Highlight, Squiggly, StrikeOut, Underline).
@@ -1439,13 +1467,13 @@ pub enum AnnotationSpecificJson {
     /// Text (sticky note) annotation.
     Text {
         /// Whether the note is initially open in the viewer.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         open: Option<bool>,
         /// Note state model (e.g., "Marked" for review states).
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         state: Option<String>,
         /// State model name (e.g., "Review").
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         state_model: Option<String>,
     },
 
@@ -1458,7 +1486,7 @@ pub enum AnnotationSpecificJson {
     /// Line annotation with endpoints.
     Line {
         /// Line endpoints as [x0, y0, x1, y1].
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         endpoints: Option<[f32; 4]>,
     },
 
@@ -1475,7 +1503,7 @@ pub enum AnnotationSpecificJson {
     },
 
     /// Other annotation types with no subtype-specific fields.
-    #[serde(other)]
+    #[cfg_attr(feature = "serde", serde(other))]
     Other,
 }
 
@@ -1483,11 +1511,12 @@ pub enum AnnotationSpecificJson {
 ///
 /// This is the canonical JSON output format, containing document-level
 /// metadata and an array of page objects.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Output {
     /// Schema version identifier (e.g., "1.0").
-    #[serde(rename = "schema_version")]
+    #[cfg_attr(feature = "serde", serde(rename = "schema_version"))]
     pub schema_version: &'static str,
 
     /// Document-level metadata.
@@ -1496,37 +1525,37 @@ pub struct Output {
     /// Document outline (bookmark tree).
     ///
     /// Empty array if no bookmarks are present.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub outline: Vec<OutlineNode>,
 
     /// Article thread chains.
     ///
     /// Empty until Phase 7.1; always present as an array.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub threads: Vec<ThreadJson>,
 
     /// Embedded file attachments.
     ///
     /// Empty until Phase 7.5; always present as an array.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub attachments: Vec<AttachmentJson>,
 
     /// Digital signature metadata.
     ///
     /// Empty until Phase 7.3; always present as an array.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub signatures: Vec<SignatureJson>,
 
     /// AcroForm/XFA form fields.
     ///
     /// Empty until Phase 7.4; always present as an array.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub form_fields: Vec<FormFieldJson>,
 
     /// Document-scoped hyperlinks.
     ///
     /// Empty until Phase 7.6; always present as an array.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub links: Vec<LinkJson>,
 
     /// Page objects array.
@@ -1536,7 +1565,7 @@ pub struct Output {
     pub extraction_quality: ExtractionQuality,
 
     /// All diagnostics emitted during extraction.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub errors: Vec<DiagnosticJson>,
 }
 

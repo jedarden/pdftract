@@ -6,7 +6,10 @@
 //! - FooterFrame: Aggregated quality metrics and diagnostics (emitted last)
 
 use crate::schema::{BlockJson, ExtractionQuality, SpanJson, TableJson};
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
 use serde_json::Value;
 use std::io::Write;
 
@@ -15,8 +18,9 @@ use std::io::Write;
 /// This enum uses serde's internal tagging with the "frame" field as the tag.
 /// When serialized, the "frame" field appears first with values "header", "page",
 /// or "footer", allowing consumers to dispatch to the appropriate handler.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "frame", rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "frame", rename_all = "lowercase"))]
 pub enum NdjsonFrame {
     /// Header frame containing document metadata.
     Header(HeaderFrame),
@@ -30,8 +34,9 @@ pub enum NdjsonFrame {
 ///
 /// All NDJSON frames include a "frame" field that identifies the frame type.
 /// This allows consumers to parse each line and dispatch to the appropriate handler.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum FrameType {
     /// Header frame containing document metadata.
     Header,
@@ -44,7 +49,8 @@ pub enum FrameType {
 /// Header frame emitted at the start of streaming extraction.
 ///
 /// Contains document-level metadata that is known before page processing begins.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HeaderFrame {
     /// Schema version identifier.
     ///
@@ -55,11 +61,13 @@ pub struct HeaderFrame {
     /// Document metadata.
     ///
     /// Includes title, author, creation date, page count, etc.
+    #[cfg(feature = "serde")]
     pub metadata: Value,
 
     /// Document outline (table of contents).
     ///
     /// Null if the document has no outline.
+    #[cfg(feature = "serde")]
     pub outline: Option<Value>,
 
     /// Total number of pages in the document.
@@ -70,6 +78,7 @@ pub struct HeaderFrame {
 
 impl HeaderFrame {
     /// Create a new header frame.
+    #[cfg(feature = "serde")]
     pub fn new(
         schema_version: String,
         metadata: Value,
@@ -85,6 +94,7 @@ impl HeaderFrame {
     }
 
     /// Serialize this frame to a JSON string with a trailing newline.
+    #[cfg(feature = "serde")]
     pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
         let mut s = serde_json::to_string(self)?;
         s.push('\n');
@@ -96,7 +106,8 @@ impl HeaderFrame {
 ///
 /// Pages may be emitted out-of-order by rayon, but are buffered
 /// and output in page_index order by the streaming pipeline.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PageFrame {
     /// Zero-based page index.
     ///
@@ -126,13 +137,15 @@ pub struct PageFrame {
     /// Annotations (highlights, stamps, notes, links).
     ///
     /// Empty in Phase 6; populated in Phase 7.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg(feature = "serde")]
     pub annotations: Vec<Value>,
 
     /// Optional page-level diagnostics.
     ///
     /// Present only if there were errors or warnings during extraction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    #[cfg(feature = "serde")]
     pub errors: Option<Vec<Value>>,
 }
 
@@ -151,18 +164,22 @@ impl PageFrame {
             spans,
             blocks,
             tables,
+            #[cfg(feature = "serde")]
             annotations: Vec::new(),
+            #[cfg(feature = "serde")]
             errors: None,
         }
     }
 
     /// Set page-level diagnostics.
+    #[cfg(feature = "serde")]
     pub fn with_errors(mut self, errors: Vec<Value>) -> Self {
         self.errors = Some(errors);
         self
     }
 
     /// Serialize this frame to a JSON string with a trailing newline.
+    #[cfg(feature = "serde")]
     pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
         let mut s = serde_json::to_string(self)?;
         s.push('\n');
@@ -174,7 +191,8 @@ impl PageFrame {
 ///
 /// Contains aggregated metrics and diagnostics that are only
 /// known after all pages have been processed.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FooterFrame {
     /// Aggregate extraction quality metrics.
     ///
@@ -184,41 +202,48 @@ pub struct FooterFrame {
     /// All diagnostics collected during extraction.
     ///
     /// Includes errors and warnings from all pages.
+    #[cfg(feature = "serde")]
     pub errors: Vec<Value>,
 
     /// Thread information (for debugging and profiling).
     ///
     /// Empty in the initial implementation.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg(feature = "serde")]
     pub threads: Vec<Value>,
 
     /// Attachments extracted from the document.
     ///
     /// Empty in Phase 6; populated in Phase 7.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg(feature = "serde")]
     pub attachments: Vec<Value>,
 
     /// Digital signatures extracted from the document.
     ///
     /// Empty in Phase 6; populated in Phase 7.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg(feature = "serde")]
     pub signatures: Vec<Value>,
 
     /// Form fields extracted from the document.
     ///
     /// Empty in Phase 6; populated in Phase 7.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg(feature = "serde")]
     pub form_fields: Vec<Value>,
 
     /// Links extracted from the document.
     ///
     /// Empty in Phase 6; populated in Phase 7.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg(feature = "serde")]
     pub links: Vec<Value>,
 }
 
 impl FooterFrame {
     /// Create a new footer frame.
+    #[cfg(feature = "serde")]
     pub fn new(extraction_quality: ExtractionQuality, errors: Vec<Value>) -> Self {
         Self {
             extraction_quality,
@@ -232,6 +257,7 @@ impl FooterFrame {
     }
 
     /// Serialize this frame to a JSON string with a trailing newline.
+    #[cfg(feature = "serde")]
     pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
         let mut s = serde_json::to_string(self)?;
         s.push('\n');
@@ -265,6 +291,7 @@ impl FooterFrame {
 /// let header = HeaderFrame::new(...);
 /// write_frame(&mut writer, &NdjsonFrame::Header(header))?;
 /// ```
+#[cfg(feature = "serde")]
 pub fn write_frame<W: Write>(writer: &mut W, frame: &NdjsonFrame) -> std::io::Result<()> {
     // Serialize the frame to JSON
     let json_string = serde_json::to_string(frame)
@@ -283,7 +310,6 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &NdjsonFrame) -> std::io::Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn test_ndjson_frame_header_discriminator() {

@@ -25,6 +25,8 @@
 //! 4. After all signals run: tally votes weighted by strength; pick highest-weight class
 //! 5. If no signal voted, default to Vector with confidence 0.5
 
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -1036,7 +1038,8 @@ impl Default for PageClassifier {
 /// assert_eq!(scanned.as_type_str(), "scanned");
 /// assert!(!scanned.can_escalate_to_broken_vector());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PageClass {
     /// Vector (text-based) page - use Phase 3 content stream extraction.
     Vector,
@@ -1265,7 +1268,8 @@ pub fn apply_broken_vector_escalation(
 /// assert_eq!(hybrid.class, PageClass::Hybrid);
 /// assert!(hybrid.hybrid_cells.is_some());
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PageClassification {
     /// The classification decision.
     pub class: PageClass,
@@ -2206,7 +2210,7 @@ mod tests {
         ctx.image_coverage = 0.50;
 
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // Should short-circuit to Scanned with >=0.95 confidence
         assert_eq!(result.class, PageClass::Scanned);
@@ -2229,7 +2233,7 @@ mod tests {
         ctx.image_xobject_areas.push(460_500.0); // >= 95% coverage
 
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // Should short-circuit to BrokenVector with >0.95 confidence
         assert_eq!(result.class, PageClass::BrokenVector);
@@ -2248,7 +2252,7 @@ mod tests {
         ctx.density_ratio = 0.25;
 
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // Low validity should push toward BrokenVector
         assert_eq!(result.class, PageClass::BrokenVector);
@@ -2266,7 +2270,7 @@ mod tests {
         ctx.density_ratio = 0.20;
 
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // High image coverage should push toward Scanned
         assert_eq!(result.class, PageClass::Scanned);
@@ -2284,7 +2288,7 @@ mod tests {
         ctx.density_ratio = 0.02; // Below threshold
 
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // Low density should push toward Scanned
         assert_eq!(result.class, PageClass::Scanned);
@@ -2302,7 +2306,7 @@ mod tests {
         ctx.density_ratio = 0.20;
 
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // Default to Vector with 0.5 confidence
         assert_eq!(result.class, PageClass::Vector);
@@ -2320,9 +2324,9 @@ mod tests {
         ctx.density_ratio = 0.60;
 
         let result1 = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
         let result2 = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         assert_eq!(result1.class, result2.class);
         assert_eq!(result1.confidence, result2.confidence);
@@ -2353,7 +2357,7 @@ mod tests {
             ctx.density_ratio = density;
 
             let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
             assert!(
                 result.confidence >= 0.0 && result.confidence <= 1.0,
                 "confidence {} out of range for case ({}, {}, {}, {}, {})",
@@ -2379,7 +2383,7 @@ mod tests {
 
         // This should use the default PageClassifier
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         assert_eq!(result.class, PageClass::Vector);
         assert!(result.confidence > 0.85);
@@ -2655,10 +2659,10 @@ mod tests {
         ctx.height = 792.0;
         ctx.rotation = 0;
 
-        // Call classify_page - returns PageClassification directly (no Result type)
-        // Function is infallible for valid PageContext input
+        // Call classify_page - returns ClassificationResult<PageClassification>
+        // unwrap: a valid PageContext must classify without error
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // OUTPUT FORMAT VERIFICATION
         // All assertions include descriptive messages for format mismatch diagnosis
@@ -2772,7 +2776,7 @@ mod tests {
 
         // Call classify_page - should succeed without errors
         let result = classify_page(&ctx)
-            .expect("classify_page failed");
+            .expect("classify_page should succeed");
 
         // Basic output format verification
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0,

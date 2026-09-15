@@ -73,6 +73,8 @@
 use std::sync::OnceLock;
 
 use regex::Regex;
+// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
+#[cfg(feature = "serde")]
 use serde_json::Value;
 
 /// Diagnostic code this module extracts (string form of
@@ -220,6 +222,7 @@ pub struct UnmappedGlyphScan {
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
     /// The capture is not valid JSON.
+    #[cfg(feature = "serde")]
     #[error("captured output is not valid JSON: {0}")]
     InvalidJson(#[from] serde_json::Error),
     /// `errors` is present but is not an array (and not `null`).
@@ -374,6 +377,7 @@ fn decode_hex_pairs(hex: &str) -> Result<Vec<u8>, ()> {
 ///
 /// [`ScanError::ErrorsNotAnArray`] if `errors` is present with some other
 /// JSON type.
+#[cfg(feature = "serde")]
 pub fn scan_value(value: &Value) -> Result<UnmappedGlyphScan, ScanError> {
     let mut scan = UnmappedGlyphScan::default();
     let Some(obj) = value.as_object() else {
@@ -399,12 +403,14 @@ pub fn scan_value(value: &Value) -> Result<UnmappedGlyphScan, ScanError> {
 ///
 /// [`ScanError::InvalidJson`] if the text is not valid JSON;
 /// [`ScanError::ErrorsNotAnArray`] if `errors` has a non-array type.
+#[cfg(feature = "serde")]
 pub fn scan_capture(json_text: &str) -> Result<UnmappedGlyphScan, ScanError> {
     let value: Value = serde_json::from_str(json_text)?;
     scan_value(&value)
 }
 
 /// Fold one `errors` array into `scan`.
+#[cfg(feature = "serde")]
 fn scan_errors_array(errors: &[Value], scan: &mut UnmappedGlyphScan) {
     for entry in errors {
         let Some(obj) = entry.as_object() else {
@@ -457,6 +463,7 @@ fn scan_errors_array(errors: &[Value], scan: &mut UnmappedGlyphScan) {
 /// Copy the `DiagnosticJson` metadata fields of `obj` onto `glyph`.
 ///
 /// Missing or wrongly-typed fields stay `None`; they never malform the entry.
+#[cfg(feature = "serde")]
 fn fill_metadata(obj: &serde_json::Map<String, Value>, glyph: &mut UnmappedGlyph) {
     glyph.severity = obj
         .get("severity")
@@ -471,6 +478,7 @@ fn fill_metadata(obj: &serde_json::Map<String, Value>, glyph: &mut UnmappedGlyph
 }
 
 /// Parse an `ObjectLocationJson`-shaped value.
+#[cfg(feature = "serde")]
 fn parse_location(value: Option<&Value>) -> Option<ObjectLocation> {
     let obj = value?.as_object()?;
     Some(ObjectLocation {
