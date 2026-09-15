@@ -55,7 +55,8 @@ use serde_json::{json, Value};
 /// - `links`: Document-scoped hyperlinks from the extraction result
 /// - `pages`: Array of page objects with full schema fields
 /// - `extraction_quality`: Aggregate quality metrics
-/// - `errors`: All diagnostics converted from string messages
+/// - `errors`: Structured diagnostics (`metadata.diagnostics_detailed`);
+///   the legacy string form is parsed only as a fallback
 ///
 /// # Page-level fields populated
 ///
@@ -77,8 +78,14 @@ pub fn result_to_output(result: &ExtractionResult) -> Output {
         .map(|page| page_result_to_page_json(page))
         .collect();
 
-    // Convert diagnostics strings to DiagnosticJson
-    let errors: Vec<DiagnosticJson> = convert_diagnostics(&result.metadata.diagnostics);
+    // The errors array carries the structured diagnostics when the producer
+    // populated them; results that only carry the legacy strings (built by
+    // hand or by older producers) fall back to parsing those.
+    let errors: Vec<DiagnosticJson> = if result.metadata.diagnostics_detailed.is_empty() {
+        convert_diagnostics(&result.metadata.diagnostics)
+    } else {
+        result.metadata.diagnostics_detailed.clone()
+    };
 
     // Compute extraction quality
     let extraction_quality = compute_extraction_quality(result);
@@ -293,9 +300,6 @@ fn extract_document_metadata(result: &ExtractionResult) -> DocumentMetadata {
         contains_xfa: false, // TODO: Detect XFA presence
         ocg_present: false, // TODO: Detect OCG presence
         generator: None, // TODO: Heuristic detection
-        document_type: "unknown".to_string(), // TODO: Classifier integration (Phase 5.6)
-        document_type_confidence: 0.0,
-        document_type_reasons: Vec::new(),
     }
 }
 
@@ -320,6 +324,7 @@ mod tests {
                 error_count: 0,
                 reading_order_algorithm: None,
                 diagnostics: vec![],
+                diagnostics_detailed: vec![],
                 profile_name: None,
                 profile_version: None,
                 profile_fields: None,
@@ -429,6 +434,7 @@ mod tests {
                 error_count: 0,
                 reading_order_algorithm: None,
                 diagnostics: vec![],
+                diagnostics_detailed: vec![],
                 profile_name: None,
                 profile_version: None,
                 profile_fields: None,

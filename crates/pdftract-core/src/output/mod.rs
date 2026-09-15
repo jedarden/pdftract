@@ -4,6 +4,7 @@
 //! supporting both full JSON documents and streaming NDJSON frames.
 
 pub mod inspector;
+pub mod json;
 pub mod markdown;
 pub mod ndjson;
 pub mod sink;

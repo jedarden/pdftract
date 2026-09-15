@@ -18,6 +18,7 @@ use crate::attachment::associated_files::walk_af_array;
 use crate::attachment::filespec::extract_one;
 use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::diagnostics_compat::to_legacy_strings;
 use crate::document::compute_fingerprint_lazy;
 use crate::forms::{
     acro_field_to_value, combine, walk_acroform_fields, FormFieldValue,
@@ -35,9 +36,9 @@ use crate::parser::stream::PdfSource as ParserPdfSource;
 use crate::parser::struct_tree::check_coverage_for_pages;
 use crate::receipts::Receipt;
 use crate::schema::{
-    AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, FormFieldJson, FormFieldTypeJson,
-    FormFieldValueJson, JavascriptActionJson, LinkJson, SignatureJson, SpanJson, TableJson,
-    ThreadJson,
+    AnnotationJson, AttachmentJson, BlockJson, ChoiceValueJson, DiagnosticJson, FormFieldJson,
+    FormFieldTypeJson, FormFieldValueJson, JavascriptActionJson, LinkJson, SignatureJson, SpanJson,
+    TableJson, ThreadJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
@@ -445,9 +446,17 @@ pub struct ExtractionMetadata {
     /// Reading order algorithm used for this extraction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reading_order_algorithm: Option<String>,
-    /// Diagnostics emitted during extraction (coverage warnings, etc.)
+    /// Diagnostics emitted during extraction (coverage warnings, etc.), in the
+    /// legacy string form documented in `crate::diagnostics_compat`
+    /// (message verbatim, one entry per diagnostic, in emission order).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<String>,
+    /// The same diagnostics in structured form (code/severity/page_index/
+    /// location/hint), as documented in `docs/integrations/diagnostics-codes.md`
+    /// and `crate::diagnostics_compat`. One entry per string in `diagnostics`,
+    /// in the same order; prefer this for machine consumption.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics_detailed: Vec<DiagnosticJson>,
     /// Profile name if a profile was applied (Phase 7.10)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_name: Option<String>,
@@ -906,11 +915,7 @@ pub fn extract_pdf(
         if let Some(ref tree) = struct_tree {
             let coverage_result =
                 check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
-            let diagnostics: Vec<String> = coverage_result
-                .diagnostics
-                .iter()
-                .map(|d| d.message.as_ref().to_string())
-                .collect();
+            let diagnostics: Vec<Diagnostic> = coverage_result.diagnostics.clone();
             (coverage_result.reading_order_algorithm, diagnostics)
         } else {
             // Shouldn't happen due to the needs_coverage_check condition
@@ -923,7 +928,7 @@ pub fn extract_pdf(
     // Add the tagged PDF deferred diagnostic if present
     let mut all_diagnostics = coverage_diagnostics;
     if let Some(ref deferred) = deferred_diagnostic {
-        all_diagnostics.push(deferred.message.as_ref().to_string());
+        all_diagnostics.push(deferred.clone());
     }
 
     // Phase 7.2.6: Detect two-page table continuation
@@ -1025,9 +1030,7 @@ pub fn extract_pdf(
             }
             Err(diagnostics) => {
                 // Record diagnostics for malformed bead chains but continue processing others
-                for diag in diagnostics {
-                    all_diagnostics.push(diag.message.as_ref().to_string());
-                }
+                all_diagnostics.extend(diagnostics);
                 continue;
             }
         }
@@ -1050,14 +1053,10 @@ pub fn extract_pdf(
 
     // Add JavaScript detection diagnostics to the error list
     let mut all_diagnostics_with_js = all_diagnostics;
-    for diag in js_diagnostics {
-        all_diagnostics_with_js.push(diag.message.as_ref().to_string());
-    }
+    all_diagnostics_with_js.extend(js_diagnostics);
 
     // Add page range diagnostics (PAGE_OUT_OF_RANGE warnings)
-    for diag in page_range_diagnostics {
-        all_diagnostics_with_js.push(diag.message.as_ref().to_string());
-    }
+    all_diagnostics_with_js.extend(page_range_diagnostics);
 
     Ok(ExtractionResult {
         fingerprint,
@@ -1071,7 +1070,11 @@ pub fn extract_pdf(
             cache_age_seconds: None,
             error_count,
             reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-            diagnostics: all_diagnostics_with_js,
+            diagnostics: to_legacy_strings(&all_diagnostics_with_js),
+            diagnostics_detailed: all_diagnostics_with_js
+                .iter()
+                .map(DiagnosticJson::from)
+                .collect(),
             profile_name: None,
             profile_version: None,
             profile_fields: None,
@@ -1554,6 +1557,11 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
         metadata_obj["diagnostics"] = json!(result.metadata.diagnostics);
     }
 
+    // Add structured diagnostics if present (docs/integrations/diagnostics-codes.md)
+    if !result.metadata.diagnostics_detailed.is_empty() {
+        metadata_obj["diagnostics_detailed"] = json!(result.metadata.diagnostics_detailed);
+    }
+
     json!({
         "fingerprint": result.fingerprint,
         "schema_version": "1.0",
@@ -1954,11 +1962,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         if let Some(ref tree) = struct_tree {
             let coverage_result =
                 check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
-            let diagnostics: Vec<String> = coverage_result
-                .diagnostics
-                .iter()
-                .map(|d| d.message.as_ref().to_string())
-                .collect();
+            let diagnostics: Vec<Diagnostic> = coverage_result.diagnostics.clone();
             (coverage_result.reading_order_algorithm, diagnostics)
         } else {
             // Shouldn't happen due to the needs_coverage_check condition
@@ -1971,7 +1975,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     // Add the tagged PDF deferred diagnostic if present
     let mut all_diagnostics = coverage_diagnostics;
     if let Some(ref deferred) = deferred_diagnostic {
-        all_diagnostics.push(deferred.message.as_ref().to_string());
+        all_diagnostics.push(deferred.clone());
     }
 
     Ok(ExtractionMetadata {
@@ -1983,7 +1987,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         cache_age_seconds: None,
         error_count: error_count as usize,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: all_diagnostics,
+        diagnostics: to_legacy_strings(&all_diagnostics),
+        diagnostics_detailed: all_diagnostics.iter().map(DiagnosticJson::from).collect(),
         profile_name: None,
         profile_version: None,
         profile_fields: None,
@@ -2267,11 +2272,7 @@ where
         if let Some(ref tree) = struct_tree {
             let coverage_result =
                 check_coverage_for_pages(tree, &catalog.mark_info, &pages_with_mcids);
-            let diagnostics: Vec<String> = coverage_result
-                .diagnostics
-                .iter()
-                .map(|d| d.message.as_ref().to_string())
-                .collect();
+            let diagnostics: Vec<Diagnostic> = coverage_result.diagnostics.clone();
             (coverage_result.reading_order_algorithm, diagnostics)
         } else {
             (reading_order_algorithm, Vec::new())
@@ -2283,7 +2284,7 @@ where
     // Add the tagged PDF deferred diagnostic if present
     let mut all_diagnostics = coverage_diagnostics;
     if let Some(ref deferred) = deferred_diagnostic {
-        all_diagnostics.push(deferred.message.as_ref().to_string());
+        all_diagnostics.push(deferred.clone());
     }
 
     Ok(ExtractionMetadata {
@@ -2295,7 +2296,8 @@ where
         cache_age_seconds: None,
         error_count,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: all_diagnostics,
+        diagnostics: to_legacy_strings(&all_diagnostics),
+        diagnostics_detailed: all_diagnostics.iter().map(DiagnosticJson::from).collect(),
         profile_name: None,
         profile_version: None,
         profile_fields: None,
@@ -3642,6 +3644,7 @@ startxref
                 error_count: 0,
                 reading_order_algorithm: None,
                 diagnostics: vec![],
+                diagnostics_detailed: vec![],
                 profile_name: None,
                 profile_version: None,
                 profile_fields: None,
@@ -3674,6 +3677,7 @@ startxref
                 error_count: 0,
                 reading_order_algorithm: None,
                 diagnostics: vec![],
+                diagnostics_detailed: vec![],
                 profile_name: None,
                 profile_version: None,
                 profile_fields: None,
@@ -3709,6 +3713,7 @@ startxref
                 error_count: 1,
                 reading_order_algorithm: None,
                 diagnostics: vec![],
+                diagnostics_detailed: vec![],
                 profile_name: None,
                 profile_version: None,
                 profile_fields: None,
@@ -3743,6 +3748,7 @@ startxref
                 error_count: 1,
                 reading_order_algorithm: None,
                 diagnostics: vec![],
+                diagnostics_detailed: vec![],
                 profile_name: None,
                 profile_version: None,
                 profile_fields: None,
@@ -3821,6 +3827,7 @@ startxref
                     error_count: 0,
                     reading_order_algorithm: None,
                     diagnostics: vec![],
+                    diagnostics_detailed: vec![],
                     profile_name: None,
                     profile_version: None,
                     profile_fields: None,
