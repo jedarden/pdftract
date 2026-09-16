@@ -231,3 +231,44 @@ tests and confirm they pass"; that is already atomic and smaller than the
 3–5 no-op children that each re-run the same two tests and feed the same
 reopen cycle. `verification-failed` label removed again (re-added by the
 dispatcher on reopen; no verification has ever failed on this bead).
+
+## Re-issue 7 — third auto-split order, declined; first-hand re-run at HEAD; field-level evidence close (claim epoch 7)
+
+Quarantine (round 2) expired 2026-09-16T10:36Z; the bead was re-dispatched as
+an auto-split order premised on "failed 6 times in a row", while listing
+attempts 4–6 as `verified_success` ("0 without a verified success"). Same
+treadmill shape as re-issues 4–6: `failure-count` is fed by reason-less gate
+reopens, not by any failed verification — no verification has ever failed on
+this bead.
+
+Unlike re-issues 4–6 (which inherited the standing PASS via the empty-code-diff
+retirement), this re-issue **re-ran both targets first-hand at current HEAD**:
+
+- HEAD at run time: `338d4709` (all three attempt commits `375c4feb`,
+  `28c8df47`, `faed65e5` confirmed ancestors; `git diff --stat
+  faed65e50117..HEAD -- crates/ docs/errors-array-format.md` is **empty**, so
+  attempt 6's verified verdict independently stands).
+- Recipe: pristine `git archive HEAD` extraction under `~/scratch` (no
+  `.git`), private `CARGO_TARGET_DIR` warmed with `cp -al` from
+  `/build/target-workers`, `timeout --kill-after=30s 900s` (no kill fired),
+  `--test-threads=2`.
+- Result: **exit 0** — `diagnostics_serialization_format`: **7 passed / 0
+  failed**; `diagnostics_surface_mirror`: **8 passed / 0 failed** (15/15).
+  Both pinned tests ok: `full_output_errors_array_is_always_present`,
+  `full_json_errors_array_is_populated_from_diagnostics_detailed` (the latter
+  asserts whole-array equality plus per-index wire equality over the
+  6-typed-diagnostic helper — length, order, and per-index code identity
+  between `errors[i]` and `metadata.diagnostics_detailed[i]`).
+- Warnings: `pdftract-core (lib) generated 74 warnings` — identical to the
+  baseline recorded at attempts 1, 2 and 6; **zero warnings from the two test
+  targets** → zero new compiler warnings. All three acceptance criteria PASS.
+
+Gate-evidence fix for this dispatch (why closes 3–6 bounced): the shipped-work
+gate requires gate-visible evidence per dispatch, and note-file commits are
+trivial paths. This re-issue **appended to the bead's `notes` field** (closure
+contract option 2) before closing, and the close reason carries a ```verified
+fence with the exact cargo test command above. Split declined a fifth time:
+the bead's entire scope is "run two named cargo test targets and confirm they
+pass" — already atomic; a 3–5 child split only multiplies the treadmill
+(precedent: `dbbd2e0a`, `d96bc93f`). Scratch extraction and private target
+dir removed after the run; no orphaned processes.
