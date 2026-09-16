@@ -8002,3 +8002,4 @@
 {"bead":"pdftract-c8738574","event":"claim","strand":"explore","ts":"2026-09-16T03:20:31.801782408+00:00","worker":"glm-mta"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a83a-f8bb-79d2-b1f0-f04dca474461","bead":"pdftract-c8738574","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T03:20:32.187963264+00:00","worker":"glm-mta"}
 {"bead":"pdftract-c8738574","duration_ms":460825,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T03:28:13.118100572+00:00","worker":"glm-mta"}
+{"bead":"pdftract-f0d685f4","duration_ms":1560917,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T03:30:27.525738581+00:00","worker":"glm-seam"}
