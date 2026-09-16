@@ -197,3 +197,40 @@ Audit re-derivations at HEAD:
   `docs(pdftract-a58276cf)` commit.
 - Files: `crates/pdftract-core/src/extract.rs`,
   `crates/pdftract-core/src/diagnostics_compat.rs`, this note.
+
+## Re-issue 4 — 2026-09-16 (fourth split order declined; evidence close)
+
+Fourth auto-split order on this bead (dispatch after the
+`quarantine-until:2026-09-16T08:07:26Z` window expired; claim_epoch 6), again
+citing `failure-count:4` + `verification-failed`. The count remains
+reopen-inflated: attempts 3, 4, and 5 were all `verified_success`, and each
+evidence close — 06:50:47Z (epoch 3), 07:28:23Z (epoch 4), 08:12:54Z (epoch 5)
+— was reopened by the dispatcher without a recorded reason within minutes
+(checkpoint events seq 8450→8451, 8460→8463, 8483→8485). The work itself has
+been complete since `19318bf7` (producer restoration + golden test) and
+`92b72b4e` (evidence re-derivation at 98cf4de1): 9/9 diagnostics_compat tests
+including `golden_legacy_bytes_match_inline_producer_expression`, three
+`to_legacy_strings` producers in `extract.rs` (:1090, :2017, :2334), zero
+`ToString::to_string` producer sites.
+
+The split was declined as duplication of closed work — the same terminal
+action taken on the sibling bead's third order (`pdftract-f0d685f4`,
+`d96bc93f`). Manufacturing 3–5 children for thrice-verified work creates
+vacuous dispatch cycles and re-arms further redispatch.
+
+Verdict standing re-derived, not cited stale:
+
+```
+git diff --stat 92b72b4e..062bcee6 -- \
+  crates/pdftract-core/src/diagnostics_compat.rs \
+  crates/pdftract-core/src/extract.rs \
+  crates/pdftract-core/src/diagnostics.rs \
+  notes/pdftract-a58276cf.md
+# (empty — exit 0)
+```
+
+Every commit between the executed-verdict tip and HEAD (`d96bc93f` docs,
+`062bcee6` chore beads-sync) is docs/beads-sync only, so the 9/9 compat green
+recorded at `92b72b4e` holds verbatim at HEAD `062bcee6` with no re-run
+required (empty code-diff rule; the shared checkout's uncommitted edits are
+excluded from HEAD by definition).
