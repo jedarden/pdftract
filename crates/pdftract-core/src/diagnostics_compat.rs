@@ -84,9 +84,11 @@ use crate::diagnostics::Diagnostic;
 ///
 /// The legacy surface (`ExtractionResult.metadata.diagnostics: Vec<String>`)
 /// carries the diagnostic's message verbatim; see the module docs for the
-/// full canonical/compatibility contract. Order- and byte-stable: callers
-/// converting a whole emission sequence get exactly the strings the inline
-/// `d.message.as_ref().to_string()` producers in `extract.rs` emit today.
+/// full canonical/compatibility contract. Order- and byte-stable: the
+/// producers in `extract.rs` now route through [`to_legacy_strings`], and the
+/// result is byte-for-byte what their former inline
+/// `d.message.as_ref().to_string()` sites emitted — the equivalence the
+/// golden test below pins.
 #[inline]
 pub fn to_legacy_string(diag: &Diagnostic) -> String {
     diag.message.as_ref().to_string()

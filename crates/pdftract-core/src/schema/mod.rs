@@ -835,7 +835,8 @@ pub struct DiagnosticJson {
     /// Severity level: "info", "warning", "error", or "fatal".
     pub severity: String,
 
-    /// Page index where this diagnostic occurred, or `null` for document-level events.
+    /// Zero-based page index where this diagnostic occurred; omitted (not
+    /// serialized as `null`) for document-level events.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub page_index: Option<usize>,
 

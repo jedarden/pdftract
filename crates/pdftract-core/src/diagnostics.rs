@@ -22,25 +22,29 @@
 //!
 //! # Usage
 //!
-//! Emit diagnostics using the `emit!` macro:
+//! Emit diagnostics using the `emit!` macro (it is `#[macro_export]`-ed to
+//! the crate root, and the code ident is the `DiagCode` *variant* name, not
+//! the serialized SCREAMING_SNAKE string):
 //!
 //! ```rust
-//! use pdftract_core::diagnostics::{emit, DiagCode};
+//! use pdftract_core::emit;
 //!
 //! let mut diagnostics = Vec::new();
 //!
 //! // Emit with code only
-//! emit!(diagnostics, STRUCT_INVALID_NAME);
+//! emit!(diagnostics, StructInvalidName);
 //!
 //! // Emit with code and byte offset
-//! emit!(diagnostics, STRUCT_INVALID_NAME, offset = 42);
+//! emit!(diagnostics, StructInvalidName, offset = 42);
 //!
 //! // Emit with code, byte offset, and object reference
-//! emit!(diagnostics, STRUCT_MISSING_KEY, offset = 100, object = 5_0);
+//! emit!(diagnostics, StructMissingKey, offset = 100, object = (5, 0));
 //!
 //! // Emit with custom message
-//! emit!(diagnostics, STREAM_DECODE_ERROR, offset = 200,
+//! emit!(diagnostics, StreamDecodeError, offset = 200,
 //!       message = "zlib stream truncated mid-inflation".to_string());
+//!
+//! assert_eq!(diagnostics.len(), 4);
 //! ```
 //!
 //! # Catalog
@@ -2894,18 +2898,24 @@ impl From<&Diagnostic> for DiagnosticJson {
 /// It supports several forms:
 ///
 /// ```rust
+/// use pdftract_core::emit;
+///
+/// let mut diagnostics = Vec::new();
+///
 /// // Emit with code only (no offset, default message)
-/// emit!(diagnostics, STRUCT_INVALID_NAME);
+/// emit!(diagnostics, StructInvalidName);
 ///
 /// // Emit with code and byte offset
-/// emit!(diagnostics, STRUCT_INVALID_NAME, offset = 42);
+/// emit!(diagnostics, StructInvalidName, offset = 42);
 ///
 /// // Emit with code, byte offset, and object reference
-/// emit!(diagnostics, STRUCT_MISSING_KEY, offset = 100, object = 5_0);
+/// emit!(diagnostics, StructMissingKey, offset = 100, object = (5, 0));
 ///
 /// // Emit with custom message
-/// emit!(diagnostics, STREAM_DECODE_ERROR, offset = 200,
+/// emit!(diagnostics, StreamDecodeError, offset = 200,
 ///       message = "zlib stream truncated".to_string());
+///
+/// assert_eq!(diagnostics.len(), 4);
 /// ```
 ///
 /// # Parameters
@@ -2913,7 +2923,7 @@ impl From<&Diagnostic> for DiagnosticJson {
 /// - `diagnostics`: The `Vec<Diagnostic>` to push to
 /// - `code`: The `DiagCode` variant (without the `DiagCode::` prefix)
 /// - `offset = <expr>`: Optional byte offset (u64 or None)
-/// - `object = <num>_<gen>`: Optional object reference (e.g., `5_0` for object 5 gen 0)
+/// - `object = (<num>, <gen>)`: Optional object reference (e.g., `(5, 0)` for object 5 gen 0)
 /// - `message = <expr>`: Optional custom message (String or &'static str)
 #[macro_export]
 macro_rules! emit {
@@ -3344,8 +3354,8 @@ mod collector_tests {
 /// These pin the contract between the typed [`Diagnostic`] and the serialized
 /// [`DiagnosticJson`]: every emittable code converts with its catalog
 /// severity, catalog hint, and (when set) page index and object location, and
-/// the `code` string round-trips through [`DiagCode::from_name`]. The legacy
-/// string form's documented shape (`CODE: message (byte offset N)?`) is
+/// the `code` string round-trips through [`DiagCode::from_name`]. The
+/// `Display` form's documented shape (`CODE: message (byte offset N)?`) is
 /// pinned by [`Self::display_matches_documented_string_form`].
 #[cfg(test)]
 mod diagnostic_json_round_trip_tests {

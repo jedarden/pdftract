@@ -454,8 +454,12 @@ pub struct ExtractionMetadata {
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub reading_order_algorithm: Option<String>,
     /// Diagnostics emitted during extraction (coverage warnings, etc.), in the
-    /// legacy string form documented in `docs/errors-array-format.md`
-    /// (`CODE: message (byte offset N)? [object generation R]?`).
+    /// legacy string form documented in `docs/errors-array-format.md`: one
+    /// plain string per diagnostic, in emission order, each the diagnostic's
+    /// `message` verbatim — no code prefix, no byte-offset or object-location
+    /// suffix (that richer shape is `Diagnostic`'s `Display`, which is not
+    /// this surface). Produced by
+    /// [`to_legacy_strings`](crate::diagnostics_compat::to_legacy_strings).
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Vec::is_empty"))]
     pub diagnostics: Vec<String>,
     /// The same diagnostics in structured form (code/severity/page_index/
