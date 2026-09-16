@@ -139,3 +139,25 @@ test targets. `19318bf7` deliberately changed only the legacy
 untouched, and the fresh run confirms the contract holds at this tip. Scratch
 extraction + private target dir removed after success; no orphaned processes
 (`pgrep` clean).
+
+## Re-issue 4 — close without a re-run (empty code-diff), split declined
+
+The quarantine re-dispatch (claim epoch 4) arrived as an **auto-split order**
+premised on "failed 3 times in a row". The premise is false:
+
+- `forensic.jsonl` events for this bead: 3 `closed` / 3 `reopened` /
+  3 `attempt_resolved`, **zero failed attempts** — the dispatcher's own
+  attempt log lists all three as `verified_success`. `failure-count:3` was
+  fed by reason-less reopens after quarantine expiry, not by any test
+  failure (treadmill pattern; memory: pdftract-autosplit-treadmill).
+- `git diff --stat 49951074 HEAD` is **empty for code** — HEAD `000b8079`
+  touches only this note (+26). Per the documented rule, PASS staleness is
+  retired by an empty code-diff from the executed-verdict tip, so the
+  attempt-3 verdict at `49951074` stands without a re-run.
+- Sole dependency blocker `pdftract-d4abc102` is **closed**.
+
+Splitting a bead whose work is verified would manufacture 3–5 no-op child
+beads; the terminal action for a satisfied bead is an evidence close, so the
+split was declined and the bead closed instead. The `verification-failed`
+label (no verification ever failed) was removed. All three acceptance
+criteria remain PASS on the evidence above.
