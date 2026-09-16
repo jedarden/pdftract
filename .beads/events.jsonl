@@ -7968,3 +7968,12 @@
 {"bead":"pdftract-c1fceb36","event":"claim","strand":"explore","ts":"2026-09-15T23:18:07.815714267+00:00","worker":"glm-tradegraph"}
 {"bead":"pdftract-d1c76b2a","event":"claim","strand":"explore","ts":"2026-09-15T23:27:33.431095174+00:00","worker":"glm53-irmcp"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a765-ae2f-7702-86a3-5818659c2210","bead":"pdftract-d1c76b2a","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-15T23:27:33.935364277+00:00","worker":"glm53-irmcp"}
+{"bead":"pdftract-18954693","event":"claim","strand":"explore","ts":"2026-09-16T00:15:04.001599238+00:00","worker":"glm-armor"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a791-2cfd-7651-868f-4467bd22dd3d","bead":"pdftract-18954693","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T00:15:04.445880458+00:00","worker":"glm-armor"}
+{"bead":"pdftract-d1c76b2a","duration_ms":2961908,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T00:16:55.982890920+00:00","worker":"glm53-irmcp"}
+{"bead":"pdftract-c1fceb36","duration_ms":3603651,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-16T00:18:09.787716276+00:00","worker":"glm53-adc"}
+{"bead":"pdftract-a7c93aa5","event":"claim","strand":"explore","ts":"2026-09-16T00:22:09.900810145+00:00","worker":"glm53-irmcp"}
+{"adapter":"claude-code-glm-5.3","attempt_id":"01a0a797-aca8-7150-a605-e5ff5d1181e2","bead":"pdftract-a7c93aa5","event":"dispatch","model":"glm-5.3","strand":"explore","ts":"2026-09-16T00:22:10.344610892+00:00","worker":"glm53-irmcp"}
+{"bead":"pdftract-a7c93aa5","duration_ms":753121,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T00:34:43.577068796+00:00","worker":"glm53-irmcp"}
+{"bead":"pdftract-f0d685f4","event":"claim","strand":"explore","ts":"2026-09-16T00:36:25.394450892+00:00","worker":"glm-tgp"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a7a4-ba78-74c2-a119-daba2ba6c459","bead":"pdftract-f0d685f4","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T00:36:25.848906347+00:00","worker":"glm-tgp"}
