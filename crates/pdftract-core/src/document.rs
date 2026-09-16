@@ -3289,9 +3289,9 @@ startxref
             ..Default::default()
         };
 
-        let result = std::panic::catch_unwind(|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             validate_pages_structure(&empty_dict_catalog, &resolver, "empty.pdf")
-        });
+        }));
 
         assert!(result.is_ok(), "Should not panic on empty catalog dictionary");
         assert!(result.unwrap().is_err(), "Should return error for empty catalog dictionary");
@@ -3324,9 +3324,9 @@ startxref
             };
 
             let source = format!("non-dict-type-{}.pdf", i);
-            let result = std::panic::catch_unwind(|| {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 validate_pages_structure(&catalog, &resolver, &source)
-            });
+            }));
 
             assert!(result.is_ok(), "Should not panic on non-dictionary type: {:?}", raw_dict);
             assert!(result.unwrap().is_err(), "Should return error for non-dictionary type: {:?}", raw_dict);
@@ -3351,9 +3351,9 @@ startxref
             ..Default::default()
         };
 
-        let result = std::panic::catch_unwind(|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             validate_pages_structure(&catalog_no_type, &resolver, "no-type.pdf")
-        });
+        }));
 
         assert!(result.is_ok(), "Should not panic on catalog missing /Type");
         assert!(result.unwrap().is_err(), "Should return error for catalog missing /Type");
@@ -3367,9 +3367,9 @@ startxref
             ..Default::default()
         };
 
-        let result = std::panic::catch_unwind(|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             validate_pages_structure(&catalog_no_pages, &resolver, "no-pages.pdf")
-        });
+        }));
 
         assert!(result.is_ok(), "Should not panic on catalog missing /Pages");
         assert!(result.unwrap().is_err(), "Should return error for catalog missing /Pages");
@@ -4023,9 +4023,9 @@ startxref
                 let resolver = XrefResolver::new();
 
                 // This should never panic - it should always return an error
-                let result = std::panic::catch_unwind(|| {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     validate_pages_structure(&catalog, &resolver, &format!("no-panic-{}.pdf", variant_name))
-                });
+                }));
 
                 assert!(result.is_ok(), "Should not panic on {} variant", variant_name);
                 let validation_result = result.unwrap();

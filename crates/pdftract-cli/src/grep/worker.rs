@@ -1,3 +1,4 @@
+// Landed with pdftract-c1fceb36: updates process_with_mode call sites to the current core signature alongside the serde-gating landing.
 //! Worker function for single-pass per-file PDF grep.
 //!
 //! This module implements the core worker that processes a single FileWorkItem
@@ -133,8 +134,9 @@ pub fn worker_run(
         }
     };
 
-    // Adapt source for parser functions
-    let adapted_source = SourceAdapter::new(source);
+    // Adapt source for parser functions. Shared in an Arc so the resolver can
+    // retain a clone for source-backed `resolve()` (see from_section_with_source).
+    let adapted_source = std::sync::Arc::new(SourceAdapter::new(source));
 
     // Find the startxref offset
     let startxref_offset = match find_startxref(adapted_source.inner()) {
@@ -149,11 +151,13 @@ pub fn worker_run(
     };
 
     // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&adapted_source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(adapted_source.as_ref(), startxref_offset);
 
     // Check for encryption
     if let Some(trailer) = &xref_section.trailer {
-        if let Some(_encrypt) = trailer.get("/Encrypt") {
+        // Dict keys are stored without the leading slash (lexer strips it
+        // from Name tokens), so lookups must use the bare key name.
+        if let Some(_encrypt) = trailer.get("Encrypt") {
             // Encrypted PDF without password support - skip with diagnostic
             eprintln!("{}: encrypted (skipped)", item.path.display());
             progress_sink.send(ProgressEvent::FileSkipped {
@@ -164,14 +168,20 @@ pub fn worker_run(
         }
     }
 
-    // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    // Create resolver from xref section. The resolver retains a clone of the
+    // source so resolve() reads objects from their xref offsets instead of
+    // returning Null (the source-less stub behavior) — required for the page
+    // tree, content streams, and resources to resolve at all.
+    let resolver = XrefResolver::from_section_with_source(
+        xref_section.clone(),
+        adapted_source.clone() as std::sync::Arc<dyn pdftract_core::parser::stream::PdfSource>,
+    );
 
     // Get the root reference from trailer
     let root_ref = match xref_section
         .trailer
         .as_ref()
-        .and_then(|trailer| trailer.get("/Root"))
+        .and_then(|trailer| trailer.get("Root"))
     {
         Some(PdfObject::Ref(root_ref)) => *root_ref,
         _ => {
@@ -184,7 +194,8 @@ pub fn worker_run(
     };
 
     // Parse the catalog
-    let catalog = match parse_catalog_with_resolver(&resolver, root_ref, &adapted_source) {
+    let catalog =
+        match parse_catalog_with_resolver(&resolver, root_ref, adapted_source.as_ref()) {
         Ok(c) => c,
         Err(diagnostics) => {
             let msg = diagnostics
@@ -198,6 +209,10 @@ pub fn worker_run(
             return Ok(());
         }
     };
+
+    // OCGs that are OFF in the document's default configuration (/OCProperties /D).
+    // Resolves /OC marked-content visibility during span extraction.
+    let default_off_ocgs = catalog.default_off_ocgs();
 
     // Flatten the page tree
     let pages = match flatten_page_tree(&resolver, catalog.pages_ref) {
@@ -262,17 +277,19 @@ pub fn worker_run(
         })?;
 
         // Extract spans from this page
-        let spans = match extract_spans_from_page(page, &resolver, &adapted_source) {
-            Ok(s) => s,
-            Err(e) => {
-                // Log error but continue with next page
-                eprintln!(
-                    "Warning: failed to extract spans from page {}: {}",
-                    page_index, e
-                );
-                continue;
-            }
-        };
+        let spans =
+            match extract_spans_from_page(page, &resolver, adapted_source.as_ref(), &default_off_ocgs)
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    // Log error but continue with next page
+                    eprintln!(
+                        "Warning: failed to extract spans from page {}: {}",
+                        page_index, e
+                    );
+                    continue;
+                }
+            };
 
         // Apply matcher to each span
         for span in spans {
@@ -383,23 +400,38 @@ fn extract_spans_from_page(
     page: &PageDict,
     resolver: &XrefResolver,
     source: &SourceAdapter,
+    default_off_ocgs: &std::collections::HashSet<pdftract_core::parser::object::ObjRef>,
 ) -> Result<Vec<Span>> {
     // Get page resources (already resolved in PageDict)
     let resources = (*page.resources).clone();
+
+    // Warm indirect /Properties targets so BDC property names resolve through
+    // the cache-only XrefResolver::resolve (bead pdftract-4f5ade3a).
+    resources.warm_indirect_properties(resolver, source);
 
     // Decode and process content streams
     let decoded = decode_page_streams(page, resolver, source)?;
 
     // Process content stream to extract glyphs
-    let glyphs = process_with_mode(&decoded, &resources, ProcessingMode::Normal, None, None).map_err(
-        |diagnostics| {
-            let msg = diagnostics
-                .first()
-                .map(|d| d.message.as_ref())
-                .unwrap_or("unknown error");
-            anyhow!("failed to process content stream: {}", msg)
-        },
-    )?;
+    let glyphs = process_with_mode(
+        &decoded,
+        &resources,
+        ProcessingMode::Normal,
+        None,
+        Some(default_off_ocgs),
+        Some(resolver),
+    )
+    .map_err(|diagnostics| {
+        let msg = diagnostics
+            .first()
+            .map(|d| d.message.as_ref())
+            .unwrap_or("unknown error");
+        anyhow!("failed to process content stream: {}", msg)
+    })?;
+
+    // OCG visibility: drop glyphs inside default-off optional content so grep
+    // matches what the document shows by default.
+    let glyphs: Vec<_> = glyphs.into_iter().filter(|g| !g.is_hidden).collect();
 
     // Group glyphs into spans (consecutive glyphs with same font)
     let spans = group_glyphs_into_spans(glyphs);

@@ -1,3 +1,4 @@
+// Landed with pdftract-c1fceb36: carries XrefResolver::from_section_with_source used by the pdftract-cli grep worker call sites.
 //! Cross-reference table resolver and traditional xref parser.
 //!
 //! This module provides:
@@ -231,6 +232,11 @@ pub struct XrefResolver {
     entries: HashMap<u32, XrefEntry>,
     /// LRU cache of resolved objects with cycle detection and depth limiting
     cache: Arc<ObjectCache>,
+    /// Optional backing source. When set, [`XrefResolver::resolve`] performs
+    /// full source-backed resolution (same as [`XrefResolver::resolve_with_source`]);
+    /// when `None`, `resolve` keeps the historical stub behavior of returning
+    /// `Null` for uncached objects.
+    source: Option<Arc<dyn PdfSource>>,
 }
 
 impl XrefResolver {
@@ -239,6 +245,7 @@ impl XrefResolver {
         XrefResolver {
             entries: HashMap::new(),
             cache: Arc::new(ObjectCache::new()),
+            source: None,
         }
     }
 
@@ -247,6 +254,21 @@ impl XrefResolver {
         XrefResolver {
             entries: section.entries,
             cache: Arc::new(ObjectCache::new()),
+            source: None,
+        }
+    }
+
+    /// Create a new xref resolver from an XrefSection with a backing source.
+    ///
+    /// Unlike [`XrefResolver::from_section`], [`XrefResolver::resolve`] on the
+    /// returned resolver reads and parses objects from `source` instead of
+    /// returning `Null`, so page-tree walks and content-stream lookups resolve
+    /// real objects.
+    pub fn from_section_with_source(section: XrefSection, source: Arc<dyn PdfSource>) -> Self {
+        XrefResolver {
+            entries: section.entries,
+            cache: Arc::new(ObjectCache::new()),
+            source: Some(source),
         }
     }
 
@@ -262,13 +284,10 @@ impl XrefResolver {
 
     /// Resolve an object reference to its value.
     ///
-    /// This is a stub implementation that returns Null. The full implementation
-    /// (Phase 1.3) will:
-    /// - Check for circular references (via ObjectCache)
-    /// - Look up the xref entry
-    /// - Read and parse the object from its offset
-    /// - Handle object streams
-    /// - Cache resolved objects (via ObjectCache LRU)
+    /// When the resolver was built with [`XrefResolver::from_section_with_source`],
+    /// this performs full source-backed resolution (object read from its xref
+    /// offset, parsed, and cached). Without a source this is a stub that returns
+    /// `Null` for uncached objects.
     pub fn resolve(&self, obj_ref: ObjRef) -> ResolveResult<PdfObject> {
         // Check cache first (includes cycle detection via begin_resolution)
         if let Some(obj) = self.cache.get(obj_ref) {
@@ -281,10 +300,12 @@ impl XrefResolver {
             .get(&obj_ref.object)
             .ok_or_else(|| ResolveError::NotFound(obj_ref))?;
 
-        // Stub: return Null for now
-        // Full implementation will read from file offset and parse
-        // Use resolve_with_source instead
-        Ok(PdfObject::Null)
+        match self.source {
+            // Full resolution through the backing source
+            Some(ref source) => self.resolve_with_source(obj_ref, source.as_ref()),
+            // No source available - stub behavior
+            None => Ok(PdfObject::Null),
+        }
     }
 
     /// Resolve an object reference to its value, using a file source for reading.
@@ -1126,6 +1147,10 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
 
     // Large file: scan in chunks using memchr for efficient space searching
     let mut entries_found = 0u64;
+    // Bytes re-examined at the start of each chunk so a pattern spanning the
+    // boundary is still found: a space in the last 3 bytes of a chunk cannot
+    // be matched until the bytes following it are visible.
+    const CHUNK_OVERLAP: u64 = 3;
     const CHUNK_SIZE: usize = 256 * 1024; // 256 KB chunks
 
     // We search for the pattern " obj" (space followed by "obj")
@@ -1179,9 +1204,23 @@ pub fn forward_scan_xref(source: &dyn PdfSource, is_linearized: bool) -> XrefSec
                     }
                 }
 
-                pos += to_read as u64;
-                // Slide back to catch " obj" spanning chunk boundaries
-                pos = pos.saturating_sub(3);
+                // Advance past the bytes actually read, then slide back up to
+                // CHUNK_OVERLAP bytes to catch " obj" spanning the boundary.
+                // Two guards keep this loop terminating:
+                // - a high-water mark: the slide-back never lands at or
+                //   before `pos`, so every iteration advances even when the
+                //   source returns short reads;
+                // - an EOF check: once a chunk reaches the end of the source
+                //   there is no following chunk to overlap with. Without it
+                //   the final partial chunk used to cycle
+                //   source_len-3 -> source_len -> source_len-3 forever,
+                //   wedging the caller on any source above SMALL_FILE_THRESHOLD
+                //   (MCP dogfood pilot F1, docs/notes/mcp-dogfood-pilot.md).
+                let chunk_end = pos + chunk.len() as u64;
+                if chunk_end >= source_len {
+                    break;
+                }
+                pos = chunk_end.saturating_sub(CHUNK_OVERLAP).max(pos + 1);
             }
             Err(_) => break,
             Ok(_) => break, // Empty chunk
@@ -1426,44 +1465,61 @@ fn forward_scan_trailer(source: &dyn PdfSource) -> Option<PdfDict> {
     while pos < source_len {
         let to_read = 4096.min((source_len - pos) as usize);
         let chunk = source.read_at(pos, to_read).ok()?;
+        if chunk.is_empty() {
+            return None;
+        }
 
         // Search for "trailer" in this chunk
-        if let Some(idx) = chunk
-            .windows(TRAILER_KEYWORD.len())
-            .position(|w| w == TRAILER_KEYWORD)
-        {
-            let trailer_offset = pos + idx as u64;
+        if chunk.len() >= TRAILER_KEYWORD.len() {
+            if let Some(idx) = chunk
+                .windows(TRAILER_KEYWORD.len())
+                .position(|w| w == TRAILER_KEYWORD)
+            {
+                let trailer_offset = pos + idx as u64;
 
-            // Verify it's at a token boundary (preceded by whitespace or start)
-            let valid_boundary = if idx > 0 {
-                chunk[idx - 1].is_ascii_whitespace()
-                    || chunk[idx - 1] == b'\n'
-                    || chunk[idx - 1] == b'\r'
-            } else {
-                pos == scan_start // At start of scan area
-            };
+                // Verify it's at a token boundary (preceded by whitespace or start)
+                let valid_boundary = if idx > 0 {
+                    chunk[idx - 1].is_ascii_whitespace()
+                        || chunk[idx - 1] == b'\n'
+                        || chunk[idx - 1] == b'\r'
+                } else {
+                    pos == scan_start // At start of scan area
+                };
 
-            if valid_boundary {
-                // Parse the trailer dictionary
-                let mut dict_pos = trailer_offset + TRAILER_KEYWORD.len() as u64;
-                // Skip whitespace before <<
-                while dict_pos < source_len {
-                    let byte = source.read_at(dict_pos, 1).ok()?;
-                    if !byte.is_empty() && byte[0].is_ascii_whitespace() {
-                        dict_pos += 1;
-                    } else {
-                        break;
+                if valid_boundary {
+                    // Parse the trailer dictionary
+                    let mut dict_pos = trailer_offset + TRAILER_KEYWORD.len() as u64;
+                    // Skip whitespace before <<
+                    while dict_pos < source_len {
+                        let byte = source.read_at(dict_pos, 1).ok()?;
+                        if !byte.is_empty() && byte[0].is_ascii_whitespace() {
+                            dict_pos += 1;
+                        } else {
+                            break;
+                        }
                     }
+                    // Try to parse the dict - for now return empty dict
+                    // Full implementation would use the object parser
+                    return Some(PdfDict::new());
                 }
-                // Try to parse the dict - for now return empty dict
-                // Full implementation would use the object parser
-                return Some(PdfDict::new());
             }
         }
 
-        pos += to_read as u64;
-        // Slide back to catch matches spanning boundaries
-        pos = pos.saturating_sub((TRAILER_KEYWORD.len() - 1) as u64);
+        // Advance past the bytes actually read, then slide back up to
+        // TRAILER_KEYWORD.len() - 1 bytes to catch a keyword spanning the
+        // boundary. The same two guards as the object-entry scan above keep
+        // this loop terminating: without the EOF check the final partial
+        // chunk cycled source_len-6 -> source_len -> source_len-6 forever
+        // (and a tail chunk shorter than the keyword panicked in `windows`;
+        // with the old code even a 1-byte source looped forever because the
+        // slide-back saturated back to 0).
+        let chunk_end = pos + chunk.len() as u64;
+        if chunk_end >= source_len {
+            return None;
+        }
+        pos = chunk_end
+            .saturating_sub((TRAILER_KEYWORD.len() - 1) as u64)
+            .max(pos + 1);
     }
 
     None
@@ -3239,6 +3295,111 @@ trailer\n<< /Size 3 >>\n";
 
         // Should have found a trailer
         assert!(result.trailer.is_some());
+    }
+
+    #[test]
+    fn test_forward_scan_large_file_terminates() {
+        // Regression (MCP dogfood pilot F1, bead pdftract-c7c43f45): the
+        // chunked path taken above SMALL_FILE_THRESHOLD advanced with
+        // `pos += to_read; pos = pos.saturating_sub(3)`, so after the final
+        // partial chunk `pos` cycled source_len-3 -> source_len ->
+        // source_len-3 forever. Any source above 1 MiB hung the caller at
+        // ~100% CPU; the proptests only generate small inputs and cannot
+        // reach this path.
+        //
+        // Entry recovery itself is currently a no-op (the match condition
+        // never fires — tracked as F2 / pdftract-257d92c3), so this test
+        // asserts termination and full-path completion, not recovered
+        // entries.
+        const CHUNK: u64 = 256 * 1024; // must match CHUNK_SIZE in forward_scan_xref
+        const LEN: usize = 2 * 1024 * 1024; // well above SMALL_FILE_THRESHOLD
+
+        let mut pdf_data = vec![b'\n'; LEN];
+        pdf_data[..8].copy_from_slice(b"%PDF-1.4");
+        // Headers straddling chunk boundaries exercise the overlap window:
+        // "900 0 obj" starts 6 bytes before the first chunk boundary, so its
+        // " obj" space lands in the last 3 bytes of the chunk.
+        pdf_data[(CHUNK - 6) as usize..(CHUNK + 4) as usize].copy_from_slice(b"900 0 obj\n");
+        pdf_data[(2 * CHUNK - 6) as usize..(2 * CHUNK + 4) as usize]
+            .copy_from_slice(b"901 0 obj\n");
+        // A header fully inside the final partial chunk is exactly where the
+        // old code hung.
+        pdf_data[LEN - 10..].copy_from_slice(b"902 0 obj\n");
+        // The trailer scan runs after the entry loop; give it something to
+        // find so its success path is exercised too.
+        pdf_data[LEN - 32..LEN - 21].copy_from_slice(b"\ntrailer<<\n");
+
+        let source = MemorySource::new(pdf_data);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(forward_scan_xref(&source, false));
+        });
+        let result = rx
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "forward_scan_xref panicked or failed to terminate within 30s on a 2 MiB \
+                     source (chunked-path infinite loop regression)"
+                )
+            });
+
+        // Reaching this point means both chunk loops terminated. The
+        // XrefRepaired diagnostic is emitted only after the entry loop and
+        // the trailer scan have both run to completion.
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.code == DiagCode::XrefRepaired),
+            "expected XrefRepaired diagnostic after a completed forward scan"
+        );
+        assert!(
+            result.trailer.is_some(),
+            "trailer placed at EOF should be found"
+        );
+    }
+
+    #[test]
+    fn test_forward_scan_trailer_scan_terminates() {
+        // Same slide-back defect in forward_scan_trailer: `pos += to_read`
+        // followed by `saturating_sub(TRAILER_KEYWORD.len() - 1)` cycled at
+        // EOF, and a tail chunk shorter than the keyword panicked in
+        // `windows(7)`. Sweep the lengths around the chunk and keyword
+        // boundaries; every case must return instead of hanging or panicking.
+        let lengths = [1usize, 6, 7, 10, 4095, 4096, 4097, 8192, 65_537];
+        for len in lengths {
+            let source = MemorySource::new(vec![b'\n'; len]);
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(forward_scan_trailer(&source));
+            });
+            let result = rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "forward_scan_trailer panicked or failed to terminate within 10s \
+                         for len={len}"
+                    )
+                });
+            assert_eq!(result, None, "no trailer keyword present for len={len}");
+        }
+
+        // A keyword present near EOF must still be found (and not panic on
+        // the short chunk left after the slide-back).
+        let mut data = vec![b'\n'; 5000];
+        data[4000..4011].copy_from_slice(b"\ntrailer<<\n");
+        let source = MemorySource::new(data);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(forward_scan_trailer(&source));
+        });
+        let result = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("forward_scan_trailer panicked or failed to terminate");
+        assert!(
+            result.is_some(),
+            "trailer keyword at offset 4000 should be found"
+        );
     }
 
     // Xref stream tests (PDF 1.5+)

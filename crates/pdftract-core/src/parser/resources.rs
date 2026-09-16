@@ -1,3 +1,4 @@
+// Landed with pdftract-c1fceb36: carries ResourceDict::warm_indirect_properties used by the serde-gated extract.rs.
 //! Resource dictionary handling with inheritance.
 //!
 //! PDF 1.7, Section 7.7.3.3 "Resource Dictionary"
@@ -99,6 +100,33 @@ impl ResourceDict {
     /// `PdfObject::Dict` (direct inline property dictionary, usable as-is).
     pub fn lookup_properties(&self, name: &str) -> Option<&PdfObject> {
         self.properties.get(name)
+    }
+
+    /// Resolve every indirect `/Properties` entry into the resolver's cache.
+    ///
+    /// `XrefResolver::resolve` is cache-only: an indirect property list that
+    /// has never been read through the source resolves to Null, so the BDC
+    /// marked-content path would lose `/MCID`/`/OCG` even with a resolver in
+    /// hand. Page-tree traversal has no source and cannot warm these, so the
+    /// consumers that hold one call this before running content streams
+    /// (bead pdftract-4f5ade3a). Resolution failures are deliberately
+    /// ignored here — `parse_bdc`'s diagnostic branches report them when the
+    /// property is actually consulted.
+    ///
+    /// # Arguments
+    ///
+    /// * `resolver` - The xref resolver whose cache is warmed
+    /// * `source` - The PDF source to read indirect objects from
+    pub fn warm_indirect_properties(
+        &self,
+        resolver: &crate::parser::xref::XrefResolver,
+        source: &dyn crate::parser::stream::PdfSource,
+    ) {
+        for value in self.properties.values() {
+            if let PdfObject::Ref(prop_ref) = value {
+                let _ = resolver.resolve_with_source(*prop_ref, source);
+            }
+        }
     }
 }
 

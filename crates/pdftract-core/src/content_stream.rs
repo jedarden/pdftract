@@ -1,3 +1,4 @@
+// Landed with pdftract-c1fceb36: carries the process_with_mode / Glyph surface that the serde-gated extract.rs call sites depend on.
 //! Phase 3 content stream processing with position-hint mode support.
 //!
 //! This module implements PDF content stream processing for text extraction,
@@ -268,6 +269,14 @@ pub struct Glyph {
     /// injects a synthetic space before this glyph. This is used for word boundary
     /// reconstruction in typeset PDFs that use kerning instead of space characters.
     pub is_word_boundary: bool,
+
+    /// Optional-content visibility flag (PDF 2.0 §8.11).
+    ///
+    /// True when the glyph is enclosed by a `/OC` marked-content sequence whose
+    /// OCG is OFF in the document's default configuration, i.e. content the
+    /// document does not show. Such glyphs are still extracted so callers can
+    /// opt in via `include_hidden_layers`; the flag carries the state.
+    pub is_hidden: bool,
 }
 
 impl Glyph {
@@ -282,6 +291,7 @@ impl Glyph {
             color: None,
             mcid: None,
             is_word_boundary: false,
+            is_hidden: false,
         }
     }
 
@@ -296,12 +306,19 @@ impl Glyph {
             color: None,
             mcid: None,
             is_word_boundary: false,
+            is_hidden: false,
         }
     }
 
     /// Set the MCID for this glyph (builder pattern).
     pub fn with_mcid(mut self, mcid: Option<u32>) -> Self {
         self.mcid = mcid;
+        self
+    }
+
+    /// Set the optional-content visibility flag for this glyph (builder pattern).
+    pub fn with_hidden(mut self, is_hidden: bool) -> Self {
+        self.is_hidden = is_hidden;
         self
     }
 
@@ -434,6 +451,13 @@ impl Default for TextMatrix {
 /// * `mode` - Processing mode (Normal or PositionHint)
 /// * `marked_content_stack` - Optional marked-content stack for MCID tracking
 /// * `default_off_ocgs` - Optional HashSet of OCG refs that are OFF by default (for visibility)
+/// * `resolver` - Optional xref resolver for indirect `/Properties` lookups.
+///   BDC property names whose `/Properties` entry is an indirect reference can
+///   only be resolved when a resolver is supplied; without one the property is
+///   skipped with a diagnostic (bead pdftract-4f5ade3a). Callers holding a
+///   document resolver should pass `Some`; warm indirect property targets with
+///   `ResourceDict::warm_indirect_properties` first, since `resolve` is
+///   cache-only.
 ///
 /// # Returns
 ///
@@ -449,27 +473,33 @@ impl Default for TextMatrix {
 /// # let content = b"BT (Hello) Tj ET";
 /// # let resources = ResourceDict::new();
 /// // Normal mode: extract text with Unicode resolution
-/// let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None, None);
+/// let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None, None, None);
 ///
 /// // PositionHint mode: get geometry only
-/// let hints = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+/// let hints = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None, None);
 ///
 /// // With OCG visibility data
 /// let off_ocgs = HashSet::new();
-/// let glyphs_with_ocg = process_with_mode(content, &resources, ProcessingMode::Normal, None, Some(&off_ocgs));
+/// let glyphs_with_ocg = process_with_mode(content, &resources, ProcessingMode::Normal, None, Some(&off_ocgs), None);
 /// ```
 pub fn process_with_mode(
     content: &[u8],
     resources: &ResourceDict,
     mode: ProcessingMode,
     marked_content_stack: Option<&MarkedContentStack>,
-    _default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
+    default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
+    resolver: Option<&crate::parser::xref::XrefResolver>,
 ) -> Result<Vec<Glyph>, Vec<Diagnostic>> {
     let mut glyphs = Vec::new();
     let mut diagnostics = Vec::new();
     let mut text_matrix = TextMatrix::new();
     let mut in_text_block = false;
     let mut operand_buffer: Vec<Token> = Vec::new();
+
+    // Marked-content stack for BMC/BDC/EMC operators (PDF spec 14.5).
+    // Frames pushed by this stream take precedence over the caller's stack,
+    // which only applies while this stream has pushed no frames of its own.
+    let mut mc_stack = MarkedContentStack::new();
 
     let mut lexer = Lexer::new(content);
 
@@ -501,6 +531,75 @@ pub fn process_with_mode(
                         } else {
                             in_text_block = false;
                         }
+                        operand_buffer.clear();
+                    }
+                    "BMC" => {
+                        // Begin marked content with tag only: BMC /Tag
+                        if let Some(Token::Name(tag_bytes)) = operand_buffer.last() {
+                            if let Ok(tag_str) = std::str::from_utf8(tag_bytes) {
+                                use crate::parser::marked_content_operators::parse_bmc;
+                                let tag = tag_str.strip_prefix('/').unwrap_or(tag_str);
+                                parse_bmc(&mut mc_stack, Arc::from(tag));
+                            }
+                        }
+                        operand_buffer.clear();
+                    }
+                    "BDC" => {
+                        // Begin marked content with properties: BDC /Tag <<props>> or /PropName
+                        if operand_buffer.len() >= 2 {
+                            use crate::parser::marked_content_operators::parse_bdc;
+                            use crate::parser::object::PdfObject;
+
+                            let tag = match operand_buffer.get(operand_buffer.len() - 2) {
+                                Some(Token::Name(tag_bytes)) => {
+                                    if let Ok(tag_str) = std::str::from_utf8(tag_bytes) {
+                                        tag_str.strip_prefix('/').unwrap_or(tag_str)
+                                    } else {
+                                        ""
+                                    }
+                                }
+                                _ => "",
+                            };
+
+                            let props_obj = match operand_buffer.last() {
+                                Some(Token::Name(name_bytes)) => {
+                                    if let Ok(name_str) = std::str::from_utf8(name_bytes) {
+                                        PdfObject::Name(Arc::from(name_str.as_ref()))
+                                    } else {
+                                        PdfObject::Null
+                                    }
+                                }
+                                Some(Token::DictEnd) => {
+                                    parse_inline_dict_from_buffer(&operand_buffer, &mut diagnostics)
+                                        .unwrap_or(PdfObject::Null)
+                                }
+                                Some(Token::DictStart) => {
+                                    // Malformed: DictStart without DictEnd
+                                    diagnostics.push(Diagnostic::with_static_no_offset(
+                                        DiagCode::StructInvalidDictValue,
+                                        "BDC inline dict has DictStart but no DictEnd",
+                                    ));
+                                    PdfObject::Null
+                                }
+                                _ => PdfObject::Null,
+                            };
+
+                            parse_bdc(
+                                &mut mc_stack,
+                                Arc::from(tag),
+                                &props_obj,
+                                resources,
+                                default_off_ocgs,
+                                Some(&mut diagnostics),
+                                resolver,
+                            );
+                        }
+                        operand_buffer.clear();
+                    }
+                    "EMC" => {
+                        // End marked content: EMC
+                        use crate::parser::marked_content_operators::parse_emc;
+                        parse_emc(&mut mc_stack);
                         operand_buffer.clear();
                     }
                     "Tm" => {
@@ -581,15 +680,18 @@ pub fn process_with_mode(
                         if in_text_block {
                             if let Some(string_token) = operand_buffer.last() {
                                 if let Token::String(bytes) = string_token {
-                                    process_string(
-                                        bytes,
-                                        &text_matrix,
-                                        resources,
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        marked_content_stack,
-                                    );
+                                    let mc = active_mc_stack(&mc_stack, marked_content_stack);
+                                    emit_marked_content_glyphs(&mut glyphs, mc, |glyphs| {
+                                        process_string(
+                                            bytes,
+                                            &text_matrix,
+                                            resources,
+                                            mode,
+                                            glyphs,
+                                            &mut diagnostics,
+                                            Some(mc),
+                                        );
+                                    });
                                 }
                             }
                         } else {
@@ -606,20 +708,23 @@ pub fn process_with_mode(
                         if in_text_block {
                             // For simplicity, treat TJ as a single text showing operation
                             // A full implementation would handle offset adjustments
-                            let (x, y) = text_matrix.origin();
-                            let bbox = create_approx_bbox(x, y, text_matrix.font_size);
-                            let mcid = marked_content_stack.and_then(|s| s.innermost_mcid());
-                            let glyph = match mode {
-                                ProcessingMode::Normal => {
-                                    // For now, emit a placeholder in normal mode too
-                                    // A full implementation would decode the TJ array
-                                    Glyph::new('?', 0.3, bbox).with_mcid(mcid)
-                                }
-                                ProcessingMode::PositionHint => {
-                                    Glyph::position_hint(bbox).with_mcid(mcid)
-                                }
-                            };
-                            glyphs.push(glyph);
+                            let mc = active_mc_stack(&mc_stack, marked_content_stack);
+                            emit_marked_content_glyphs(&mut glyphs, mc, |glyphs| {
+                                let (x, y) = text_matrix.origin();
+                                let bbox = create_approx_bbox(x, y, text_matrix.font_size);
+                                let mcid = mc.innermost_mcid();
+                                let glyph = match mode {
+                                    ProcessingMode::Normal => {
+                                        // For now, emit a placeholder in normal mode too
+                                        // A full implementation would decode the TJ array
+                                        Glyph::new('?', 0.3, bbox).with_mcid(mcid)
+                                    }
+                                    ProcessingMode::PositionHint => {
+                                        Glyph::position_hint(bbox).with_mcid(mcid)
+                                    }
+                                };
+                                glyphs.push(glyph);
+                            });
                         } else {
                             // TJ outside BT/ET block
                             diagnostics.push(Diagnostic::with_static_no_offset(
@@ -635,15 +740,18 @@ pub fn process_with_mode(
                             text_matrix.next_line();
                             if let Some(string_token) = operand_buffer.last() {
                                 if let Token::String(bytes) = string_token {
-                                    process_string(
-                                        bytes,
-                                        &text_matrix,
-                                        resources,
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        marked_content_stack,
-                                    );
+                                    let mc = active_mc_stack(&mc_stack, marked_content_stack);
+                                    emit_marked_content_glyphs(&mut glyphs, mc, |glyphs| {
+                                        process_string(
+                                            bytes,
+                                            &text_matrix,
+                                            resources,
+                                            mode,
+                                            glyphs,
+                                            &mut diagnostics,
+                                            Some(mc),
+                                        );
+                                    });
                                 }
                             }
                         } else {
@@ -669,15 +777,18 @@ pub fn process_with_mode(
                                 text_matrix.next_line();
                                 if let Some(string_token) = operand_buffer.last() {
                                     if let Token::String(bytes) = string_token {
-                                        process_string(
-                                            bytes,
-                                            &text_matrix,
-                                            resources,
-                                            mode,
-                                            &mut glyphs,
-                                            &mut diagnostics,
-                                            marked_content_stack,
-                                        );
+                                        let mc = active_mc_stack(&mc_stack, marked_content_stack);
+                                        emit_marked_content_glyphs(&mut glyphs, mc, |glyphs| {
+                                            process_string(
+                                                bytes,
+                                                &text_matrix,
+                                                resources,
+                                                mode,
+                                                glyphs,
+                                                &mut diagnostics,
+                                                Some(mc),
+                                            );
+                                        });
                                     }
                                 }
                             }
@@ -707,6 +818,44 @@ pub fn process_with_mode(
         Ok(glyphs)
     } else {
         Err(diagnostics)
+    }
+}
+
+/// Resolve the marked-content stack that governs a glyph emission site.
+///
+/// Frames pushed by this stream's BMC/BDC/EMC operators win once any have been
+/// seen; before that, a stack supplied by the caller (e.g. the enclosing form
+/// XObject's scope) applies. Falls back to the local stack when the caller
+/// supplied none, so the result is always usable.
+fn active_mc_stack<'a>(
+    local: &'a MarkedContentStack,
+    caller: Option<&'a MarkedContentStack>,
+) -> &'a MarkedContentStack {
+    if local.is_empty() {
+        caller.unwrap_or(local)
+    } else {
+        local
+    }
+}
+
+/// Emit the glyphs produced by a text-showing operator, flagging visibility.
+///
+/// Per PDF 2.0 §8.11, content inside a `/OC` marked-content sequence whose OCG
+/// is OFF in the default configuration is not shown. It is still extracted, but
+/// every glyph emitted while that scope is active is marked `is_hidden` so
+/// downstream filtering (`ExtractionOptions::include_hidden_layers`) can drop it.
+fn emit_marked_content_glyphs(
+    glyphs: &mut Vec<Glyph>,
+    mc_stack: &MarkedContentStack,
+    emit: impl FnOnce(&mut Vec<Glyph>),
+) {
+    let start = glyphs.len();
+    emit(glyphs);
+
+    if mc_stack.is_hidden() {
+        for glyph in &mut glyphs[start..] {
+            glyph.is_hidden = true;
+        }
     }
 }
 
@@ -822,7 +971,7 @@ pub fn execute_with_do(
     content: &[u8],
     resources: &ResourceDict,
     mode: ProcessingMode,
-    marked_content_stack: Option<&MarkedContentStack>,
+    _marked_content_stack: Option<&MarkedContentStack>,
     default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
     pdf_bytes: &[u8],
     resolver: Option<&crate::parser::xref::XrefResolver>,
@@ -1346,15 +1495,17 @@ pub fn execute_with_do(
                         if in_text_block {
                             if let Some(string_token) = operand_buffer.last() {
                                 if let Token::String(bytes) = string_token {
-                                    process_string_with_ctm(
-                                        bytes,
-                                        &gstate,
-                                        resource_stack.current(),
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        Some(&mc_stack),
-                                    );
+                                    emit_marked_content_glyphs(&mut glyphs, &mc_stack, |glyphs| {
+                                        process_string_with_ctm(
+                                            bytes,
+                                            &gstate,
+                                            resource_stack.current(),
+                                            mode,
+                                            glyphs,
+                                            &mut diagnostics,
+                                            Some(&mc_stack),
+                                        );
+                                    });
                                 }
                             }
                         } else {
@@ -1378,15 +1529,17 @@ pub fn execute_with_do(
                                         &operand_buffer[1..operand_buffer.len() - 1];
 
                                     // Process the TJ array with kerning and word boundary detection
-                                    process_tj_array(
-                                        array_elements,
-                                        &mut gstate,
-                                        resource_stack.current(),
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        Some(&mc_stack),
-                                    );
+                                    emit_marked_content_glyphs(&mut glyphs, &mc_stack, |glyphs| {
+                                        process_tj_array(
+                                            array_elements,
+                                            &mut gstate,
+                                            resource_stack.current(),
+                                            mode,
+                                            glyphs,
+                                            &mut diagnostics,
+                                            Some(&mc_stack),
+                                        );
+                                    });
                                 } else {
                                     diagnostics.push(Diagnostic::with_static_no_offset(
                                         DiagCode::StructInvalidType,
@@ -1414,15 +1567,17 @@ pub fn execute_with_do(
                             gstate.next_line();
                             if let Some(string_token) = operand_buffer.last() {
                                 if let Token::String(bytes) = string_token {
-                                    process_string_with_ctm(
-                                        bytes,
-                                        &gstate,
-                                        resource_stack.current(),
-                                        mode,
-                                        &mut glyphs,
-                                        &mut diagnostics,
-                                        Some(&mc_stack),
-                                    );
+                                    emit_marked_content_glyphs(&mut glyphs, &mc_stack, |glyphs| {
+                                        process_string_with_ctm(
+                                            bytes,
+                                            &gstate,
+                                            resource_stack.current(),
+                                            mode,
+                                            glyphs,
+                                            &mut diagnostics,
+                                            Some(&mc_stack),
+                                        );
+                                    });
                                 }
                             }
                         } else {
@@ -1448,14 +1603,20 @@ pub fn execute_with_do(
                                 gstate.next_line();
                                 if let Some(string_token) = operand_buffer.last() {
                                     if let Token::String(bytes) = string_token {
-                                        process_string_with_ctm(
-                                            bytes,
-                                            &gstate,
-                                            resource_stack.current(),
-                                            mode,
+                                        emit_marked_content_glyphs(
                                             &mut glyphs,
-                                            &mut diagnostics,
-                                            marked_content_stack,
+                                            &mc_stack,
+                                            |glyphs| {
+                                                process_string_with_ctm(
+                                                    bytes,
+                                                    &gstate,
+                                                    resource_stack.current(),
+                                                    mode,
+                                                    glyphs,
+                                                    &mut diagnostics,
+                                                    Some(&mc_stack),
+                                                );
+                                            },
                                         );
                                     }
                                 }
@@ -2344,7 +2505,14 @@ mod tests {
         let resources = ResourceDict::new();
 
         // Normal mode
-        let normal_result = process_with_mode(content, &resources, ProcessingMode::Normal, None, None);
+        let normal_result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        );
         assert!(normal_result.is_ok());
         let normal_glyphs = normal_result.unwrap();
         assert_eq!(normal_glyphs.len(), 1);
@@ -2352,8 +2520,14 @@ mod tests {
         assert!(normal_glyphs[0].confidence > 0.0);
 
         // PositionHint mode
-        let hint_result =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+        let hint_result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        );
         assert!(hint_result.is_ok());
         let hint_glyphs = hint_result.unwrap();
         assert_eq!(hint_glyphs.len(), 1);
@@ -2366,10 +2540,24 @@ mod tests {
         let content = b"BT (Test) Tj ET";
         let resources = ResourceDict::new();
 
-        let normal_glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, None, None).unwrap();
-        let hint_glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let normal_glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let hint_glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         // Bboxes should be identical (geometry is the same)
         assert_eq!(normal_glyphs[0].bbox, hint_glyphs[0].bbox);
@@ -2384,12 +2572,26 @@ mod tests {
         let content = b"BT (Hello) Tj (World) Tj ET";
         let resources = ResourceDict::new();
 
-        let normal_glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, None, None).unwrap();
+        let normal_glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(normal_glyphs.len(), 2);
 
-        let hint_glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let hint_glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(hint_glyphs.len(), 2);
 
         // All hint glyphs should be U+FFFD
@@ -2404,8 +2606,15 @@ mod tests {
         let content = b"BT 50 700 Td (Hello) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(glyphs.len(), 1);
         // Bbox should start at approximately x=50, y=700
@@ -2418,8 +2627,15 @@ mod tests {
         let content = b"BT 1 0 0 1 100 200 Tm (Test) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(glyphs.len(), 1);
         // Bbox should start at approximately x=100, y=200
@@ -2432,8 +2648,15 @@ mod tests {
         let content = b"BT (Hello) Tj 50 0 Td (World) ' ET";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(glyphs.len(), 2);
         // Both should be position-hint glyphs
@@ -2448,8 +2671,15 @@ mod tests {
         let content = b"";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(glyphs.len(), 0);
     }
@@ -2476,20 +2706,48 @@ mod tests {
         let resources = ResourceDict::new();
 
         // Warm up
-        let _ = process_with_mode(content, &resources, ProcessingMode::Normal, None, None);
-        let _ = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+        let _ = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        );
+        let _ = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        );
 
         // Benchmark Normal mode (100 iterations)
         let start = std::time::Instant::now();
         for _ in 0..100 {
-            let _ = process_with_mode(content, &resources, ProcessingMode::Normal, None, None);
+            let _ = process_with_mode(
+                content,
+                &resources,
+                ProcessingMode::Normal,
+                None,
+                None,
+                None,
+            );
         }
         let normal_duration = start.elapsed();
 
         // Benchmark PositionHint mode (100 iterations)
         let start = std::time::Instant::now();
         for _ in 0..100 {
-            let _ = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+            let _ = process_with_mode(
+                content,
+                &resources,
+                ProcessingMode::PositionHint,
+                None,
+                None,
+                None,
+            );
         }
         let hint_duration = start.elapsed();
 
@@ -2539,7 +2797,15 @@ mod tests {
         let content = b"BT (Hello) Tj ET";
         let resources = ResourceDict::new();
 
-        let glyphs = process_with_mode(content, &resources, ProcessingMode::Normal, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, None);
     }
@@ -2551,8 +2817,15 @@ mod tests {
         let resources = ResourceDict::new();
         let stack = MarkedContentStack::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack), None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            Some(&stack),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, None);
     }
@@ -2565,8 +2838,15 @@ mod tests {
         let mut stack = MarkedContentStack::new();
         stack.push_bdc("Span".to_string(), Some(5), false);
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack), None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            Some(&stack),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(5));
     }
@@ -2580,8 +2860,15 @@ mod tests {
         stack.push_bdc("Outer".to_string(), Some(1), false);
         stack.push_bdc("Inner".to_string(), Some(2), false);
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack), None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            Some(&stack),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(2)); // Innermost wins
     }
@@ -2595,8 +2882,15 @@ mod tests {
         stack.push_bdc("Outer".to_string(), Some(1), false);
         stack.push_bmc("Span".to_string()); // No MCID
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack), None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            Some(&stack),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(1)); // Outer MCID visible through BMC
     }
@@ -2611,10 +2905,81 @@ mod tests {
         stack.push_bmc("Middle".to_string()); // No MCID
         stack.push_bdc("Inner".to_string(), Some(2), false);
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::Normal, Some(&stack), None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            Some(&stack),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].mcid, Some(2)); // Innermost BDC with MCID wins
+    }
+
+    #[test]
+    fn test_process_with_mode_bdc_indirect_properties_via_resolver() {
+        // An in-stream `BDC /P /MC0` whose /Properties entry is an INDIRECT
+        // reference must recover /MCID when a resolver is threaded through
+        // (bead pdftract-4f5ade3a). The resolver is primed exactly the way
+        // ResourceDict::warm_indirect_properties would.
+        use crate::parser::object::{intern, ObjRef, PdfObject};
+        use crate::parser::xref::XrefResolver;
+        use indexmap::IndexMap;
+
+        let mut resources = ResourceDict::new();
+        resources
+            .properties
+            .insert(Arc::from("MC0"), PdfObject::Ref(ObjRef::new(10, 0)));
+
+        let resolver = XrefResolver::new();
+        let mut props = IndexMap::new();
+        props.insert(intern("/MCID"), PdfObject::Integer(7));
+        resolver.cache_object(ObjRef::new(10, 0), PdfObject::Dict(Box::new(props)));
+
+        let content = b"BT /P /MC0 BDC (Tagged) Tj EMC ET";
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            Some(&resolver),
+        )
+        .unwrap();
+        assert_eq!(glyphs.len(), 1);
+        assert_eq!(glyphs[0].mcid, Some(7));
+    }
+
+    #[test]
+    fn test_process_with_mode_bdc_indirect_properties_no_resolver_drops_mcid() {
+        // Same stream as above, but without a resolver: the indirect property
+        // cannot be resolved, the loss is reported as a diagnostic, and the
+        // glyph carries no MCID. This pins the documented resolver-None
+        // posture of the production BDC arm (bead pdftract-4f5ade3a).
+        use crate::parser::object::{ObjRef, PdfObject};
+
+        let mut resources = ResourceDict::new();
+        resources
+            .properties
+            .insert(Arc::from("MC0"), PdfObject::Ref(ObjRef::new(10, 0)));
+
+        let content = b"BT /P /MC0 BDC (Tagged) Tj EMC ET";
+        let result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        );
+        // process_with_mode reports accumulated diagnostics as Err; the
+        // no-resolver branch must be among them, not a panic or a silent pass.
+        let diagnostics = result.expect_err("no-resolver BDC must emit a diagnostic");
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message.contains("no resolver available")));
     }
 
     // Tests for ResourceStack
@@ -3028,7 +3393,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"Q"; // Q at depth 0
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit underflow diagnostic
         let underflow_count = result
@@ -3051,7 +3424,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 5 Tc ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Check that the operator was processed without error
         assert_eq!(result.diagnostics.len(), 0);
@@ -3063,7 +3444,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 10 Tw ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3076,7 +3465,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 0 Tz ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit HORIZ_SCALING_ZERO diagnostic
         let diag_count = result
@@ -3095,7 +3492,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT -10 Tz ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit HORIZ_SCALING_ZERO diagnostic
         let diag_count = result
@@ -3112,7 +3517,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 150 Tz ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3123,7 +3536,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 15 TL ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3134,7 +3555,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 3 Ts ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3145,7 +3574,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT -5 Tc -10 Tw -3 Ts ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should not emit any diagnostics
         assert_eq!(result.diagnostics.len(), 0);
@@ -3157,7 +3594,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 3 Tr ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3170,7 +3615,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 9 Tr ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit TEXT_RENDERING_MODE_CLAMPED diagnostic
         let diag_count = result
@@ -3211,7 +3664,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"5 Tc 10 Tw 150 Tz 15 TL 3 Ts 3 Tr";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should not crash; diagnostics may or may not be emitted
         // The key is that the function returns successfully
@@ -3224,7 +3685,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 5 Tc 10 Tw 120 Tz 15 TL 3 Ts 2 Tr ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.diagnostics.len(), 0);
     }
@@ -3307,7 +3776,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT /UnknownFont 12 Tf ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         let diag_count = result
             .diagnostics
@@ -3348,7 +3825,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 100 200 Td 50 0 Td (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3363,7 +3848,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 1 0 0 1 100 200 Tm 50 0 Td (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3378,7 +3871,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 0 -12 TD (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3392,7 +3893,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 0 -12 TD ET BT (Test1) Tj ET BT (Test2) T* Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have two glyphs (one from each text block)
         assert_eq!(result.glyphs.len(), 2);
@@ -3406,7 +3915,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Test) Tj ET BT 0 TL T* (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         let diag_count = result
             .diagnostics
@@ -3422,7 +3939,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT /F1 0 Tf (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         let diag_count = result
             .diagnostics
@@ -3443,7 +3968,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(Hello)(World)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have 2 glyphs (one per string)
         assert_eq!(result.glyphs.len(), 2);
@@ -3459,7 +3992,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(Hello)250(World)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have 2 glyphs
         assert_eq!(result.glyphs.len(), 2);
@@ -3479,7 +4020,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(kern)-10(ing)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have 2 glyphs
         assert_eq!(result.glyphs.len(), 2);
@@ -3494,7 +4043,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(A)0(B)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.glyphs.len(), 2);
         assert!(!result.glyphs[0].is_word_boundary);
@@ -3507,7 +4064,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(a)500(b)500(c)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.glyphs.len(), 3);
         assert!(!result.glyphs[0].is_word_boundary);
@@ -3527,7 +4092,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.glyphs.len(), 0);
     }
@@ -3539,7 +4112,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(A)200(B)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.glyphs.len(), 2);
         // 200 is NOT > 200, so no boundary
@@ -3552,7 +4133,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT [(A)201(B)] TJ ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         assert_eq!(result.glyphs.len(), 2);
         // 201 > 200, so boundary IS triggered
@@ -3565,7 +4154,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"[(Hello)] TJ";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should have diagnostic for TJ outside BT
         assert!(result
@@ -3582,7 +4179,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Hello) Tj BT (World) Tj ET ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit BT_NESTED diagnostic
         let diag_count = result
@@ -3599,7 +4204,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit ET_WITHOUT_BT diagnostic
         let diag_count = result
@@ -3616,7 +4229,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"ET BT (Test) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should still be able to process text after the stray ET
         assert_eq!(result.glyphs.len(), 1);
@@ -3628,7 +4249,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"(Hello) Tj";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should emit TEXT_SHOW_OUTSIDE_BT diagnostic
         let diag_count = result
@@ -3647,7 +4276,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"(Hello) Tj (World) Tj";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should produce no glyphs
         assert_eq!(result.glyphs.len(), 0);
@@ -3666,7 +4303,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Hello) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should produce one glyph
         assert_eq!(result.glyphs.len(), 1);
@@ -3685,7 +4330,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (First) Tj ET (Between) Tj BT (Second) Tj ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // Should produce two glyphs (one from each block)
         assert_eq!(result.glyphs.len(), 2);
@@ -3704,7 +4357,15 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT 100 200 Td BT (Test) Tj ET ET";
 
-        let result = execute_with_do(content, &resources, ProcessingMode::PositionHint, None, None, &[], None);
+        let result = execute_with_do(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            &[],
+            None,
+        );
 
         // The nested BT should reset matrices, so the glyph should be near origin
         // not at (100, 200) where the first Td would have placed it
@@ -3721,7 +4382,14 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"BT (Hello) Tj BT (World) Tj ET ET";
 
-        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+        let result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        );
 
         // Should be an error result with diagnostics
         assert!(result.is_err());
@@ -3740,7 +4408,14 @@ mod tests {
         let resources = ResourceDict::new();
         let content = b"(Hello) Tj";
 
-        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+        let result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        );
 
         // Should be an error result with diagnostics
         assert!(result.is_err());
@@ -3759,8 +4434,15 @@ mod tests {
         let content = b"BT /F1 12 Tf 12 TL (Hello) ' ET";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         // Simplified implementation produces 1 glyph per string
         assert_eq!(glyphs.len(), 1);
@@ -3777,8 +4459,15 @@ mod tests {
         let content = b"BT /F1 12 Tf 12 TL 5 1 (World) \" ET";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         // Simplified implementation produces 1 glyph per string
         assert_eq!(glyphs.len(), 1);
@@ -3795,7 +4484,14 @@ mod tests {
         let content = b"(Hello) '";
         let resources = ResourceDict::new();
 
-        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+        let result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        );
 
         assert!(result.is_err());
         let diags = result.unwrap_err();
@@ -3808,7 +4504,14 @@ mod tests {
         let content = b"5 1 (Hello) \"";
         let resources = ResourceDict::new();
 
-        let result = process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None);
+        let result = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        );
 
         assert!(result.is_err());
         let diags = result.unwrap_err();
@@ -3821,8 +4524,15 @@ mod tests {
         let content = b"BT 5 (Hello) \" ET";
         let resources = ResourceDict::new();
 
-        let glyphs =
-            process_with_mode(content, &resources, ProcessingMode::PositionHint, None, None).unwrap();
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::PositionHint,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         // Should not produce glyphs since operands are insufficient
         assert_eq!(glyphs.len(), 0);
