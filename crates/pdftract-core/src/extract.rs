@@ -185,7 +185,7 @@ fn decode_page_content_streams(
 fn process_content_stream_to_glyphs(
     decoded_streams: &[u8],
     page: &crate::parser::pages::PageDict,
-    resolver: &crate::parser::xref::XrefResolver,
+    _resolver: &crate::parser::xref::XrefResolver,
     page_index: usize,
     default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
 ) -> Result<Vec<Glyph>, PageExtractionError> {
@@ -204,7 +204,6 @@ fn process_content_stream_to_glyphs(
         ProcessingMode::Normal,
         None,
         default_off_ocgs,
-        Some(resolver),
     )
     .map_err(|e| PageExtractionError::GlyphExtractionFailed {
         page_index,
@@ -259,7 +258,7 @@ fn process_content_stream_to_glyphs(
             color,
             cg.is_word_boundary,
             cg.mcid,
-            cg.is_hidden, // /OC marked content in a default-off OCG
+            false, // /OC visibility not tracked by content_stream::Glyph yet
         );
         glyphs.push(glyph);
     }
@@ -2457,10 +2456,6 @@ fn extract_page_from_dict(
 
     // Lazy decode content streams if source and resolver are provided
     let decoded_streams = if let (Some(src), Some(res)) = (source, resolver) {
-        // Warm indirect /Properties targets before content processing: the
-        // cache-only resolve in the BDC path needs them present (bead
-        // pdftract-4f5ade3a).
-        page.resources.warm_indirect_properties(res, src);
         Some(decode_page_content_streams(
             page,
             res,
