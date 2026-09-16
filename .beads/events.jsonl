@@ -7977,3 +7977,12 @@
 {"bead":"pdftract-a7c93aa5","duration_ms":753121,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T00:34:43.577068796+00:00","worker":"glm53-irmcp"}
 {"bead":"pdftract-f0d685f4","event":"claim","strand":"explore","ts":"2026-09-16T00:36:25.394450892+00:00","worker":"glm-tgp"}
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a7a4-ba78-74c2-a119-daba2ba6c459","bead":"pdftract-f0d685f4","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T00:36:25.848906347+00:00","worker":"glm-tgp"}
+{"bead":"pdftract-d4abc102","event":"claim","strand":"pluck","ts":"2026-09-16T00:46:32.621708147+00:00","worker":"glm-pdftract"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a7ad-fe34-7892-9eb3-a52a978d96fe","bead":"pdftract-d4abc102","event":"dispatch","model":"glm-5.3-flash","strand":"pluck","ts":"2026-09-16T00:46:33.013049820+00:00","worker":"glm-pdftract"}
+{"bead":"pdftract-18954693","duration_ms":1958763,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T00:47:43.323302981+00:00","worker":"glm-armor"}
+{"bead":"pdftract-f0d685f4","duration_ms":1669491,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T01:04:15.437786696+00:00","worker":"glm-tgp"}
+{"bead":"pdftract-a58276cf","event":"claim","strand":"explore","ts":"2026-09-16T01:19:52.833584464+00:00","worker":"glm-mta"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a7cc-83f7-79c3-b447-533fcc4f374e","bead":"pdftract-a58276cf","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T01:19:53.336087834+00:00","worker":"glm-mta"}
+{"bead":"pdftract-c8738574","event":"claim","strand":"explore","ts":"2026-09-16T01:27:17.073077791+00:00","worker":"glm-roam-21"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a7d3-4b31-70f1-b390-f62d9df52475","bead":"pdftract-c8738574","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T01:27:17.553685528+00:00","worker":"glm-roam-21"}
+{"bead":"pdftract-d4abc102","duration_ms":2547415,"event":"complete","exit_code":0,"outcome":"success","strand":"pluck","ts":"2026-09-16T01:29:00.524176296+00:00","worker":"glm-pdftract"}
