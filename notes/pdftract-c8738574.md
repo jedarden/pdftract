@@ -161,3 +161,39 @@ beads; the terminal action for a satisfied bead is an evidence close, so the
 split was declined and the bead closed instead. The `verification-failed`
 label (no verification ever failed) was removed. All three acceptance
 criteria remain PASS on the evidence above.
+
+## Re-issue 5 — another auto-split order, declined; evidence close (claim epoch 5)
+
+The quarantine label expired 2026-09-16T03:58:11Z and the reason-less reopen
+re-dispatched the bead ~1 minute later, now as an auto-split order premised on
+"failed 4 times in a row". The premise is again false, and this time the
+dispatch's own body contradicts itself: it lists all four prior attempts as
+`verified_success` ("0 without a verified success") while calling them
+failures. Ground truth:
+
+- `bead why`: all 4 attempts `verified_success`, consecutive failures **0**,
+  tier 0. `forensic.jsonl` events for this bead (matched by
+  `.event.issue_id`): 4 `closed` / 4 `reopened` / 4 `attempt_resolved` /
+  0 failures — `failure-count:4` is fed entirely by reason-less reopens after
+  quarantine expiry (treadmill; memory: pdftract-autosplit-treadmill).
+- **Empty code-diff from the executed-verdict tip**: `git diff --stat
+  49951074..HEAD -- crates/` is empty. The three intervening commits are
+  notes/beads-only (`000b8079` this note +22, `00b1cbc5` a different bead's
+  docs, `6ac2eae8` bead sync), so the attempt-3 PASS verdict at `49951074`
+  stands with no re-run.
+- Both pinned tests confirmed present at HEAD `6ac2eae8` at the lines the
+  bead cites — `diagnostics_surface_mirror.rs:225`
+  (`full_json_errors_array_is_populated_from_diagnostics_detailed`),
+  `diagnostics_serialization_format.rs:257`
+  (`full_output_errors_array_is_always_present`) — and the emission site
+  `json.rs:86` (`diagnostics_detailed.clone()` into an unconditionally
+  serialized `errors` field) is intact.
+
+All three acceptance criteria remain PASS on the standing evidence: tests at
+fresh commit `49951074` (summary above), multi-diagnostic identity via
+whole-array `Vec` equality plus per-index wire equality over the
+6-typed-diagnostic helper, zero new warnings (74 pre-existing lib warnings,
+none from the test targets). Split declined again — fragmenting a completed,
+thrice-verified verification into child beads would only multiply the
+treadmill. `verification-failed` label removed again (the dispatcher re-adds
+it on each reopen; no verification has ever failed on this bead).
