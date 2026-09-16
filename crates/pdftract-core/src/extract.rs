@@ -18,6 +18,7 @@ use crate::attachment::associated_files::walk_af_array;
 use crate::attachment::filespec::extract_one;
 use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
+use crate::diagnostics_compat::to_legacy_strings;
 use crate::document::compute_fingerprint_lazy;
 use crate::forms::{acro_field_to_value, combine, walk_acroform_fields, FormFieldValue};
 use crate::options::{ExtractionOptions, ReceiptsMode};
@@ -1082,10 +1083,11 @@ pub fn extract_pdf(
             cache_age_seconds: None,
             error_count,
             reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-            diagnostics: all_diagnostics_with_js
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
+            // Legacy surface: the bare message verbatim, via the shared
+            // compat adapter — NOT Display's "CODE: message" form
+            // (pdftract-a58276cf; byte-compat contract, diagnostics_compat
+            // module docs rule 1).
+            diagnostics: to_legacy_strings(&all_diagnostics_with_js),
             diagnostics_detailed: all_diagnostics_with_js
                 .iter()
                 .map(DiagnosticJson::from)
@@ -2010,7 +2012,9 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         cache_age_seconds: None,
         error_count: error_count as usize,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: all_diagnostics.iter().map(ToString::to_string).collect(),
+        // Legacy surface: bare message via to_legacy_strings, not Display
+        // (pdftract-a58276cf).
+        diagnostics: to_legacy_strings(&all_diagnostics),
         diagnostics_detailed: all_diagnostics.iter().map(DiagnosticJson::from).collect(),
         profile_name: None,
         profile_version: None,
@@ -2325,7 +2329,9 @@ where
         cache_age_seconds: None,
         error_count,
         reading_order_algorithm: Some(final_reading_order_algorithm.as_str().to_string()),
-        diagnostics: all_diagnostics.iter().map(ToString::to_string).collect(),
+        // Legacy surface: bare message via to_legacy_strings, not Display
+        // (pdftract-a58276cf).
+        diagnostics: to_legacy_strings(&all_diagnostics),
         diagnostics_detailed: all_diagnostics.iter().map(DiagnosticJson::from).collect(),
         profile_name: None,
         profile_version: None,

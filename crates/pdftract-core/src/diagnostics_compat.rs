@@ -161,6 +161,92 @@ mod tests {
     }
 
     #[test]
+    fn golden_legacy_bytes_match_inline_producer_expression() {
+        // Byte-for-byte golden: `to_legacy_strings` must produce exactly the
+        // bytes of the inline conversion shape the extract.rs producers
+        // emitted before the shared helper existed (`d.message.as_ref()
+        // .to_string()`), for every combination of optional fields
+        // (byte_offset / object_ref / page_index, each set and unset) and
+        // every supported severity. Optional fields and severity must never
+        // leak into the legacy bytes; duplicates and order survive.
+        let tiers = [
+            (DiagCode::XrefRepaired, "info-tier note"),
+            (DiagCode::StructInvalidName, "warning-tier note"),
+            (DiagCode::StreamBomb, "error-tier note"),
+            (DiagCode::EncryptionUnsupported, "fatal-tier note"),
+        ];
+        // The four tiers really do cover all four severities.
+        let severities: std::collections::HashSet<_> = tiers
+            .iter()
+            .map(|(code, _)| code.severity().to_string())
+            .collect();
+        assert_eq!(severities.len(), 4);
+
+        let mut diags = Vec::new();
+        for &(code, base) in &tiers {
+            for byte_offset in [None, Some(1234u64)] {
+                for object_ref in [None, Some(ObjRef::new(7, 0))] {
+                    for page_index in [None, Some(3usize)] {
+                        // Exercise both Cow storage variants along the way.
+                        let mut diag = match byte_offset {
+                            Some(offset) => {
+                                Diagnostic::with_dynamic(code, offset, base.to_string())
+                            }
+                            None => Diagnostic::with_static_no_offset(code, base),
+                        };
+                        if let Some(reference) = object_ref {
+                            diag = diag.with_object_ref(reference);
+                        }
+                        if let Some(page) = page_index {
+                            diag = diag.with_page_index(page);
+                        }
+                        diags.push(diag);
+                    }
+                }
+            }
+        }
+
+        // Golden expectation: the historical inline producer expression,
+        // element for element, in emission order.
+        let expected: Vec<String> = diags
+            .iter()
+            .map(|d| d.message.as_ref().to_string())
+            .collect();
+        assert_eq!(to_legacy_strings(&diags), expected);
+
+        // Within a tier the message is constant, so all 8 optional-field
+        // variants must render identical bytes — the bare message, not the
+        // Display form (no code prefix, no offset, no object reference).
+        for &(code, base) in &tiers {
+            let variants: Vec<String> = diags
+                .iter()
+                .filter(|d| d.code == code)
+                .map(to_legacy_string)
+                .collect();
+            assert_eq!(variants.len(), 8);
+            assert!(variants.iter().all(|s| s == base));
+            assert!(
+                !variants
+                    .iter()
+                    .any(|s| s.contains("byte offset") || s.contains('[')),
+                "optional fields leaked into the legacy string: {variants:?}"
+            );
+        }
+
+        // Duplicates and mixed order survive the same way: the converted
+        // sequence equals the inline expression over that exact sequence.
+        let mut mixed = diags.clone();
+        mixed.reverse();
+        mixed.push(diags[0].clone());
+        let mixed_expected: Vec<String> = mixed
+            .iter()
+            .map(|d| d.message.as_ref().to_string())
+            .collect();
+        assert_eq!(to_legacy_strings(&mixed), mixed_expected);
+        assert_eq!(mixed.len(), mixed_expected.len());
+    }
+
+    #[test]
     fn legacy_surface_drops_severity_and_location() {
         // Same message, different codes (hence severities and locations):
         // the legacy strings are identical, because the legacy surface
@@ -285,12 +371,10 @@ mod tests {
                 message: typed.message.as_ref().to_string(),
                 severity: typed.severity().to_string(),
                 page_index: typed.page_index.map(|p| p as usize),
-                location: typed
-                    .object_ref
-                    .map(|r| ObjectLocationJson {
-                        object_number: r.object,
-                        generation_number: r.generation,
-                    }),
+                location: typed.object_ref.map(|r| ObjectLocationJson {
+                    object_number: r.object,
+                    generation_number: r.generation,
+                }),
                 hint: Some("catalog hint".to_string()),
             };
             assert_eq!(json.code, code.name());
