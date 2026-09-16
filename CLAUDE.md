@@ -138,10 +138,38 @@ For each bead:
 4. **Write a verification note** at `notes/<bead-id>.md` summarizing what was done, which acceptance criteria PASS/WARN/FAIL, with file paths, commit hashes, command outputs
 5. **Commit** with a Conventional Commits message: `<type>(<bead-id-tag>): <summary>` — body cites the bead, lists the artifacts produced. Commit with explicit pathspecs (`git commit <paths> -m "..."`) — several workers share this checkout's single index, and a bare `git add` + bare `git commit` has swept up another worker's in-flight files before (e58fb369).
 5a. **Push** via `git push origin main` — push immediately after committing so Forgejo reflects the work. (`origin` *is* Forgejo here — it is the only remote; there is no `forgejo` remote.)
-6. **Close the bead** via `bead close pdftract-XXX --reason "<cite note + commits + PASS/WARN/FAIL summary>" --fencing-token <claim_epoch>`
+6. **Close the bead** via `bead close pdftract-XXX --reason "<cite note + commits + PASS/WARN/FAIL summary>" --fencing-token <claim_epoch>` — but first satisfy the **closure contract** below: every close must carry gate-visible evidence, or the shipped-work gate reopens the bead and the dispatch counts as a failure
 7. **Verify the checkpoint** via `bead sync flush-only`
 
 If acceptance criteria contain WARN items due to environmental issues (missing CLI tools, transient infra, etc.), document them clearly in the close reason and the verification note. The bead may still close if the WARNs are infra-related and out of scope. PASS the substantive criteria; WARN the infra ones; FAIL only true blockers.
+
+### Closure contract — the shipped-work gate rejects closes without gate-visible evidence
+
+NEEDLE's `shipped_work` gate judges every close. It passes only if **at least one** of these holds for the dispatch being closed out:
+
+1. **A pushed commit touching at least one substantial path** — any path outside `notes/`, `.beads/`, and `.needle-predispatch-sha` — made since this dispatch started, with HEAD an ancestor of `origin/main` (step 5a pushes are what make this true).
+2. **The bead's own `notes` field changed during this dispatch:**
+   ```bash
+   bead update pdftract-XXX --notes "<what was verified/found, and why no code change was needed>" --fencing-token <claim_epoch>
+   ```
+
+Explicitly **not** accepted, singly or together: a commit touching only `notes/**` or `.beads/**` (both are trivial paths to the gate — the routine `chore(beads): sync polish-loop beads` commits change nothing the gate can see), a `notes/<bead-id>.md` file alone, or the close `--reason` alone. The close reason is the closure's own explanation, so it can never serve as the evidence a gate audits; the `notes/*.md` file is git history, and a stuck worker will happily commit a status file every cycle.
+
+Consequences per bead shape:
+
+- **Code-change beads** — step 5+5a alone satisfy the contract. No extra action.
+- **Verification-only / re-issue / already-satisfied beads** (the polish-loop re-verifies), investigations that find the work already done, and blocked findings — there is no substantial commit by design, so **the bead note (option 2) is mandatory**, recorded before `bead close`. This is the failure that bounced `pdftract-a58276cf` four times and `pdftract-c8738574` (note written at attempt 2, then four later attempts closed with reason-only evidence and bounced) and degraded the whole workspace on 2026-09-16 (fingerprint `ebcf96b08892`, 5 identical gate failures across 3 beads in 2 hours).
+- Rewriting the note with the *same* text as a previous attempt left does **not** count — the gate compares hashes, so the note must actually change this dispatch (append the new attempt's date/HEAD/finding).
+
+A `bead update --notes` while the bead is claimed needs `--fencing-token <claim_epoch>` (same as close).
+
+**Close-reason `verified` fence (arriving gate):** NEEDLE `main` has merged close-evidence verification (re-run of commands claimed in the close reason, applied on the next worker-binary rollout). Format your close reason so it carries a fenced block:
+
+    ```verified
+    $ <command actually run>
+    ```
+
+Only `go test/vet/build`, `cargo test/build`, `npm test`, `pytest`, `make test`, and `scripts/definition-of-done.sh` commands get re-run (in a clean no-`.git` extraction of HEAD — anything requiring the repo's git metadata or local state will fail there); other lines are recorded only. Never claim `cargo test` in the fence unless it genuinely passes at HEAD in a clean extraction — this tree carries ~300 pre-existing test failures (see `docs/plan/plan.md` TH notes); cite the specific `--test` targets you actually ran, or keep the fence to non-re-run commands.
 
 ## Test hygiene — never let a hung test stall the loop
 
@@ -247,6 +275,7 @@ EOF
 ## When you finish a bead
 
 Before moving on, verify:
+- [ ] **Closure contract satisfied** — a pushed substantial-path commit, or the bead `notes` field changed this dispatch (see "Closure contract" above); a reason-only close on a no-code-change bead bounces
 - [ ] `bead show <id>` shows `Status: Closed`
 - [ ] `bead sync flush-only` reports the checkpoint current
 - [ ] `notes/<bead-id>.md` exists and is checked in (this repo or the appropriate sibling repo)
