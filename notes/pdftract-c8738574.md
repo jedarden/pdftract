@@ -197,3 +197,37 @@ none from the test targets). Split declined again — fragmenting a completed,
 thrice-verified verification into child beads would only multiply the
 treadmill. `verification-failed` label removed again (the dispatcher re-adds
 it on each reopen; no verification has ever failed on this bead).
+
+## Re-issue 6 — another auto-split order, declined; evidence close (claim epoch 6)
+
+Quarantine expired 2026-09-16T06:12Z; the bead was reopened without reason and
+re-dispatched as an auto-split order premised on "failed 5 times in a row",
+while listing attempts 3–5 as `verified_success` ("0 without a verified
+success"). Ground truth, checked live at re-dispatch time:
+
+- `bead why`: **Consecutive Failures: 0**, attempt tier "Unproven / Normal
+  (no failures)". `forensic.jsonl` events for this bead (matched by
+  `.event.issue_id`): 5 `closed` / 5 `reopened` / 5 `attempt_resolved` /
+  0 failures — `failure-count:5` is fed entirely by reason-less reopens after
+  quarantine expiry (treadmill; memory: pdftract-autosplit-treadmill).
+- **Empty code-diff from the executed-verdict tip**: `git diff --stat
+  49951074..HEAD -- crates docs` is empty. The intervening commits are
+  notes/beads-only (`28c8df47`, `375c4feb` this note; `00b1cbc5` another
+  bead's docs; `b0198f7c`, `98cf4de1`, `6ac2eae8`, `49951074` bead syncs), so
+  the attempt-3 PASS verdict at `49951074` stands with no re-run.
+- Both pinned tests confirmed present at HEAD `98cf4de1` at the lines the
+  bead cites — `diagnostics_surface_mirror.rs:225`
+  (`full_json_errors_array_is_populated_from_diagnostics_detailed`),
+  `diagnostics_serialization_format.rs:257`
+  (`full_output_errors_array_is_always_present`) — and the emission site
+  `json.rs:86` (`diagnostics_detailed.clone()` into an unconditionally
+  serialized `errors` field) is intact.
+
+All three acceptance criteria remain PASS on the standing evidence (test
+summaries at `49951074` above; multi-diagnostic identity; zero new warnings).
+Split declined a fourth time — the bead's entire scope is "run two named
+tests and confirm they pass"; that is already atomic and smaller than the
+3-child minimum a split would impose, so the only thing a split produces is
+3–5 no-op children that each re-run the same two tests and feed the same
+reopen cycle. `verification-failed` label removed again (re-added by the
+dispatcher on reopen; no verification has ever failed on this bead).
