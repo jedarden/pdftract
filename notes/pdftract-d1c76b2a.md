@@ -1,6 +1,6 @@
 # pdftract-d1c76b2a — default_rust gate green at HEAD (chain unblocker)
 
-Date: 2026-09-15 · Bead: `pdftract-d1c76b2a` (parent umbrella `pdftract-8c4bed00`) · Verified at pushed HEAD **`cebe1e1f`**
+Date: 2026-09-15 · Bead: `pdftract-d1c76b2a` (parent umbrella `pdftract-8c4bed00`) · Verified at pushed HEAD **`b1a08bbf`** (converged; see Addendum — per-commit results below)
 
 ## Verdict / acceptance scorecard
 
@@ -11,6 +11,31 @@ Date: 2026-09-15 · Bead: `pdftract-d1c76b2a` (parent umbrella `pdftract-8c4bed0
 | Only warning-fix hunks committed; `git show --stat` lists no unrelated files; commits cite the bead | **PASS** — `773480a0` (attempt 1: exactly `document.rs`, +9/−16); `cebe1e1f` (this iteration: exactly `extract.rs`, 4 hunks) |
 | `notes/<bead-id>.md` records before/after warning lists, recipe, commit hashes | **PASS** — this note |
 | WARN permitted: target-dir lock contention | avoided — private warmed target dir (recipe below); no contention occurred |
+
+## Addendum (2026-09-15 ~20:25Z): gate green at converged HEAD `b1a08bbf`
+
+Gate-unblocking became a two-sided convergence with the `pdftract-c1fceb36`
+worker while this note was being written:
+
+1. This bead's `cebe1e1f` repaired the swept call sites DOWN to HEAD's
+   pre-sweep API — gate green again within minutes of the breakage (run 3/4).
+2. `3aa2d58a` (c1fceb36) then landed the callee side on top of it: 6-arg
+   `process_with_mode`, `content_stream::Glyph::is_hidden`,
+   `ResourceDict::warm_indirect_properties`,
+   `XrefResolver::from_section_with_source`, grep-worker call sites, and the
+   document.rs catch_unwind RefUnwindSafe fixes.
+3. Run 5 — `dbca4d93` (tree of `3aa2d58a` + this note): exit **101**, one
+   E0061 (`extract.rs:201`, 5-arg call vs the new 6-arg definition) — a
+   convergence intermediate, red for the minutes until step 4 landed.
+4. `b1a08bbf` (c1fceb36) restored the full `extract.rs` call sites matching
+   the landed definitions. Run 6 at `b1a08bbf`: **exit 0, 0 errors**
+   (495 warning blocks / 456 sites / 117 files — warnings do not gate).
+
+`b1a08bbf` is pushed and is the HEAD this bead closes against. The
+handoff-to-`pdftract-4f5ade3a` paragraph below is superseded: the in-flight
+callee side has since landed via `3aa2d58a`, so nothing is left stranded —
+this bead's down-repair served as the base the feature was completed on top
+of. Scorecard unchanged: exit 0 PASS, zero-warnings WARN (census above).
 
 ## What the gate actually measures (premise correction)
 
