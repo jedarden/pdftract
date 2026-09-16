@@ -50,3 +50,27 @@ closed work. This note is the umbrella's evidence index; the close reason cites 
   `notes/pdftract-67a9f62e.md`, `notes/pdftract-c1fceb36.md`, `docs/notes/bf-2uw30r.md` HEAD matrix).
 - **PASS** — go/no-go decision produced, ADR-010/ADR-011 reconciled with the actual
   blocker list and feature-flag surface (`a7c93aa5`, plan.md rev 1.5).
+
+## Re-issue 2026-09-16 (second split order declined; evidence close)
+
+A second auto-split order arrived 2026-09-16T03:04Z after quarantine expiry
+(`failure-count:5` is reopen-inflated — attempts 4 and 5 were `verified_success`;
+the only true work failure was attempt 3's API error). The decomposition already
+exists — the four `split-child` beads above, all closed — so re-splitting was
+declined as duplication of closed work.
+
+Verdict re-derived at HEAD rather than cited stale, because code moved since the
+measured tip `cdd6efd4` (commit `19318bf7`: `diagnostics_compat.rs`,
+`extract.rs`). All three CI-enforced wasm32 configurations re-run at
+HEAD `000b8079` on 2026-09-16, each `--locked --target wasm32-unknown-unknown`,
+each exit 0:
+
+- `cargo check -p pdftract-core --no-default-features` → 0
+- `cargo check -p pdftract-core --no-default-features --features serde` → 0
+- `cargo check -p pdftract-wasm` → 0
+
+The parent→terminal-child dependency edge (stripped by a `dependency_removed`
+event during the reopen cycle) was restored: `pdftract-f0d685f4` blocked by
+`pdftract-a7c93aa5`. Umbrella labels `umbrella` + `auto-split-parent` confirmed
+present. `pdftract-7e29142c` (tier4 YAML follow-up, deferred, other worker) is
+not a child of this umbrella and does not gate it.

@@ -7993,3 +7993,12 @@
 {"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a800-586b-74d2-8d33-9cece7c22b99","bead":"pdftract-c8738574","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T02:16:30.059686525+00:00","worker":"glm-archivist"}
 {"bead":"pdftract-a58276cf","duration_ms":3603103,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-16T02:19:56.552127707+00:00","worker":"glm-mta"}
 {"bead":"pdftract-c8738574","duration_ms":1419262,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T02:40:09.466304542+00:00","worker":"glm-archivist"}
+{"bead":"pdftract-c8738574","event":"claim","strand":"explore","ts":"2026-09-16T02:52:12.579154643+00:00","worker":"glm-spaxel"}
+{"adapter":"claude-code-glm-5.3","attempt_id":"01a0a821-0b47-7173-9f59-82cd0b5ca5a6","bead":"pdftract-c8738574","event":"dispatch","model":"glm-5.3","strand":"explore","ts":"2026-09-16T02:52:12.999385796+00:00","worker":"glm-spaxel"}
+{"bead":"pdftract-c8738574","duration_ms":425566,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T02:59:18.679124130+00:00","worker":"glm-spaxel"}
+{"bead":"pdftract-f910c08c","duration_ms":3602147,"event":"timeout","exit_code":124,"outcome":"timeout","strand":"explore","ts":"2026-09-16T03:01:26.340516959+00:00","worker":"glm-cgraph"}
+{"bead":"pdftract-f0d685f4","event":"claim","strand":"explore","ts":"2026-09-16T03:04:26.029876508+00:00","worker":"glm-seam"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a82c-3c8c-7982-8230-ab85e0c14f87","bead":"pdftract-f0d685f4","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T03:04:26.508731354+00:00","worker":"glm-seam"}
+{"bead":"pdftract-c8738574","event":"claim","strand":"explore","ts":"2026-09-16T03:20:31.801782408+00:00","worker":"glm-mta"}
+{"adapter":"claude-code-glm-5.3-flash","attempt_id":"01a0a83a-f8bb-79d2-b1f0-f04dca474461","bead":"pdftract-c8738574","event":"dispatch","model":"glm-5.3-flash","strand":"explore","ts":"2026-09-16T03:20:32.187963264+00:00","worker":"glm-mta"}
+{"bead":"pdftract-c8738574","duration_ms":460825,"event":"complete","exit_code":0,"outcome":"success","strand":"explore","ts":"2026-09-16T03:28:13.118100572+00:00","worker":"glm-mta"}
