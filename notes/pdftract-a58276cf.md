@@ -234,3 +234,54 @@ Every commit between the executed-verdict tip and HEAD (`d96bc93f` docs,
 recorded at `92b72b4e` holds verbatim at HEAD `062bcee6` with no re-run
 required (empty code-diff rule; the shared checkout's uncommitted edits are
 excluded from HEAD by definition).
+
+## Re-issue 5 — 2026-09-16 (fifth split order declined; evidence close)
+
+Fifth auto-split order (dispatch after the `quarantine-until:2026-09-16T10:50:04Z`
+window expired; claim_epoch 7), again citing `failure-count:5` +
+`verification-failed`. Forensic tally for this bead: **5 closes, 4 reopens,
+zero recorded reopen reasons** — the count is reopen-inflated; attempts 3–6 all
+ended `verified_success`. The split remains duplication of completed work (the
+same terminal action taken at re-issue 4 here, on `pdftract-f0d685f4`/`d96bc93f`,
+and on `pdftract-c8738574`'s seventh order at `5d4d9b02`): manufacturing 3–5
+children for quadruple-verified work creates vacuous dispatch cycles and re-arms
+further redispatch.
+
+Fresh evidence re-derived at current HEAD `5d4d9b02` — this time from a clean
+`git archive HEAD` extraction (`~/scratch/a58276cf-ri5`, removed after the run)
+with its own `CARGO_TARGET_DIR` (hardlink-warm from `/build/target-workers`).
+The clean extraction was required because the shared checkout's working tree
+carries uncommitted edits to `diagnostics_surface_mirror.rs` /
+`diagnostics_serialization_format.rs` that would contaminate a working-tree
+verdict. `git diff 0784ebea..HEAD` (attempt 6's verdict tip → HEAD) is empty on
+all five compat-surface paths, so these results also cover attempt 6 verbatim.
+
+```
+$ git diff --stat 0784ebea..HEAD -- diagnostics_compat.rs extract.rs diagnostics.rs \
+    tests/diagnostics_surface_mirror.rs tests/diagnostics_serialization_format.rs
+# (empty — exit 0)
+$ grep -n "to_legacy_strings\|ToString::to_string" crates/pdftract-core/src/extract.rs
+21:  use crate::diagnostics_compat::to_legacy_strings;
+1090: diagnostics: to_legacy_strings(&all_diagnostics_with_js),
+2017: diagnostics: to_legacy_strings(&all_diagnostics),
+2334: diagnostics: to_legacy_strings(&all_diagnostics),
+# zero ToString::to_string producer sites
+$ timeout --kill-after=30s 540s cargo test -p pdftract-core --lib diagnostics_compat
+test result: ok. 9 passed; 0 failed; 0 ignored; 3600 filtered out
+  (incl. golden_legacy_bytes_match_inline_producer_expression)
+$ timeout --kill-after=30s 540s cargo test -p pdftract-core \
+    --test diagnostics_surface_mirror --test diagnostics_serialization_format
+diagnostics_serialization_format: 7 passed; 0 failed
+diagnostics_surface_mirror:       8 passed; 0 failed
+```
+
+No 124 exits. All acceptance criteria PASS at HEAD `5d4d9b02`. The WARN handoff
+(`docs/errors-array-format.md` + `assert_mirror` Display-grammar conflict,
+latent while extraction is tree-wide broken) stands unchanged, owned by child 4
+/ the doc-reconciliation lineage as recorded above.
+
+Terminal action: evidence close (epoch 7), per the documented treadmill
+playbook — decline notes alone do not stop redispatch; the gate-visible close is
+what terminates the cycle. Closure contract satisfied via the bead `notes`
+field update this dispatch (option 2; the note-file commit below is a
+gate-trivial path).
