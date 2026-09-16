@@ -113,3 +113,29 @@ what `full_output_errors_array_is_always_present` pins. Matches
 - Per the bead's "on failure fix production code; do not weaken the tests"
   rule: **nothing failed, nothing was changed.** The committed tests and the
   production emission site are in agreement at HEAD.
+
+## Re-verification 3 (final) — HEAD `49951074` (claim epoch 3)
+
+Attempts 1 (`9e0a1a58`) and 2 (`dc9f1c40b518`) both passed but the bead was
+never closed; it was re-dispatched (quarantine expired 2026-09-16T02:50Z).
+After attempt 2, `19318bf7` (pdftract-a58276cf) touched
+`crates/pdftract-core/src/extract.rs` (+18) and `diagnostics_compat.rs` (+96) —
+a non-empty code diff from the executed-verdict tip, so the PASS verdict was
+stale and the tests were re-run fresh at HEAD `499510748c140a102c9a9cd70598776aa65276ee`.
+
+Same recipe: git-archive-HEAD extraction in `~/scratch` (no `.git` → local
+cgroup fallback), private `CARGO_TARGET_DIR` warmed via `cp -al` from
+`/build/target-workers` (lib recompiled from HEAD source), `timeout
+--kill-after=30s 900s` (no kill; exit 0), `--test-threads=2`.
+
+**Result — identical to attempts 1 and 2:**
+`diagnostics_serialization_format` 7/7 ok (`full_output_errors_array_is_always_present` ok),
+`diagnostics_surface_mirror` 8/8 ok (`full_json_errors_array_is_populated_from_diagnostics_detailed` ok).
+Warnings: `pdftract-core (lib) generated 74 warnings` — the same pre-existing
+baseline count measured in attempts 1 and 2 — and zero warnings from the two
+test targets. `19318bf7` deliberately changed only the legacy
+`metadata.diagnostics` string conversion (`to_legacy_strings`); the structured
+`diagnostics_detailed` surface and the `json.rs:86` errors clone are
+untouched, and the fresh run confirms the contract holds at this tip. Scratch
+extraction + private target dir removed after success; no orphaned processes
+(`pgrep` clean).
