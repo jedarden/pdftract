@@ -74,3 +74,20 @@ event during the reopen cycle) was restored: `pdftract-f0d685f4` blocked by
 `pdftract-a7c93aa5`. Umbrella labels `umbrella` + `auto-split-parent` confirmed
 present. `pdftract-7e29142c` (tier4 YAML follow-up, deferred, other worker) is
 not a child of this umbrella and does not gate it.
+
+## Re-issue 3 — 2026-09-16 (third split order declined; evidence close)
+
+A third auto-split order arrived after quarantine round 2 expired
+(2026-09-16T07:31Z dispatch, claim_epoch 7), again citing `failure-count:6` —
+which remains reopen-inflated: attempts 4, 5, and 6 were all `verified_success`,
+and the only true work failure was attempt 3's API error. The decomposition
+still exists unchanged — the four `split-child` beads above, all closed — so a
+re-split was declined a third time as duplication of closed work.
+
+Verdict standing was re-checked, not cited stale: `git diff --stat
+000b8079..92b72b4e -- crates Cargo.toml Cargo.lock .ci` is **empty** (every
+commit between the executed-verdict tip and HEAD is docs/beads-sync only), so
+the three CI-enforced wasm32 configurations that exited 0 at `000b8079` hold
+verbatim at HEAD `92b72b4e` with no re-run required. The parent→terminal-child
+dependency edge (`pdftract-f0d685f4` blocked by `pdftract-a7c93aa5`), stripped
+again by the reopen cycle, was restored once more before closing.
