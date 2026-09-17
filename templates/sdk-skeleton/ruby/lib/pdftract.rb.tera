@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require_relative "codegen/methods"
-require_relative "codegen/errors"
-require_relative "codegen/types"
+require_relative "pdftract/codegen/methods"
+require_relative "pdftract/codegen/errors"
+require_relative "pdftract/codegen/types"
 
 module Pdftract
   VERSION = "{{ version }}"
