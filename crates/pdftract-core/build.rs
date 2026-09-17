@@ -1092,6 +1092,14 @@ pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new
 /// This is the TH-06 supply-chain gate implementation. It reads CHECKSUMS.sha256
 /// and verifies that each build-time data file matches its expected checksum.
 ///
+/// Paths in CHECKSUMS.sha256 are relative to this crate's `build/` directory
+/// (its documented format: `<checksum>  <relative-path-from-crate-build-dir>`),
+/// while this script runs with the crate directory as CWD — so every pinned
+/// path is resolved as `build/<path>`. A pinned file that is missing is a
+/// failure, not a skip: deletion of a required input must fail the build as
+/// loudly as corruption. The only unpinned input is the optional
+/// glyph-shapes.json (see build/PROVENANCE.md).
+///
 /// # Returns
 ///
 /// `Ok(())` if all checksums match, `Err(String)` with a descriptive message otherwise.
@@ -1138,16 +1146,23 @@ fn verify_checksums() -> Result<(), String> {
     let mut failures = Vec::new();
 
     for (path, expected_checksum) in &expected_checksums {
-        let file_path = Path::new(path);
+        // CHECKSUMS.sha256 paths are relative to the crate build dir; resolve
+        // them against build/ (not the crate dir — the root cause of the gate
+        // silently skipping every entry as "optional" before this fix).
+        let file_path = Path::new("build").join(path);
 
-        // Skip files that don't exist (they may be optional, like glyph-shapes.json)
+        // A pinned file that is missing is a deletion (or packaging regression),
+        // not an optional absence — fail the build naming the file.
         if !file_path.exists() {
-            eprintln!("cargo:warning=Checksum file not found (optional): {}", path);
+            failures.push(format!(
+                "{}: pinned in CHECKSUMS.sha256 but missing",
+                file_path.display()
+            ));
             continue;
         }
 
         // Compute SHA-256 of the file
-        let actual_checksum = compute_sha256(file_path)
+        let actual_checksum = compute_sha256(&file_path)
             .map_err(|e| format!("Failed to compute checksum for {}: {}", path, e))?;
 
         if actual_checksum != *expected_checksum {

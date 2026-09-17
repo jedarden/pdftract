@@ -12,10 +12,12 @@ source.
 
 Integrity is enforced by the TH-06 supply-chain gate (`build.rs`
 `verify_checksums()`): `CHECKSUMS.sha256` pins the SHA-256 of every tracked
-input and is verified on every build of `pdftract-core`. A corrupted or
-tampered input fails the build with a per-file message naming the offending
-path; a deleted `CHECKSUMS.sha256` fails with a targeted
-`CHECKSUMS.sha256 not found` error.
+input and is verified on every build of `pdftract-core`. Pinned paths are
+resolved relative to this directory. A corrupted or tampered input fails the
+build with a per-file message naming the offending path; a *deleted* pinned
+input fails with `pinned in CHECKSUMS.sha256 but missing` (deletion is not
+treated as an optional absence); a deleted `CHECKSUMS.sha256` fails with a
+targeted `CHECKSUMS.sha256 not found` error.
 
 ## File inventory
 
@@ -86,16 +88,21 @@ problem, not a missing-setup problem.
 
 ## Verification — corruption detection
 
-Deleting a required input, or flipping a byte in one, must produce a targeted
-failure:
+Corrupting a required input, deleting one, or deleting the manifest must each
+produce a targeted failure:
 
 ```sh
 # corrupt an input in the extraction
 printf 'x' >> crates/pdftract-core/build/agl.json
 cargo check -p pdftract-core --lib 2>&1 | grep -i checksum   # build fails naming agl.json
 
-# delete the manifest
+# delete a pinned input
 git checkout -- crates/pdftract-core/build/agl.json
+rm crates/pdftract-core/build/wordlist-en-20k.txt
+cargo check -p pdftract-core --lib 2>&1 | grep "pinned in CHECKSUMS.sha256 but missing"
+
+# delete the manifest
+git checkout -- crates/pdftract-core/build/wordlist-en-20k.txt
 rm crates/pdftract-core/build/CHECKSUMS.sha256
 cargo check -p pdftract-core --lib 2>&1 | grep -i "CHECKSUMS.sha256 not found"
 ```
