@@ -2,7 +2,7 @@
 
 use pdftract_core::options::ExtractionOptions;
 use pdftract_core::sdk;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Workspace root, resolved relative to this crate so the test never depends
 /// on an absolute checkout path.
