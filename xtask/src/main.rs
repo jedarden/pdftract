@@ -180,7 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let output_path = if args.len() >= 4 {
                 args[3].clone()
             } else {
-                "build/glyph-shapes.json".to_string()
+                "crates/pdftract-core/build/glyph-shapes.json".to_string()
             };
             gen_shape_db(&fonts_dir, &output_path)?;
             Ok(())
@@ -1917,7 +1917,9 @@ fn escape_pdf_string(s: &str) -> String {
 ///
 /// This function walks a directory of font files (TrueType/OpenType),
 /// rasterizes every mapped glyph at 32x32 via fontdue, computes pHash
-/// for each, and writes the result as build/glyph-shapes.json.
+/// for each, and writes the result as
+/// crates/pdftract-core/build/glyph-shapes.json (the build-time input location
+/// read by pdftract-core's build.rs; tracked and unignored).
 ///
 /// # Arguments
 ///

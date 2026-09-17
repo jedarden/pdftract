@@ -61,7 +61,7 @@ fn main() {
         eprintln!(
             "cargo:warning=Build-time data files may have been tampered with or need regeneration."
         );
-        eprintln!("cargo:warning=To regenerate CHECKSUMS.sha256, run: cd crates/pdftract-core/build && sha256sum std14-metrics.json named-encodings.json agl.json font-fingerprints.json wordlist-en-20k.txt predefined-cmaps/*.json > CHECKSUMS.sha256 && sha256sum ../../../build/glyph-shapes.json >> CHECKSUMS.sha256");
+        eprintln!("cargo:warning=To regenerate CHECKSUMS.sha256, run: cd crates/pdftract-core/build && sha256sum std14-metrics.json named-encodings.json agl.json font-fingerprints.json wordlist-en-20k.txt unmapped-glyph-names.json predefined-cmaps/*.json > CHECKSUMS.sha256");
         panic!("Checksum verification failed - aborting build");
     }
 
@@ -743,13 +743,15 @@ fn parse_unicode_value(s: &str) -> Vec<char> {
 ///   "frequency_rank": 1
 /// }
 /// ```
-fn generate_shape_db(out_dir: &Path, _shapes_path: &Path) {
-    // Resolve shapes_path relative to the workspace root
-    // build.rs runs from the crate directory, but the build/ dir is at workspace root
-    // We can find the workspace root by going up from the crate directory
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = crate_dir.ancestors().nth(2).unwrap_or(crate_dir); // workspace is usually 2 levels up
-    let actual_shapes_path = workspace_root.join("build").join("glyph-shapes.json");
+fn generate_shape_db(out_dir: &Path, shapes_path: &Path) {
+    // The shape database is OPTIONAL: it is generated from a developer-supplied
+    // fonts directory via `cargo xtask gen-shape-db <fonts-dir>` and lands in
+    // this crate's build/ dir alongside every other build-time data file.
+    // Absence yields empty tables (Level 4 glyph-shape recovery is disabled),
+    // never a build failure. Unlike the workspace-root location this file used
+    // to live in, build/ here is tracked and not ignored, so a generated file
+    // shows up in git status instead of being silently hidden.
+    let actual_shapes_path = shapes_path;
 
     // Check if the JSON file exists
     if !actual_shapes_path.exists() {
