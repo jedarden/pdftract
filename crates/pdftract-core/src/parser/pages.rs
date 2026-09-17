@@ -1791,9 +1791,10 @@ mod proptests {
             let inherited = InheritedAttrs::default();
             let mut diagnostics = Vec::new();
             let page_obj = PdfObject::Dict(Box::new(page_dict));
+            let resolver = XrefResolver::new();
 
             // This should never panic
-            let _ = build_page_dict(&page_obj, &inherited, &mut diagnostics);
+            let _ = build_page_dict(&page_obj, &resolver, &inherited, &mut diagnostics);
         }
 
         /// Test that flatten_page_tree handles arbitrary /Pages structures without panicking.
