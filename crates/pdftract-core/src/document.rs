@@ -30,6 +30,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
+use std::sync::Arc;
 
 #[cfg(feature = "remote")]
 use crate::source::RemoteOpts;
@@ -399,22 +400,23 @@ pub fn parse_pdf_file(
     crate::parser::object::PdfDict,
 )> {
     // Open the PDF file
-    let source = ParserFileSource::open(pdf_path).context("Failed to open PDF file")?;
+    let source = Arc::new(ParserFileSource::open(pdf_path).context("Failed to open PDF file")?);
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
+    let startxref_offset =
+        find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
     // Check if this is a linearized PDF
-    let xref_section = if let Some(lin_info) = detect_linearization(&source) {
+    let xref_section = if let Some(lin_info) = detect_linearization(source.as_ref()) {
         // Linearized PDF: use special xref loading that merges first-page and full xref
-        load_xref_linearized(&source, &lin_info, startxref_offset)
+        load_xref_linearized(source.as_ref(), &lin_info, startxref_offset)
     } else {
         // Normal PDF: load xref with /Prev chain support
-        load_xref_with_prev_chain(&source, startxref_offset)
+        load_xref_with_prev_chain(source.as_ref(), startxref_offset)
     };
 
     // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    let resolver = XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Get the root reference from trailer
     let trailer = xref_section.trailer.as_ref().ok_or_else(|| anyhow!("No trailer in xref section"))?;
@@ -424,7 +426,11 @@ pub fn parse_pdf_file(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+    let catalog = parse_catalog(
+        &resolver,
+        root_ref,
+        Some(source.as_ref() as &dyn ParserPdfSource),
+    )
         .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
@@ -455,7 +461,7 @@ pub fn parse_pdf_file(
     let fingerprint = compute_fingerprint(
         &fingerprint_input,
         &resolver,
-        Some(&source as &dyn ParserPdfSource),
+        Some(source.as_ref() as &dyn ParserPdfSource),
     );
 
     Ok((fingerprint, catalog, pages, resolver, trailer.clone()))
@@ -481,20 +487,26 @@ pub fn parse_pdf_source(
     Vec<crate::parser::pages::PageDict>,
     XrefResolver,
 )> {
+    // Keep the source alive inside the resolver: page-tree traversal and
+    // content lookup use `resolve`, not the catalog parser's explicit source
+    // argument.
+    let source: Arc<dyn ParserPdfSource> = Arc::from(source);
+
     // Find the startxref offset
-    let startxref_offset = find_startxref(&*source).context("Failed to find startxref offset")?;
+    let startxref_offset =
+        find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
     // Check if this is a linearized PDF
-    let xref_section = if let Some(lin_info) = detect_linearization(&*source) {
+    let xref_section = if let Some(lin_info) = detect_linearization(source.as_ref()) {
         // Linearized PDF: use special xref loading that merges first-page and full xref
-        load_xref_linearized(&*source, &lin_info, startxref_offset)
+        load_xref_linearized(source.as_ref(), &lin_info, startxref_offset)
     } else {
         // Normal PDF: load xref with /Prev chain support
-        load_xref_with_prev_chain(&*source, startxref_offset)
+        load_xref_with_prev_chain(source.as_ref(), startxref_offset)
     };
 
     // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    let resolver = XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Extract the trailer dictionary
     let trailer = xref_section
@@ -509,7 +521,11 @@ pub fn parse_pdf_source(
         .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&*source as &dyn ParserPdfSource))
+    let catalog = parse_catalog(
+        &resolver,
+        root_ref,
+        Some(source.as_ref() as &dyn ParserPdfSource),
+    )
         .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
@@ -540,7 +556,7 @@ pub fn parse_pdf_source(
     let fingerprint = compute_fingerprint(
         &fingerprint_input,
         &resolver,
-        Some(&*source as &dyn ParserPdfSource),
+        Some(source.as_ref() as &dyn ParserPdfSource),
     );
 
     Ok((fingerprint, catalog, pages, resolver))
@@ -1036,7 +1052,7 @@ pub fn validate_pages_structure(
 /// ```
 pub struct PdfExtractor {
     /// The PDF file source
-    source: FileSource,
+    source: Arc<FileSource>,
     /// The xref resolver for indirect object lookup
     resolver: XrefResolver,
     /// The parsed catalog
@@ -1056,17 +1072,18 @@ impl PdfExtractor {
         let path = pdf_path.as_ref();
 
         // Open the PDF file
-        let source = FileSource::open(path).context("Failed to open PDF file")?;
+        let source = Arc::new(FileSource::open(path).context("Failed to open PDF file")?);
 
         // Find the startxref offset
         let startxref_offset =
-            find_startxref(&source).context("Failed to find startxref offset")?;
+            find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
         // Load the xref table
-        let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+        let xref_section = load_xref_with_prev_chain(source.as_ref(), startxref_offset);
 
         // Create resolver from xref section
-        let resolver = XrefResolver::from_section(xref_section.clone());
+        let resolver =
+            XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
         // Get the root reference from trailer
         let root_ref = xref_section
@@ -1077,7 +1094,11 @@ impl PdfExtractor {
             .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
 
         // Parse the catalog
-        let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+        let catalog = parse_catalog(
+            &resolver,
+            root_ref,
+            Some(source.as_ref() as &dyn ParserPdfSource),
+        )
             .map_err(|diagnostics| {
                 let msg = diagnostics
                     .first()
@@ -1206,7 +1227,7 @@ impl PdfExtractor {
             lazy_iter: None,
             catalog: &self.catalog,
             resolver: &self.resolver,
-            source: Some(&self.source as &dyn ParserPdfSource),
+            source: Some(self.source.as_ref() as &dyn ParserPdfSource),
             index: 0,
         }
     }
@@ -1451,7 +1472,7 @@ pub struct Document {
     /// The xref resolver for object resolution
     resolver: XrefResolver,
     /// The PDF source (file, HTTP, memory)
-    source: Option<Box<dyn ParserPdfSource>>,
+    source: Option<Arc<dyn ParserPdfSource>>,
     /// The document fingerprint
     fingerprint: String,
     /// Whether this is a remote document
@@ -1480,7 +1501,7 @@ impl Document {
         let parser_source = ParserFileSource::open(path).context("Failed to open PDF file")?;
 
         // Parse the document from source
-        let doc = Self::from_source(Box::new(parser_source), false)?;
+        let doc = Self::from_source(Arc::new(parser_source), false)?;
 
         // Validate pages structure before returning
         let source_id = path.display().to_string();
@@ -1535,7 +1556,7 @@ impl Document {
         let adapted = Box::new(SourceAdapter::new(source)) as Box<dyn ParserPdfSource>;
 
         // Parse the document from source
-        let doc = Self::from_source(adapted, true)?;
+        let doc = Self::from_source(Arc::from(adapted), true)?;
 
         // Validate pages structure before returning
         validate_pages_structure(&doc.catalog, &doc.resolver, url)
@@ -1547,16 +1568,16 @@ impl Document {
     /// Create a Document from a generic PdfSource.
     ///
     /// This is used internally by both `open` and `open_remote`.
-    fn from_source(source: Box<dyn ParserPdfSource>, is_remote: bool) -> Result<Self> {
+    fn from_source(source: Arc<dyn ParserPdfSource>, is_remote: bool) -> Result<Self> {
         // Find the startxref offset
         let startxref_offset =
-            find_startxref(&*source).context("Failed to find startxref offset")?;
+            find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
         // Load the xref table (forward-scan is disabled for remote sources automatically)
-        let xref_section = load_xref_with_prev_chain(&*source, startxref_offset);
+        let xref_section = load_xref_with_prev_chain(source.as_ref(), startxref_offset);
 
         // Create resolver from xref section
-        let resolver = XrefResolver::from_section(xref_section.clone());
+        let resolver = XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
         // Get the root reference from trailer
         let root_ref = xref_section
@@ -1568,7 +1589,7 @@ impl Document {
 
         // Parse the catalog
         let catalog =
-            parse_catalog(&resolver, root_ref, Some(&*source)).map_err(|diagnostics| {
+            parse_catalog(&resolver, root_ref, Some(source.as_ref())).map_err(|diagnostics| {
                 let msg = diagnostics
                     .first()
                     .map(|d| d.message.as_ref())

@@ -23,7 +23,8 @@ fn test_sdk_extract_basic() {
     //! - Extract returns a Result type that succeeds on valid PDF
     //! - ExtractionResult contains pages with proper structure
     //!
-    //! Uses test-minimal.pdf (374 bytes) as a fast, reliable fixture.
+    //! Uses the provenance-recorded W3C one-page fixture as a fast, reliable
+    //! real-PDF contract fixture.
 
     let fixture_path = Path::new("tests/fixtures/test-minimal.pdf");
 
@@ -46,17 +47,21 @@ fn test_sdk_extract_basic() {
 
     let extraction_result = result.unwrap();
 
-    // Verify at least one page was extracted
+    // Verify the independently validated page count was extracted.
     assert!(
         !extraction_result.pages.is_empty(),
         "At least one page should be extracted from the PDF"
     );
+    assert_eq!(extraction_result.pages.len(), 1);
 
-    // Verify we can access page data
+    // Verify the real PDF page produced the expected text-bearing output.
     let first_page = &extraction_result.pages[0];
     assert!(
-        first_page.width.is_some() || first_page.height.is_some(),
-        "First page should have dimension information"
+        first_page
+            .spans
+            .iter()
+            .any(|span| span.text == "Dummy PDF file"),
+        "First page should contain the fixture's expected text"
     );
 }
 
@@ -88,13 +93,12 @@ fn test_sdk_extract_text() {
         result.err()
     );
 
-    let _text = result.unwrap();
+    let text = result.unwrap();
 
-    // Verify we got a string (may be empty for minimal PDFs)
-    assert!(
-        std::any::TypeId::of::<String>() == std::any::TypeId::of::<String>(),
-        "extract_text() should return a String"
-    );
+    assert_eq!(text.trim(), "Dummy PDF file");
+
+    // Verify the returned text is ASCII as expected for this fixture.
+    assert!(text.is_ascii(), "fixture text should be valid extracted text");
 }
 
 #[test]
@@ -128,10 +132,7 @@ fn test_sdk_get_metadata() {
     let metadata = result.unwrap();
 
     // Verify metadata structure
-    assert!(
-        metadata.page_count > 0,
-        "Metadata should report at least one page"
-    );
+    assert_eq!(metadata.page_count, 1);
 }
 
 #[test]
@@ -203,17 +204,20 @@ fn test_sdk_extract_stream() {
     let mut stream = result.unwrap();
 
     // Verify we can iterate over pages
-    if let Some(first_page_result) = stream.next() {
-        assert!(
-            first_page_result.is_ok(),
-            "Stream should yield Ok(PageResult), got error: {:?}",
-            first_page_result.err()
-        );
+    let first_page_result = stream.next().expect("stream should yield one page");
+    assert!(
+        first_page_result.is_ok(),
+        "Stream should yield Ok(PageResult), got error: {:?}",
+        first_page_result.err()
+    );
 
-        let first_page = first_page_result.unwrap();
-        assert!(
-            first_page.width.is_some() || first_page.height.is_some(),
-            "Streamed page should have dimension information"
-        );
-    }
+    let first_page = first_page_result.unwrap();
+    assert_eq!(first_page.index, 0);
+    assert!(
+        first_page
+            .spans
+            .iter()
+            .any(|span| span.text == "Dummy PDF file"),
+        "Streamed page should contain the fixture's expected text"
+    );
 }

@@ -608,16 +608,18 @@ pub fn extract_pdf(
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 
     // Open the PDF file
-    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
+    let source = Arc::new(FileSource::open(pdf_path).context("Failed to open PDF file")?);
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
+    let startxref_offset =
+        find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
     // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(source.as_ref(), startxref_offset);
 
     // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    let resolver =
+        XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Detect and handle encryption (Phase 1.4)
     #[cfg(feature = "decrypt")]
@@ -657,7 +659,11 @@ pub fn extract_pdf(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+    let catalog = parse_catalog(
+        &resolver,
+        root_ref,
+        Some(source.as_ref() as &dyn ParserPdfSource),
+    )
         .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
@@ -759,14 +765,14 @@ pub fn extract_pdf(
         use crate::parser::xref::detect_linearization;
 
         let mut prefetch_diagnostics = Vec::new();
-        if let Some(lin_info) = detect_linearization(&source) {
+        if let Some(lin_info) = detect_linearization(source.as_ref()) {
             if let (Some(hint_offset), Some(hint_length)) =
                 (lin_info.hint_stream_offset, lin_info.hint_stream_length)
             {
                 // Prefetch the pages that will be extracted
                 // page_filter contains 0-based page indices
                 prefetch_from_hint_stream(
-                    &source,
+                    source.as_ref(),
                     hint_offset,
                     hint_length,
                     page_filter.iter().copied(),
@@ -853,7 +859,7 @@ pub fn extract_pdf(
             let decoded_streams = decode_page_content_streams(
                 &page_dict,
                 &resolver_arc,
-                &source,
+                source.as_ref(),
                 options.max_decompress_bytes,
                 page_index,
             );
@@ -882,7 +888,7 @@ pub fn extract_pdf(
                 page_index,
                 &page_dict,
                 &options_arc,
-                Some(&source),
+                Some(source.as_ref()),
                 Some(&resolver_arc),
                 Some(&default_off_ocgs),
             )
@@ -959,7 +965,7 @@ pub fn extract_pdf(
     // Phase 7.3: Extract digital signature metadata
     // Discover signature fields and extract metadata from them
     let sig_fields = discover(&resolver_arc, &catalog);
-    let file_size = Some(SourcePdfSource::len(&source));
+    let file_size = Some(SourcePdfSource::len(source.as_ref()));
     let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
     let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
 
@@ -969,7 +975,7 @@ pub fn extract_pdf(
             Some(catalog_dict) => extract_attachments(
                 &resolver_arc,
                 catalog_dict,
-                Some(&source as &dyn ParserPdfSource),
+                Some(source.as_ref() as &dyn ParserPdfSource),
             ),
             None => Vec::new(),
         },
@@ -1000,7 +1006,12 @@ pub fn extract_pdf(
                 };
                 use crate::forms::extract_xfa_fields;
                 let xfa_extracted =
-                    extract_xfa_fields(&resolver_arc, acroform_dict, &source, &stream_opts);
+                    extract_xfa_fields(
+                        &resolver_arc,
+                        acroform_dict,
+                        source.as_ref(),
+                        &stream_opts,
+                    );
                 xfa_extracted
                     .into_iter()
                     .filter_map(|f| f.value.map(|v| (f.full_name, v)))
@@ -1729,16 +1740,18 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 
     // Open the PDF file
-    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
+    let source = Arc::new(FileSource::open(pdf_path).context("Failed to open PDF file")?);
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
+    let startxref_offset =
+        find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
     // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(source.as_ref(), startxref_offset);
 
     // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    let resolver =
+        XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Get the root reference from trailer
     let root_ref = xref_section
@@ -1749,7 +1762,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+    let catalog = parse_catalog(
+        &resolver,
+        root_ref,
+        Some(source.as_ref() as &dyn ParserPdfSource),
+    )
         .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
@@ -1863,14 +1880,14 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         use crate::parser::xref::detect_linearization;
 
         let mut prefetch_diagnostics = Vec::new();
-        if let Some(lin_info) = detect_linearization(&source) {
+        if let Some(lin_info) = detect_linearization(source.as_ref()) {
             if let (Some(hint_offset), Some(hint_length)) =
                 (lin_info.hint_stream_offset, lin_info.hint_stream_length)
             {
                 // Prefetch the pages that will be extracted
                 // page_filter contains 0-based page indices
                 prefetch_from_hint_stream(
-                    &source,
+                    source.as_ref(),
                     hint_offset,
                     hint_length,
                     page_filter.iter().copied(),
@@ -1895,7 +1912,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
             let decoded_streams = decode_page_content_streams(
                 &page_dict,
                 &resolver_arc,
-                &source,
+                source.as_ref(),
                 options.max_decompress_bytes,
                 page_index,
             );
@@ -1923,7 +1940,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 page_index,
                 &page_dict,
                 &options_arc,
-                Some(&source),
+                Some(source.as_ref()),
                 Some(&resolver_arc),
                 Some(&default_off_ocgs),
             )
@@ -2092,16 +2109,18 @@ where
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 
     // Open the PDF file
-    let source = FileSource::open(pdf_path).context("Failed to open PDF file")?;
+    let source = Arc::new(FileSource::open(pdf_path).context("Failed to open PDF file")?);
 
     // Find the startxref offset
-    let startxref_offset = find_startxref(&source).context("Failed to find startxref offset")?;
+    let startxref_offset =
+        find_startxref(source.as_ref()).context("Failed to find startxref offset")?;
 
     // Load the xref table
-    let xref_section = load_xref_with_prev_chain(&source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(source.as_ref(), startxref_offset);
 
     // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    let resolver =
+        XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Get the root reference from trailer
     let root_ref = xref_section
@@ -2112,7 +2131,11 @@ where
         .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
 
     // Parse the catalog
-    let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn ParserPdfSource))
+    let catalog = parse_catalog(
+        &resolver,
+        root_ref,
+        Some(source.as_ref() as &dyn ParserPdfSource),
+    )
         .map_err(|diagnostics| {
             let msg = diagnostics
                 .first()
@@ -2222,7 +2245,7 @@ where
             let decoded_streams = decode_page_content_streams(
                 &page_dict,
                 &resolver_arc,
-                &source,
+                source.as_ref(),
                 DEFAULT_MAX_DECOMPRESS_BYTES,
                 page_count,
             );
@@ -2246,7 +2269,7 @@ where
                 page_count,
                 &page_dict,
                 &options_arc,
-                Some(&source),
+                Some(source.as_ref()),
                 Some(&resolver_arc),
                 Some(&default_off_ocgs),
             )

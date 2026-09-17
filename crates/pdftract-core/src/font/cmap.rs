@@ -269,6 +269,33 @@ impl<'a> CMapParser<'a> {
                         }
                     }
                 }
+                // PDF CMap syntax places the block count before the
+                // beginbfchar/beginbfrange keyword (for example,
+                // `11 beginbfchar`). Keep accepting the historical
+                // keyword-first form handled above as well.
+                Token::Integer(count) => {
+                    let next_keyword = self.lexer.peek_token().and_then(|token| match token {
+                        Token::Keyword(keyword) => Some(keyword.clone()),
+                        _ => None,
+                    });
+                    match next_keyword.as_deref() {
+                        Some(b"beginbfchar") => {
+                            self.lexer.next_token();
+                            if let Err(e) = self.parse_beginbfchar_with_count(&mut map, count) {
+                                self.emit_error(&e);
+                                self.skip_to_keyword(b"endbfchar");
+                            }
+                        }
+                        Some(b"beginbfrange") => {
+                            self.lexer.next_token();
+                            if let Err(e) = self.parse_beginbfrange_with_count(&mut map, count) {
+                                self.emit_error(&e);
+                                self.skip_to_keyword(b"endbfrange");
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {
                     // Unexpected token - skip it
                 }
@@ -285,15 +312,28 @@ impl<'a> CMapParser<'a> {
     ///
     /// Format: beginbfchar <count> <src1> <dst1> <src2> <dst2> ... endbfchar
     fn parse_beginbfchar(&mut self, map: &mut ToUnicodeMap) -> Result<(), CMapError> {
-        // Read count
         let count = self.expect_integer()?;
+        self.parse_beginbfchar_with_count(map, count)
+    }
+
+    fn parse_beginbfchar_with_count(
+        &mut self,
+        map: &mut ToUnicodeMap,
+        count: i64,
+    ) -> Result<(), CMapError> {
         if count < 0 {
             return Err(CMapError::UnexpectedToken(
                 "negative bfchar count".to_string(),
             ));
         }
-        let count = count as usize;
+        self.parse_beginbfchar_entries(map, count as usize)
+    }
 
+    fn parse_beginbfchar_entries(
+        &mut self,
+        map: &mut ToUnicodeMap,
+        count: usize,
+    ) -> Result<(), CMapError> {
         // Read count pairs of <src> <dst>
         for _ in 0..count {
             // Source hex string
@@ -318,8 +358,15 @@ impl<'a> CMapParser<'a> {
     /// - beginbfrange <count> <lo> <hi> <dst> ... endbfrange (contiguous)
     /// - beginbfrange <count> <lo> <hi> [<d0> <d1> ...] ... endbfrange (explicit array)
     fn parse_beginbfrange(&mut self, map: &mut ToUnicodeMap) -> Result<(), CMapError> {
-        // Read count
         let count = self.expect_integer()?;
+        self.parse_beginbfrange_with_count(map, count)
+    }
+
+    fn parse_beginbfrange_with_count(
+        &mut self,
+        map: &mut ToUnicodeMap,
+        count: i64,
+    ) -> Result<(), CMapError> {
         if count < 0 {
             return Err(CMapError::UnexpectedToken(
                 "negative bfrange count".to_string(),
@@ -327,6 +374,14 @@ impl<'a> CMapParser<'a> {
         }
         let count = count as usize;
 
+        self.parse_beginbfrange_entries(map, count)
+    }
+
+    fn parse_beginbfrange_entries(
+        &mut self,
+        map: &mut ToUnicodeMap,
+        count: usize,
+    ) -> Result<(), CMapError> {
         for _ in 0..count {
             // Read lo and hi
             let lo = self.expect_hex_string()?;
@@ -647,6 +702,21 @@ mod tests {
              Why this matters: Verifies beginbfchar parses hex source <00> and destination <0041> correctly.",
             result
         );
+    }
+
+    #[test]
+    fn test_parse_standard_count_before_bfchar() {
+        // PDF CMap producers conventionally place the count before the block
+        // keyword: `1 beginbfchar ... endbfchar`.
+        let input = b"1 beginbfchar <01> <0041> endbfchar";
+        let parser = CMapParser::new(input);
+        let (map, diagnostics) = parser.parse();
+
+        assert!(
+            diagnostics.is_empty(),
+            "unexpected CMap diagnostics: {diagnostics:?}"
+        );
+        assert_eq!(map.lookup(&[0x01]), Some(&['A'][..]));
     }
 
     #[test]

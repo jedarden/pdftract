@@ -272,6 +272,11 @@ impl XrefResolver {
         }
     }
 
+    /// Get the backing source used for source-backed object resolution.
+    pub fn source(&self) -> Option<&dyn PdfSource> {
+        self.source.as_deref()
+    }
+
     /// Add an xref entry.
     pub fn add_entry(&mut self, obj_nr: u32, entry: XrefEntry) {
         self.entries.insert(obj_nr, entry);
@@ -381,8 +386,28 @@ impl XrefResolver {
                         return Err(ResolveError::NotFound(obj_ref));
                     }
 
-                    // Get the parsed object (the actual value)
-                    let obj = indirect.obj;
+                    // ObjectParser positions streams relative to the byte
+                    // buffer supplied above. Convert that position to the
+                    // document's absolute offset before caching the object;
+                    // stream decoding reads from the original PdfSource.
+                    let mut obj = indirect.obj;
+                    if let PdfObject::Stream(stream) = &mut obj {
+                        stream.offset = stream.offset.saturating_add(*offset);
+                        if stream.len_hint.is_none() {
+                            let length_ref = stream
+                                .dict
+                                .get("Length")
+                                .or_else(|| stream.dict.get("/Length"))
+                                .and_then(PdfObject::as_ref);
+                            if let Some(length_ref) = length_ref {
+                                if let Ok(PdfObject::Integer(length)) = self.resolve(length_ref) {
+                                    if length >= 0 {
+                                        stream.len_hint = Some(length as u64);
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // Cache the result (ObjectCache handles LRU eviction and excludes PdfNull from cycles)
                     self.cache.insert(obj_ref, Arc::new(obj.clone()));

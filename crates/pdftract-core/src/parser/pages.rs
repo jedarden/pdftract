@@ -414,12 +414,12 @@ fn walk_page_tree(
     let parent_inherited = inherited.clone();
 
     // Merge inheritable attributes from this node
-    merge_inherited_attrs(dict, inherited, diagnostics);
+    merge_inherited_attrs(dict, resolver, inherited, diagnostics);
 
     match node_type {
         "Page" => {
             // Leaf node: emit a PageDict
-            vec![build_page_dict(node, inherited, diagnostics)]
+            vec![build_page_dict(node, resolver, inherited, diagnostics)]
         }
         "Pages" => {
             // Internal node: recurse into /Kids
@@ -520,6 +520,7 @@ fn walk_page_tree(
 /// This function updates the `inherited` accumulator with any values present in `dict`.
 fn merge_inherited_attrs(
     dict: &PdfDict,
+    resolver: &XrefResolver,
     inherited: &mut InheritedAttrs,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -535,7 +536,8 @@ fn merge_inherited_attrs(
 
     // Resources (inheritable) - merge with existing resources
     if let Some(resources_obj) = dict.get("Resources") {
-        let merged = merge_resources(&inherited.resources, resources_obj);
+        let resolved_resources = resolve_resource_object(resolver, resources_obj);
+        let merged = merge_resources(&inherited.resources, &resolved_resources);
         inherited.resources = Arc::new(merged);
     }
 
@@ -563,6 +565,7 @@ fn merge_inherited_attrs(
 /// missing values and emitting diagnostics where appropriate.
 fn build_page_dict(
     page_obj: &PdfObject,
+    resolver: &XrefResolver,
     inherited: &InheritedAttrs,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> PageDict {
@@ -643,7 +646,8 @@ fn build_page_dict(
 
     // Resources: merge page's own resources with inherited resources
     let resources = if let Some(resources_obj) = dict.get("Resources") {
-        let merged = merge_resources(&inherited.resources, resources_obj);
+        let resolved_resources = resolve_resource_object(resolver, resources_obj);
+        let merged = merge_resources(&inherited.resources, &resolved_resources);
         Arc::new(merged)
     } else {
         // No resources on this page - use inherited resources as-is
@@ -697,6 +701,42 @@ fn build_page_dict(
         aa,
         struct_parents,
     }
+}
+
+/// Resolve an indirect page resource dictionary and its indirect namespaces.
+///
+/// Real PDFs commonly store `/Resources` and namespaces such as `/Font` as
+/// separate indirect objects. Page-tree traversal already owns the resolver,
+/// so resolve those references before `merge_resources` converts the resource
+/// names into the compact `ResourceDict` used by content extraction.
+fn resolve_resource_object(resolver: &XrefResolver, object: &PdfObject) -> PdfObject {
+    let resolved = match object {
+        PdfObject::Ref(reference) => resolver.resolve(*reference).unwrap_or(PdfObject::Null),
+        _ => object.clone(),
+    };
+
+    let PdfObject::Dict(dict) = resolved else {
+        return resolved;
+    };
+
+    let mut resolved_dict = (*dict).clone();
+    for namespace in [
+        "Font",
+        "XObject",
+        "ExtGState",
+        "ColorSpace",
+        "Shading",
+        "Pattern",
+        "Properties",
+    ] {
+        if let Some(PdfObject::Ref(reference)) = resolved_dict.get(namespace) {
+            if let Ok(namespace_object) = resolver.resolve(*reference) {
+                resolved_dict.insert(namespace.into(), namespace_object);
+            }
+        }
+    }
+
+    PdfObject::Dict(Box::new(resolved_dict))
 }
 
 /// Parse a rectangle array [x1 y1 x2 y2] from a PdfObject.
@@ -1497,12 +1537,17 @@ impl<'a> Iterator for LazyPageIter<'a> {
             let parent_inherited = inherited.clone();
 
             // Merge inheritable attributes from this node
-            merge_inherited_attrs(dict, &mut inherited, &mut self.diagnostics);
+            merge_inherited_attrs(dict, self.resolver, &mut inherited, &mut self.diagnostics);
 
             match node_type {
                 "Page" => {
                     // Leaf node: emit a PageDict
-                    let page_dict = build_page_dict(&node, &inherited, &mut self.diagnostics);
+                    let page_dict = build_page_dict(
+                        &node,
+                        self.resolver,
+                        &inherited,
+                        &mut self.diagnostics,
+                    );
                     return Some(Ok(page_dict));
                 }
                 "Pages" => {

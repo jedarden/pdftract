@@ -24,6 +24,7 @@ use crate::parser::catalog::{parse_catalog, Catalog};
 use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 use crate::source::{open_remote as open_remote_source, RemoteOpts};
 use anyhow::{anyhow, Context, Result};
+use std::sync::Arc;
 
 /// Open a PDF from a remote HTTP/HTTPS URL.
 ///
@@ -69,7 +70,7 @@ pub fn open_remote(
 ) -> Result<(
     Catalog,
     XrefResolver,
-    Box<dyn crate::parser::stream::PdfSource>,
+    Arc<dyn crate::parser::stream::PdfSource>,
     String,
 )> {
     use crate::parser::stream::PdfSource as ParserPdfSource;
@@ -78,19 +79,19 @@ pub fn open_remote(
     let source = open_remote_source(url, opts, None).context("Failed to open remote PDF source")?;
 
     // Convert source to parser PdfSource using SourceAdapter
-    let parser_source: Box<dyn ParserPdfSource> =
-        Box::new(crate::parser::stream::SourceAdapter::new(source));
+    let parser_source: Arc<dyn ParserPdfSource> =
+        Arc::new(crate::parser::stream::SourceAdapter::new(source));
 
     // Find the startxref offset using progressive tail fetch for remote sources
     // This starts with 16 KB and progressively fetches larger tails if needed
     let startxref_offset =
-        find_startxref_progressive(&*parser_source).context("Failed to find startxref offset")?;
+        find_startxref_progressive(parser_source.as_ref()).context("Failed to find startxref offset")?;
 
     // Load the xref table (forward-scan is disabled for remote sources)
-    let xref_section = load_xref_with_prev_chain(&*parser_source, startxref_offset);
+    let xref_section = load_xref_with_prev_chain(parser_source.as_ref(), startxref_offset);
 
     // Create resolver from xref section
-    let resolver = XrefResolver::from_section(xref_section.clone());
+    let resolver = XrefResolver::from_section_with_source(xref_section.clone(), parser_source.clone());
 
     // Get the root reference from trailer
     let root_ref = xref_section
@@ -104,7 +105,7 @@ pub fn open_remote(
     let catalog = parse_catalog(
         &resolver,
         root_ref,
-        Some(&*parser_source as &dyn ParserPdfSource),
+        Some(parser_source.as_ref() as &dyn ParserPdfSource),
     )
     .map_err(|diagnostics| {
         let msg = diagnostics

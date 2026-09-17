@@ -779,6 +779,11 @@ pub fn parse_catalog(
         }
     };
 
+    // Preserve the resolved catalog for structural validation. Without this
+    // copy, `Document::open` sees the default empty raw dictionary even when
+    // the trailer's /Root points to a valid catalog.
+    catalog.raw_dict = root_obj.clone();
+
     // Extract /Pages (required)
     let pages_ref = match catalog_dict.get("Pages") {
         Some(PdfObject::Ref(ref_)) => *ref_,
