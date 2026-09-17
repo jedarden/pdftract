@@ -63,6 +63,35 @@ demonstrating that a non-fixture change now lands without bypassing the hook.
 - ✅ Fix is NOT a `--no-verify` bypass — the invariant (new fixture needs provenance) is
   preserved.
 
+## Re-verification at re-dispatch (2026-09-17, HEAD `86c97d8e`)
+
+The bead was re-dispatched with an auto-split order (failure-count:5). Re-derived the
+state at HEAD before splitting: **the fix is already landed and pushed** — `501bde95`
+("narrow provenance pre-commit check to staged fixtures only", 2026-07-22) is an
+ancestor of `origin/main`, and `git diff HEAD` shows the working tree matches for both
+`scripts/check-provenance.sh` and `.git-hooks/pre-commit`. There is nothing left to
+decompose into children, so this re-issue closes with fresh evidence instead.
+
+One thing *had* drifted in this checkout: the `.git/hooks/pre-commit` symlink described
+above no longer existed (only `pre-commit.sample`), and `core.hooksPath` is unset — so
+the hook was not actually running on commits here anymore. Reinstalled it exactly as
+the script header documents:
+`ln -s ../../.git-hooks/pre-commit .git/hooks/pre-commit`.
+
+Fresh evidence, all run 2026-09-17 at HEAD `86c97d8e`:
+
+| Test | Command | Result |
+|------|---------|--------|
+| Staged mode, no fixtures staged | `bash scripts/check-provenance.sh` | **exit 0** — "No staged fixture files — nothing to validate" (314 entries loaded) |
+| Invariant still enforced | staged `_prov_negtest_bf1j0naq.pdf` (no provenance row) into a **private `GIT_INDEX_FILE` temp index** (shared index untouched: `git diff --cached --name-only -- tests/fixtures` = 0), ran default mode | **exit 1** — "ERROR: Fixture file missing from PROVENANCE.md" |
+| Full audit (non-blocking, manual/CI) | `bash scripts/check-provenance.sh --all` | **exit 1** — 63 historical errors (orphaned fixtures + SHA mismatches); by design no longer runs on commit |
+| Real commit through the installed hook | `git commit notes/bf-1j0naq.md` (no `--no-verify`) | hook ran the staged-mode check, passed, commit landed; pushed to `origin/main` |
+
+The full-audit error count has drifted 55 → 63 since 2026-07-22 (fixtures keep landing
+without provenance rows). That is pre-existing, out of scope for this bead — Option B
+was chosen precisely so tree-wide inconsistency cannot block unrelated commits — but it
+will keep growing until someone owns a backfill pass (Option A) or a CI `--all` job.
+
 ## Note on the historical orphans
 
 Option A (backfill all missing `PROVENANCE.md` entries) was intentionally **not** taken:
