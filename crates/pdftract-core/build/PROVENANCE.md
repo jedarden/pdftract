@@ -16,8 +16,11 @@ input and is verified on every build of `pdftract-core`. Pinned paths are
 resolved relative to this directory. A corrupted or tampered input fails the
 build with a per-file message naming the offending path; a *deleted* pinned
 input fails with `pinned in CHECKSUMS.sha256 but missing` (deletion is not
-treated as an optional absence); a deleted `CHECKSUMS.sha256` fails with a
-targeted `CHECKSUMS.sha256 not found` error.
+treated as an optional absence); a malformed pin (not 64 hex characters)
+fails with a targeted `Malformed checksum line` error — `sha256sum -c`
+silently skips malformed lines, so the build gate is the stricter checker
+of the two; a deleted `CHECKSUMS.sha256` fails with a targeted
+`CHECKSUMS.sha256 not found` error.
 
 ## File inventory
 

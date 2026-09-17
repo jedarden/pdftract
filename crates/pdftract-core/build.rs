@@ -1139,6 +1139,18 @@ fn verify_checksums() -> Result<(), String> {
 
         let checksum = parts[0].to_string();
         let path = parts[1].to_string();
+
+        // A malformed pin (wrong length, non-hex) must fail with a targeted
+        // error instead of an opaque "expected X, got Y" mismatch — a
+        // truncated hash in this file historically went unnoticed because
+        // sha256sum -c silently skips malformed lines.
+        if checksum.len() != 64 || !checksum.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!(
+                "Malformed checksum line for {}: expected 64 hex characters, got {:?}",
+                path, checksum
+            ));
+        }
+
         expected_checksums.insert(path, checksum);
     }
 
