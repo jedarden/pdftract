@@ -16,14 +16,14 @@
 b86f59017313b50bb5e9458e62f1940a9147f7caf810149d7eef88adce048cd9  std14-metrics.json
 b14b625d6bf62d1a1d44bd778e282dfdcc10d787c6ea69cf466d231c5f21cc4a  named-encodings.json
 c9c1bfb4b995e1d94b5e4132f775b362468e182c69b29596d6b1fca4be59113c  agl.json
-37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570  font-fingerprints.json
+76ba4a7c21efc86159ffa7247121db9f2987e3184d3b69a88b9e8cc3c88c7467  font-fingerprints.json
 4ed6e5336d7760d281f7e72df31827da880c861363e820d8c65666b0f10d9ac0  wordlist-en-20k.txt
 e526c59e399863da87da4e386cb9246ac355d0cd52ce66ca860a504a8c6ce755  unmapped-glyph-names.json
 
 # Predefined CMap files (in crates/pdftract-core/build/predefined-cmaps/)
-09da49c09f92f1c3e247cc6bc61dcfc7bca6dc5ab5e62b3da30e9be759e12b57  predefined-cmaps/adobe-cns1.json
+30f55035f682dea6475d4034de60af8f97220ee1a6c8004970b21f9dc5073760  predefined-cmaps/adobe-cns1.json
 f93b8e12c2bb8b9e0e00e4c65c9a39bc5c6d89e8618dc0d69e0c4e6a79012e5  predefined-cmaps/adobe-gb1.json
-3752c80eeed25ee7875dc9b354c78f23976766c8d8ca3a4e5cc5f40430a9e385  predefined-cmaps/adobe-japan1.json
+b3f22475f8026e3a472f4afc6c0ab5521f9cc87ed26d9060def363a6ac2d5ca7  predefined-cmaps/adobe-japan1.json
 ec1ecc8937d9c7e94d9e9c5a237c1d8a8e3bb5e0fddcf0c78866f8e7e52d89b  predefined-cmaps/adobe-korea1.json
 
 # NOTE: glyph-shapes.json is intentionally NOT pinned here. It is an OPTIONAL
