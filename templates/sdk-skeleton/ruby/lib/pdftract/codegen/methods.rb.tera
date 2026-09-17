@@ -42,6 +42,8 @@ module Pdftract
         end
       end
 
+      public
+
       {% for method in methods %}
       {% if method.name == 'extract_stream' %}
       def {{ method.snake_name }}(source, options = nil)
