@@ -157,7 +157,7 @@ fn main() {
 
     println!("=== Rustdoc Coverage Report for pdftract-core ===\n");
     println!("{:<25} {:>10} {:>10} {:>10}", "Category", "Total", "Documented", "Coverage");
-    println!("{}", "-" * 59);
+    println!("{}", "-".repeat(59));
     println!(
         "{:<25} {:>10} {:>10} {:>9.1}%",
         "Modules",
@@ -235,7 +235,7 @@ fn main() {
             0.0
         }
     );
-    println!("{}", "-" * 59);
+    println!("{}", "-".repeat(59));
     println!(
         "{:<25} {:>10} {:>10} {:>9.1}%",
         "TOTAL",
