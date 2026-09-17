@@ -575,8 +575,8 @@ mod tests {
     #[test]
     fn test_load_truetype_font_from_fixture() {
         // Test loading the DejaVuSans.ttf fixture
-        // The fixture is at workspace root: /home/coding/pdftract/tests/fixtures/fonts/
-        // From crate root, we need to go up two levels
+        // The fixture lives at <workspace-root>/tests/fixtures/fonts/;
+        // from this crate that is two levels up.
         let font_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join("..")
