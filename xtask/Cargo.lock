@@ -4535,6 +4535,7 @@ dependencies = [
  "glob",
  "humantime",
  "lopdf 0.34.0",
+ "lzw",
  "pdftract-cli",
  "pdftract-core",
  "printpdf",
