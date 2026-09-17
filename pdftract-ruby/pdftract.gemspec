@@ -10,9 +10,9 @@ Gem::Specification.new do |spec|
   spec.description   = "Ruby SDK for pdftract - PDF extraction, OCR, and conformance testing"
   spec.homepage      = "https://github.com/jedarden/pdftract"
   spec.license       = "MIT"
-  spec.required_ruby_version = ">= 3.2.0"
+  spec.required_ruby_version = ">= 3.0.0"
 
-  spec.files = Dir["{lib}/**/*", "LICENSE", "README.md", "GENERATED"]
+  spec.files = Dir["{lib}/**/*", "LICENSE", "README.md"]
   spec.require_paths = ["lib"]
 
   spec.add_development_dependency "minitest", "~> 5.0"
