@@ -196,7 +196,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
         let result_image = match pix_to_grayimage(binary_pix) {
             Ok(img) => img,
             Err(diag) => {
-                unsafe { pixDestroy(binary_pix) };
+                unsafe { pixDestroy(&mut binary_pix) };
                 diagnostics.extend(diag);
                 warn!(
                     "sauvola_binarize: Pix→GrayImage conversion failed; returning \
@@ -213,7 +213,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
 
         // Clean up
         unsafe {
-            pixDestroy(binary_pix);
+            pixDestroy(&mut binary_pix);
         }
 
         result_image
