@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 
 use crate::font::type3_rasterizer::{detect_char_proc_type, rasterize_type3_glyph, CharProcType, DocumentContext};
 use crate::font::type3::Type3Font;
@@ -26,27 +26,6 @@ use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream
 use crate::parser::xref::XrefResolver;
 use crate::parser::stream::MemorySource;
 
-// Import all test fixtures for comprehensive integration
-// Note: TestEdge is imported locally in specific tests to avoid conflicts with local struct
-use crate::font::type3_test_fixtures::{
-    // Content stream fixtures
-    Content, create_simple_charproc_stream, create_charproc_stream_with_curves,
-    create_rectangle_charproc_stream,
-    create_empty_content_stream, create_main_content_stream, create_main_content_stream_multi,
-    // Glyph dictionary fixtures
-    GlyphEntry, GlyphDict, create_glyph_dict_with_basic_properties,
-    create_basic_glyph_dict, create_minimal_glyph_dict, to_charprocs_map,
-    // Type3Font fixtures
-    create_minimal_type3_font,
-    // Mock fixtures
-    MockResolver, MockSource, MockCounter, mock_resolver, mock_source, mock_counter,
-    // Character mapping fixtures
-    CharToGlyphMap, create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
-    create_char_to_glyph_from_dict,
-    // AET testing fixtures (note: TestEdge imported locally in tests that need builder pattern)
-    AETInspector, create_edges_from_endpoints, create_triangle_edges,
-    create_rectangle_edges, create_scanline_context,
-};
 
 // ============================================================================
 // Test Infrastructure Helper Functions
@@ -1371,6 +1350,8 @@ fn test_aet_sorting_by_x_position() {
 /// - Stream detection (CharProcType::Stream) - regression check
 /// - Other type fallback (CharProcType::Other) - regression check
 /// - Reference detection (CharProcType::Other with dereference message)
+/// - Stream and Dict edge cases: empty stream dicts, missing length hints,
+///   nested/deeply-nested structures, and agreement across detection entry points
 ///
 /// # References
 ///
@@ -1606,6 +1587,275 @@ fn test_detect_char_proc_type_empty_dict() {
 
     // Verify Dict is returned
     assert_eq!(result, CharProcType::Dict, "Empty dictionary should still be classified as Dict");
+}
+
+// ============================================================================
+// Stream and Dict Detection Edge Case Tests
+// ============================================================================
+
+/// Test that a stream with an entirely empty stream dictionary is classified as Stream.
+///
+/// This complements `test_detect_char_proc_type_empty_dict` on the dict side: the
+/// classification must depend only on the PdfObject variant, never on the contents
+/// of the stream's own dictionary.
+#[test]
+fn test_detect_char_proc_type_stream_with_empty_dict() {
+    // A stream carrying no dictionary entries at all, no offset, no length hint
+    let stream = PdfStream::new(PdfDict::new(), 0, None);
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    let result = detect_char_proc_type(&stream_obj, None);
+
+    assert_eq!(result, CharProcType::Stream,
+        "Stream with an empty stream dictionary should be classified as Stream");
+}
+
+/// Test that a stream with no /Length entry and no length hint is classified as Stream.
+///
+/// A missing length is a parse-state detail resolved later during stream decoding;
+/// it must not demote the object to Other.
+#[test]
+fn test_detect_char_proc_type_stream_without_length_hint() {
+    // Dictionary without /Length, and a None length hint
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+    let stream = PdfStream::new(stream_dict, 512, None);
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    let result = detect_char_proc_type(&stream_obj, None);
+
+    assert_eq!(result, CharProcType::Stream,
+        "Stream without /Length or length hint should still be classified as Stream");
+}
+
+/// Test that stream classification ignores the stream's byte offset.
+///
+/// Offset is where the stream data lives in the source document, so it carries no
+/// type information. A stream at a non-zero offset is still a stream.
+#[test]
+fn test_detect_char_proc_type_stream_with_nonzero_offset() {
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Length"), PdfObject::Integer(4096));
+    let stream = PdfStream::new(stream_dict, 0x0000_F000, Some(4096));
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    let result = detect_char_proc_type(&stream_obj, None);
+
+    assert_eq!(result, CharProcType::Stream,
+        "Stream at a non-zero byte offset should be classified as Stream");
+}
+
+/// Test that nested values inside a stream dictionary do not affect classification.
+///
+/// A real CharProc stream dict holds nested structures (/Resources as a dict,
+/// /DecodeParms as an array, /Filter as a name). None of that may leak into the
+/// classification: the object is a Stream, not a Dict, despite containing dicts.
+#[test]
+fn test_detect_char_proc_type_stream_with_nested_dict_entries() {
+    // /Resources << /Font << /F1 5 0 R >> /ProcSet [/PDF /Text] >>
+    let mut resources = PdfDict::new();
+    let mut font_resources = PdfDict::new();
+    font_resources.insert(intern("/F1"), PdfObject::Ref(ObjRef::new(5, 0)));
+    resources.insert(intern("/Font"), PdfObject::Dict(Box::new(font_resources)));
+    resources.insert(intern("/ProcSet"), PdfObject::Array(Box::new(vec![
+        PdfObject::Name(intern("/PDF")),
+        PdfObject::Name(intern("/Text")),
+    ])));
+
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Length"), PdfObject::Integer(256));
+    stream_dict.insert(intern("/Filter"), PdfObject::Name(intern("/FlateDecode")));
+    stream_dict.insert(intern("/Resources"), PdfObject::Dict(Box::new(resources)));
+
+    let stream = PdfStream::new(stream_dict, 1024, Some(256));
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    let result = detect_char_proc_type(&stream_obj, None);
+
+    assert_eq!(result, CharProcType::Stream,
+        "Stream with nested dict/array entries should be classified as Stream, not Dict");
+}
+
+/// Test that a realistic Type 3 CharProc stream dictionary is classified as Stream.
+///
+/// Mirrors the dictionary a Type 3 CharProc actually carries per PDF spec 9.6.5:
+/// /Type /XObject, /Subtype /Form, /BBox, /Matrix, /Resources.
+#[test]
+fn test_detect_char_proc_type_charproc_style_stream() {
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Type"), PdfObject::Name(intern("/XObject")));
+    stream_dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Form")));
+    stream_dict.insert(intern("/FormType"), PdfObject::Integer(1));
+    stream_dict.insert(intern("/BBox"), PdfObject::Array(Box::new(vec![
+        PdfObject::Real(0.0),
+        PdfObject::Real(0.0),
+        PdfObject::Real(1000.0),
+        PdfObject::Real(1000.0),
+    ])));
+    stream_dict.insert(intern("/Matrix"), PdfObject::Array(Box::new(vec![
+        PdfObject::Real(0.001),
+        PdfObject::Real(0.0),
+        PdfObject::Real(0.0),
+        PdfObject::Real(0.001),
+        PdfObject::Real(0.0),
+        PdfObject::Real(0.0),
+    ])));
+
+    let stream = PdfStream::new(stream_dict, 2048, Some(512));
+    let stream_obj = PdfObject::Stream(Box::new(stream));
+
+    let result = detect_char_proc_type(&stream_obj, None);
+
+    assert_eq!(result, CharProcType::Stream,
+        "A Type 3 CharProc-shaped stream should be classified as Stream");
+}
+
+/// Test that nested structures held as dictionary values do not affect classification.
+///
+/// A CharProcs-like dict maps glyph names to streams, refs, arrays and further dicts.
+/// Detection classifies the container only, so a dict holding a stream value must
+/// still be a Dict — the stream inside must not win.
+#[test]
+fn test_detect_char_proc_type_dict_with_nested_structures() {
+    // Inner dict and a stream value nested inside the outer dict
+    let mut inner = PdfDict::new();
+    inner.insert(intern("/Key"), PdfObject::Name(intern("/Value")));
+
+    let mut nested_stream_dict = PdfDict::new();
+    nested_stream_dict.insert(intern("/Length"), PdfObject::Integer(10));
+    let nested_stream = PdfStream::new(nested_stream_dict, 0, Some(10));
+
+    let mut dict = PdfDict::new();
+    dict.insert(intern("/Type"), PdfObject::Name(intern("/Font")));
+    dict.insert(intern("/Subtype"), PdfObject::Name(intern("/Type3")));
+    dict.insert(intern("/FontDescriptor"), PdfObject::Ref(ObjRef::new(7, 0)));
+    dict.insert(intern("/Inner"), PdfObject::Dict(Box::new(inner)));
+    dict.insert(intern("/Widths"), PdfObject::Array(Box::new(vec![
+        PdfObject::Integer(500),
+        PdfObject::Integer(600),
+        PdfObject::Integer(700),
+    ])));
+    // Array of dicts: nesting two levels deep inside an array
+    let mut array_element = PdfDict::new();
+    array_element.insert(intern("/Nested"), PdfObject::Bool(true));
+    dict.insert(intern("/ArrayOfDicts"), PdfObject::Array(Box::new(vec![
+        PdfObject::Dict(Box::new(array_element)),
+    ])));
+    dict.insert(intern("/NestedStream"), PdfObject::Stream(Box::new(nested_stream)));
+
+    let dict_obj = PdfObject::Dict(Box::new(dict));
+
+    let result = detect_char_proc_type(&dict_obj, None);
+
+    assert_eq!(result, CharProcType::Dict,
+        "Dict with nested dicts, arrays and a stream value should be classified as Dict, not Stream");
+}
+
+/// Test that deeply nested dictionary values are classified as Dict without recursion issues.
+///
+/// Detection does not descend into values, so arbitrary nesting depth must neither
+/// change the answer nor overflow.
+#[test]
+fn test_detect_char_proc_type_dict_with_deeply_nested_values() {
+    // Build a chain of dicts 16 levels deep, each /Nested key holding the next
+    let mut obj = PdfObject::Integer(1);
+    for _ in 0..16 {
+        let mut dict = PdfDict::new();
+        dict.insert(intern("/Nested"), obj);
+        obj = PdfObject::Dict(Box::new(dict));
+    }
+
+    let result = detect_char_proc_type(&obj, None);
+
+    assert_eq!(result, CharProcType::Dict,
+        "A dict nested 16 levels deep should still be classified as Dict at the top level");
+}
+
+/// Test that a realistic CharProcs dictionary is classified as Dict.
+///
+/// CharProcs maps glyph names to indirect references to streams. Many keys, all
+/// ref-valued — still a Dict.
+#[test]
+fn test_detect_char_proc_type_charprocs_style_dict() {
+    let mut charprocs = PdfDict::new();
+    for (i, glyph_name) in ["/a", "/b", "/g", "/A", "/acute", "/zero"].iter().enumerate() {
+        charprocs.insert(intern(glyph_name), PdfObject::Ref(ObjRef::new((i + 10) as u32, 0)));
+    }
+
+    let dict_obj = PdfObject::Dict(Box::new(charprocs));
+    let result = detect_char_proc_type(&dict_obj, None);
+
+    assert_eq!(result, CharProcType::Dict,
+        "A CharProcs dictionary holding six glyph refs should be classified as Dict");
+}
+
+/// Test that Stream and Dict classifications are distinct and stable across calls.
+///
+/// Guards against a regression where both variants collapse to one arm, and against
+/// nondeterminism (e.g. classification depending on hash iteration order).
+#[test]
+fn test_detect_char_proc_type_stream_and_dict_are_distinct_and_stable() {
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Length"), PdfObject::Integer(64));
+    let stream_obj = PdfObject::Stream(Box::new(PdfStream::new(stream_dict, 0, Some(64))));
+
+    let mut dict = PdfDict::new();
+    dict.insert(intern("/Length"), PdfObject::Integer(64));
+    let dict_obj = PdfObject::Dict(Box::new(dict));
+
+    let stream_result_a = detect_char_proc_type(&stream_obj, None);
+    let stream_result_b = detect_char_proc_type(&stream_obj, None);
+    let dict_result_a = detect_char_proc_type(&dict_obj, None);
+    let dict_result_b = detect_char_proc_type(&dict_obj, None);
+
+    assert_eq!(stream_result_a, CharProcType::Stream, "Stream object should classify as Stream");
+    assert_eq!(dict_result_a, CharProcType::Dict, "Dict object should classify as Dict");
+    assert_eq!(stream_result_a, stream_result_b, "Stream classification should be stable");
+    assert_eq!(dict_result_a, dict_result_b, "Dict classification should be stable");
+    assert_ne!(stream_result_a, dict_result_a,
+        "Stream and Dict classifications must be distinct for identically-keyed dictionaries");
+}
+
+/// Test that all detection entry points agree on Stream and Dict objects.
+///
+/// `detect_char_proc_type`, `detect_char_proc_type_with_depth` and
+/// `detect_char_proc_type_with_context` are layered wrappers over one implementation;
+/// none of them may reclassify a direct Stream or Dict.
+#[test]
+fn test_detect_char_proc_type_variants_agree_on_stream_and_dict() {
+    use crate::font::type3_rasterizer::{
+        detect_char_proc_type_with_context, detect_char_proc_type_with_depth, DocumentContext,
+    };
+
+    let mut stream_dict = PdfDict::new();
+    stream_dict.insert(intern("/Length"), PdfObject::Integer(128));
+    let stream_obj = PdfObject::Stream(Box::new(PdfStream::new(stream_dict, 0, Some(128))));
+
+    let mut dict = PdfDict::new();
+    dict.insert(intern("/Type"), PdfObject::Name(intern("/Font")));
+    let dict_obj = PdfObject::Dict(Box::new(dict));
+
+    let doc_context = DocumentContext { resolver: None, source: None };
+
+    for (obj, expected, label) in [
+        (&stream_obj, CharProcType::Stream, "Stream"),
+        (&dict_obj, CharProcType::Dict, "Dict"),
+    ] {
+        assert_eq!(detect_char_proc_type(obj, None), expected,
+            "{}: top-level entry point disagrees", label);
+        assert_eq!(detect_char_proc_type_with_depth(obj, None, 0), expected,
+            "{}: explicit depth 0 disagrees", label);
+        assert_eq!(detect_char_proc_type_with_depth(obj, None, 4), expected,
+            "{}: explicit depth 4 disagrees", label);
+        // Direct objects short-circuit before any depth accounting: even a depth
+        // far beyond any real reference-chain length must not reclassify them.
+        assert_eq!(detect_char_proc_type_with_depth(obj, None, 1000), expected,
+            "{}: explicit depth 1000 disagrees", label);
+        assert_eq!(detect_char_proc_type_with_context(obj, None, 0), expected,
+            "{}: context variant without context disagrees", label);
+        assert_eq!(detect_char_proc_type_with_context(obj, Some(&doc_context), 0), expected,
+            "{}: context variant with an empty context disagrees", label);
+    }
 }
 
 // ============================================================================
@@ -2326,7 +2576,6 @@ fn test_detect_char_proc_type_ref_to_dict_returns_dict() {
 #[test]
 fn test_detect_char_proc_type_ref_invalid_returns_unknown_no_panic() {
     use crate::font::type3_rasterizer::DocumentContext;
-    use crate::parser::xref::XrefEntry;
 
     // Create an empty resolver (will fail to find any object)
     let resolver = XrefResolver::new();
@@ -2537,14 +2786,14 @@ fn test_all_fixtures_accessible() {
         create_rectangle_charproc_stream, create_empty_content_stream,
         create_main_content_stream, create_main_content_stream_multi,
         // Glyph dictionary fixtures
-        GlyphEntry, GlyphDict, create_glyph_dict_with_basic_properties,
+        GlyphEntry, create_glyph_dict_with_basic_properties,
         create_basic_glyph_dict, create_minimal_glyph_dict, to_charprocs_map,
         // Type3Font fixtures
         create_minimal_type3_font,
         // Mock fixtures
         MockResolver, MockSource, MockCounter, mock_resolver, mock_source, mock_counter,
         // Character mapping fixtures
-        CharToGlyphMap, create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
+        create_basic_char_to_glyph_map, create_minimal_char_to_glyph_map,
         create_char_to_glyph_from_dict,
         // AET testing fixtures
         AETInspector, create_edges_from_endpoints, create_triangle_edges,
