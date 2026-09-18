@@ -13,6 +13,9 @@ pub mod header;
 pub mod inspect;
 pub mod mcp;
 pub mod middleware;
+/// Metrics registry and OpenMetrics v1.0 text exposition (`metrics` feature).
+#[cfg(feature = "metrics")]
+pub mod metrics;
 pub mod migrate;
 pub mod output;
 pub mod pages;

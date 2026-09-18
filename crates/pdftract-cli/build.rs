@@ -43,6 +43,7 @@ fn main() {
         ("CACHE", cfg!(feature = "cache")),
         ("RECEIPTS", cfg!(feature = "receipts")),
         ("MARKDOWN", cfg!(feature = "markdown")),
+        ("METRICS", cfg!(feature = "metrics")),
     ];
     let enabled_features: Vec<&str> = features
         .iter()

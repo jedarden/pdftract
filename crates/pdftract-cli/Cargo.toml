@@ -124,8 +124,10 @@ full-render = ["dep:libloading", "pdftract-core/full-render"]
 remote = ["dep:ureq"]
 # Document profiles
 profiles = ["dep:serde_yaml", "pdftract-core/profiles", "dep:notify"]
-# HTTP serve mode
-serve = []
+# Prometheus metrics registry and OpenMetrics v1.0 text exposition
+metrics = []
+# HTTP serve mode (implies the metrics registry)
+serve = ["metrics"]
 # MCP server mode
 mcp = []
 # Inspector web viewer
