@@ -67,6 +67,8 @@ module Pdftract
         end
       end
 
+      public
+
       
       
       def extract(source, options = nil)
