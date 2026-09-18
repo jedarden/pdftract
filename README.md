@@ -13,7 +13,7 @@
 > - **The canonical smoke extraction passes at HEAD** — the W3C WAI dummy PDF at `tests/fixtures/test-minimal.pdf` extracts the text `Dummy PDF file`. The broader fixture corpus remains pre-release work and is not represented as a shipped compatibility guarantee.
 > - **`pdftract serve` is broken at HEAD** — every request, including `GET /health`, returns HTTP 500 (missing axum `ConnectInfo` wiring; re-confirmed at HEAD on 2026-09-15).
 > - **CI is not wired to git events yet** — nothing runs automatically on push/PR (bead `pdftract-a8d7bd1d`, open), and no completed end-to-end CI run has been retained — the CI cluster holds zero pdftract workflow runs (the stabilization baseline records "no retained end-to-end CI proof").
-> - **Nothing is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels, images, or release archives exist yet (the single `v0.1.0-test` tag exists for release-cascade testing only).
+> - **No supported release is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels or images exist. GitHub exposes only the test-only `v0.1.0-test` release entry used for release-cascade testing, not a consumable v0.1.0 release.
 
 ## How it compares
 
@@ -86,7 +86,7 @@ usable until a real release has been published and independently verified.
 | Rust library and CLI | crates.io | Not published; source build only |
 | Python bindings | PyPI | Not published |
 | Container images | GHCR (`ghcr.io/jedarden/pdftract`) | Not published |
-| Pre-built binaries | GitHub Releases | No release exists |
+| Pre-built binaries | GitHub Releases | Only test-only `v0.1.0-test`; no supported release |
 | Homebrew | `jedarden/homebrew-tap` | No formula exists |
 | Hosted user guide | `pdftract.com` | Domain is not a supported channel |
 

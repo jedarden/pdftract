@@ -42,7 +42,7 @@ versioned release and an updated verification record before using them:
 |---|---|---|
 | Rust library and CLI | crates.io | Not published |
 | Python bindings and wheels | PyPI | Not published |
-| Pre-built binaries | GitHub Releases | No release exists |
+| Pre-built binaries | GitHub Releases | Only test-only `v0.1.0-test`; no supported release |
 | Homebrew | `jedarden/homebrew-tap` | No formula exists |
 | Container images | `ghcr.io/jedarden/pdftract` | Not published |
 | Hosted user guide | `pdftract.com` | Not a supported channel |

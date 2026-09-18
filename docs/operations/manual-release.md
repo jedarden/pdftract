@@ -2,8 +2,9 @@
 
 > **Purpose:** This runbook is the fallback procedure for reproducing the milestone release locally when the Argo Workflows runner in `iad-ci` is degraded or unavailable for a prolonged window. Per PB-13 (plan line 567), this is the R13 mitigation strategy.
 >
-> **Current status (2026-09-17):** This is a future-release runbook. No v0.1.0
-> release, package, container image, or hosted website is published. The
+> **Current status (2026-09-17):** This is a future-release runbook. No
+> supported v0.1.0 release, package, container image, or hosted website is
+> published; GitHub's `v0.1.0-test` entry is release-cascade test data only. The
 > commands and URLs below are release-time validation steps, not current
 > installation instructions; do not advertise them until a real release has
 > passed the clean-consumer checks.

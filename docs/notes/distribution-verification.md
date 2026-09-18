@@ -38,9 +38,13 @@ docker build --check --build-arg FEATURES=full <clean-extraction>          # exi
 PDFTRACT_DOCKER_VARIANTS="default full" sh scripts/verify-docker.sh       # exit 0
 ```
 
-No crates.io, PyPI, GitHub Release, GHCR, Homebrew formula, or hosted website
-is claimed as currently installable. The README and user guide list those as
-planned channels only; a real release must add clean-consumer checks before
+Clean-consumer channel checks returned 404 for the crates.io sparse index
+entries `pdftract-core` and `pdftract`, 404 for the PyPI JSON endpoint, and 404
+for the planned Homebrew formula. The GitHub release feed contained only the
+test-only `v0.1.0-test` entry; no supported v0.1.0 release is advertised. The
+GHCR manifest endpoint required authentication and no pull reference is
+claimed. `pdftract.com` failed DNS resolution. The README and user guide list
+these as planned channels only; a real release must repeat these checks before
 adding pull/install commands.
 
 The Argo Docker workflow runs the same default/full smoke script before its
