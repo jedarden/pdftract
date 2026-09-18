@@ -215,7 +215,7 @@ fn main() -> Result<()> {
     let out_start = lines[ev_start + 1..ev_end]
         .iter()
         .position(|line| line.starts_with(RUN3_STDOUT_MARKER))
-        .with_context(|| format!("missing {:?} marker in run 3 section", RUN3_STDOUT_MARKER))
+        .with_context(|| format!("missing {:?} marker in run 3 section", RUN3_STDOUT_MARKER))?
         + ev_start
         + 1;
     let stderr_section = lines[ev_start + 1..out_start].join("\n");
