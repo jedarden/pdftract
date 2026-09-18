@@ -16,7 +16,18 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-import pdftract
+try:
+    import pdftract
+except ImportError as exc:
+    # The SDK import raises when the compiled native module is absent (it is a
+    # build artifact, never committed) AND the pdftract CLI fallback binary is
+    # not on PATH. Skip the whole module with a clear message instead of
+    # failing collection with a raw import traceback.
+    pytest.skip(
+        "pdftract SDK not importable: no compiled native module under "
+        f"python/pdftract and no pdftract CLI on PATH ({exc})",
+        allow_module_level=True,
+    )
 
 
 @pytest.fixture
