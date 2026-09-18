@@ -140,7 +140,7 @@ WARN does **not** block deployment but should be tracked. Recommended action: op
 
 | Check | Common cause | Fix |
 |---|---|---|
-| pdftract binary (FAIL) | Corrupted binary or build artifact | Reinstall: `cargo install pdftract --force` or `pip install --force-reinstall pdftract` |
+| pdftract binary (FAIL) | Corrupted binary or build artifact | Rebuild from a checkout: `cargo install --locked --path crates/pdftract-cli --force` (registry and PyPI installs are not available yet) |
 | tesseract install (FAIL) | binary missing | `apt install tesseract-ocr` (Debian/Ubuntu) or `brew install tesseract` (macOS) |
 | tesseract install (FAIL) | major <= 3 | Upgrade to Tesseract 5.x via package manager |
 | tesseract languages (FAIL) | eng pack missing | `apt install tesseract-ocr-eng` (Debian/Ubuntu) or `brew install tesseract-lang` (macOS) |

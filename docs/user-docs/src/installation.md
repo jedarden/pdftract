@@ -1,74 +1,54 @@
 # Installation
 
-pdftract is distributed as a native binary, a Python package, and a Docker image. Choose the installation method that matches your workflow.
+pdftract has one supported installation channel today: build from this
+repository. No crates.io package, PyPI wheel, release archive, container
+image, Homebrew formula, or hosted documentation site is published yet.
 
-## Install via Cargo
+## Build from source
 
-```bash
-cargo install pdftract
-```
-
-This installs the `pdftract` binary in `~/.cargo/bin/`. Make sure `~/.cargo/bin` is in your `PATH`.
-
-### Pre-built Binaries
-
-Pre-built binaries are available from [GitHub Releases](https://github.com/jedarden/pdftract/releases). Download the archive for your platform, extract, and place the binary in your `PATH`.
-
-### Cargo Binstall
-
-For faster installation without compiling from source:
+The workspace does not publish a root package, so target the CLI crate:
 
 ```bash
-cargo binstall pdftract
+git clone https://github.com/jedarden/pdftract.git
+cd pdftract
+cargo install --locked --path crates/pdftract-cli
 ```
 
-This downloads a pre-built binary from the GitHub Release instead of compiling locally.
+This installs the `pdftract` binary in `~/.cargo/bin/`. Make sure that
+directory is in your `PATH`.
 
-## Install via pip
-
-pdftract is distributed on PyPI as a native Python extension with PyO3 bindings.
+For a local container build, use the checked-in Dockerfile. `FEATURES` is a
+Docker variant selector (`default` or `full`), not a Cargo feature called
+`full`:
 
 ```bash
-pip install pdftract
+docker build --pull --build-arg FEATURES=default --tag pdftract:local .
+docker run --rm \
+  --mount "type=bind,src=$PWD/document.pdf,dst=/work/document.pdf,readonly" \
+  pdftract:local extract /work/document.pdf --json -
 ```
 
-The Python package includes the same extraction engine as the CLI, accessible via a Python API. See [Python SDK](./sdk/python.md) for usage.
+The automated local/CI contract is
+[`scripts/verify-docker.sh`](../../../scripts/verify-docker.sh). It builds the
+default and full variants, runs `pdftract --version`, prints compiled feature
+contents, and extracts the canonical W3C fixture.
 
-### Platform Wheels
+## Planned channels — not published
 
-Wheels are available for:
-- Linux `x86_64` (manylinux2014, musllinux)
-- macOS `x86_64` and `arm64`
-- Windows `x86_64`
+These channels are release targets, not installation instructions. Wait for a
+versioned release and an updated verification record before using them:
 
-If no wheel is available for your platform, pip will fall back to building from source (requires Rust toolchain).
+| Channel | Planned location | Current status |
+|---|---|---|
+| Rust library and CLI | crates.io | Not published |
+| Python bindings and wheels | PyPI | Not published |
+| Pre-built binaries | GitHub Releases | No release exists |
+| Homebrew | `jedarden/homebrew-tap` | No formula exists |
+| Container images | `ghcr.io/jedarden/pdftract` | Not published |
+| Hosted user guide | `pdftract.com` | Not a supported channel |
 
-## Install via Homebrew
-
-```bash
-brew install jedarden/tap/pdftract
-```
-
-**Status:** the dedicated tap is live at [jedarden/homebrew-tap](https://github.com/jedarden/homebrew-tap), and the formula is generated from the versioned release archives and pushed by the `pdftract-homebrew-publish` step of the release cascade. The first formula lands with the first versioned (vX.Y.Z) release — until that release is cut, the command above is not yet installable; use `cargo install pdftract` or the Docker image. A homebrew-core submission for plain `brew install pdftract` remains deferred. Channel decisions and rationale: [`docs/notes/homebrew-tap-strategy.md`](../../notes/homebrew-tap-strategy.md).
-
-## Install via Docker
-
-Docker images are available on GitHub Container Registry:
-
-```bash
-docker pull ghcr.io/jedarden/pdftract:latest
-docker run --rm -v $(pwd):/work ghcr.io/jedarden/pdftract:latest extract /work/document.pdf
-```
-
-### Image Variants
-
-| Tag | Description |
-|---|---|
-| `latest` | Default features (vector extraction, basic OCR) |
-| `ocr` | Includes Tesseract for full OCR support |
-| `full` | All features including PDFium for rasterization |
-
-Multi-arch manifests support `amd64` and `arm64` platforms.
+The release workflow must publish and independently verify immutable versioned
+references before planned commands are documented as usable.
 
 ## Platform Support
 
@@ -114,11 +94,8 @@ You should see output like:
 pdftract 0.1.0
 ```
 
-For the Python package:
-
-```bash
-python -c "import pdftract; print(pdftract.__version__)"
-```
+The Python binding is planned but has no published wheel, so there is no
+supported Python installation command to verify yet.
 
 ### Environment Health Check
 
@@ -128,7 +105,10 @@ After installation, verify your environment is properly configured for pdftract:
 pdftract doctor
 ```
 
-This validates that all OS-level dependencies (Tesseract, leptonica, libtiff, etc.) are installed and correctly configured. See the [Operations Runbook](../../operations/manual-platform-smoke.md) for detailed troubleshooting of each check.
+This validates the dependencies used by the selected build. OCR-specific
+system checks apply only to a future OCR-enabled build. See the [Operations
+Runbook](../../operations/manual-platform-smoke.md) for detailed
+troubleshooting of each check.
 
 ## Next Steps
 

@@ -197,10 +197,11 @@ Some PDFs have malformed internal structure. Try `--auto` to enable profile-base
 
 **Poor accuracy on scanned documents**
 
-Ensure the OCR features are enabled. The Docker `:ocr` and `:full` images include Tesseract. If building from source, enable the `ocr` feature:
+Ensure the OCR feature is enabled. Published Docker images are planned but do
+not exist yet. When building from source, enable the `ocr` feature:
 
 ```bash
-cargo install pdftract --features ocr
+cargo install --locked --path crates/pdftract-cli --features ocr
 ```
 
 For more help, see [Troubleshooting](./troubleshooting/).

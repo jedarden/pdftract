@@ -1,7 +1,7 @@
 # JSON Schema Reference
 
 > **Schema version:** 1.0  
-> **Schema URL:** https://pdftract.com/schema/v1.0/pdftract.schema.json  
+> **Hosted schema URL:** none — the hosted documentation site is not published.
 > **Source of truth:** `docs/schema/v1.0/pdftract.schema.json`
 
 This page provides a human-readable rendering of the pdftract output schema. The JSON Schema is the authoritative definition (per [INV-11](../../plan/plan.md)), validated in CI for all test fixtures.
@@ -62,8 +62,8 @@ The `metadata` object contains extraction-level information:
 | `block_count` | integer | Number of blocks extracted across all pages. |
 | `error_count` | integer | Number of pages that failed to extract. |
 | `receipts_mode` | string | Receipts mode used: `"off"`, `"lite"`, or `"svg"`. |
-| `diagnostics` | array | Legacy string form of the diagnostics, each `CODE: message (byte offset N)? [obj G R]?`. Omitted entirely when empty. |
-| `diagnostics_detailed` | array | The same diagnostics in structured form (see [Diagnostics](#diagnostics)), mirroring `diagnostics` one-to-one (same length, order, codes). Omitted entirely when empty. |
+| `diagnostics` | array | Legacy string form of the diagnostics: one plain string per diagnostic, each the diagnostic's `message` verbatim. Omitted entirely when empty. |
+| `diagnostics_detailed` | array | The same diagnostics in structured form (see [Diagnostics](#diagnostics)), mirroring `diagnostics` one-to-one (same length and order). Omitted entirely when empty. |
 | `cache_status` | string/null | Cache status: `"hit"`, `"miss"`, or `"skipped"`. |
 | `cache_age_seconds` | integer/null | Cache entry age in seconds (only present when `cache_status == "hit"`). |
 | `reading_order_algorithm` | string/null | Reading order algorithm used for this extraction. |
@@ -358,10 +358,11 @@ diagnostic is a typed code (`SCREAMING_SNAKE_CASE`, e.g. `STRUCT_INCOMPLETE_COVE
 Diagnostics appear in two parallel shapes and three output surfaces:
 
 - **String form** — `metadata.diagnostics`: each entry is the diagnostic's
-  `Display`, `{CODE}: {message} (byte offset N)? [obj G R]?`.
+  `message` verbatim — no code, severity, or location (the compatibility
+  surface defined by `pdftract_core::diagnostics_compat`).
 - **Structured form** — `metadata.diagnostics_detailed` and the top-level
   `errors` array: objects of the shape below. The two arrays mirror each other
-  one-to-one (same length, order, and codes). In NDJSON streaming output the
+  one-to-one (same length and order). In NDJSON streaming output the
   footer frame's `errors` array carries the same objects.
 
 ```json

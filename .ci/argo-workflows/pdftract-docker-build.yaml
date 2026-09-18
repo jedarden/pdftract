@@ -1,12 +1,15 @@
 # pdftract-docker-build WorkflowTemplate
 #
-# Builds 3 multi-arch Docker images (latest, ocr, full) for amd64 + arm64
+# Builds 2 multi-arch Docker images (latest, full) for amd64 + arm64
 # Triggered by milestone tag (vX.Y.Z). Pushes to GHCR and signs with cosign keyless.
 #
 # Image variants:
 #   - latest: default features, distroless base (~20 MB)
-#   - ocr: default + OCR features, debian-slim with Tesseract (~120 MB)
-#   - full: all features, debian-slim with Tesseract (~140 MB)
+#   - full: the supported buildable CLI feature set, distroless (~20 MB)
+#
+# Dockerfile's FEATURES argument is a variant selector. The full selector is
+# expanded to the actual workspace feature names in Dockerfile; there is no
+# Cargo feature literally named "full".
 #
 # Each variant is size-gated immediately after push: the measured on-disk image
 # size (linux/amd64) must stay within its budget (+5% tolerance) or the build
@@ -104,6 +107,10 @@ spec:
         - name: setup
           template: setup
 
+        - name: verify-docker
+          template: verify-docker
+          dependencies: [setup]
+
         - name: build-latest
           template: build-multi-arch
           dependencies: [setup]
@@ -113,16 +120,6 @@ spec:
                 value: "latest"
               - name: features
                 value: "default"
-
-        - name: build-ocr
-          template: build-multi-arch
-          dependencies: [setup]
-          arguments:
-            parameters:
-              - name: variant
-                value: "ocr"
-              - name: features
-                value: "ocr"
 
         - name: build-full
           template: build-multi-arch
@@ -143,16 +140,6 @@ spec:
                 value: "latest"
               - name: digest
                 value: "{{tasks.build-latest.outputs.parameters.digest}}"
-
-        - name: sign-ocr
-          template: sign-image
-          dependencies: [build-ocr]
-          arguments:
-            parameters:
-              - name: variant
-                value: "ocr"
-              - name: digest
-                value: "{{tasks.build-ocr.outputs.parameters.digest}}"
 
         - name: sign-full
           template: sign-image
@@ -177,19 +164,6 @@ spec:
                 value: "latest"
               - name: digest
                 value: "{{tasks.build-latest.outputs.parameters.digest}}"
-            artifacts:
-              - name: sbom
-                from: "{{tasks.generate-sbom.outputs.artifacts.sbom}}"
-
-        - name: attest-sbom-ocr
-          template: attest-sbom
-          dependencies: [sign-ocr, generate-sbom]
-          arguments:
-            parameters:
-              - name: variant
-                value: "ocr"
-              - name: digest
-                value: "{{tasks.build-ocr.outputs.parameters.digest}}"
             artifacts:
               - name: sbom
                 from: "{{tasks.generate-sbom.outputs.artifacts.sbom}}"
@@ -358,9 +332,9 @@ spec:
       inputs:
         parameters:
           - name: variant
-            description: "Image variant: latest, ocr, or full"
+            description: "Image variant: latest or full"
           - name: features
-            description: "Cargo features to build"
+            description: "Dockerfile feature selector: default or full"
       activeDeadlineSeconds: 2400
       retryStrategy:
         limit: "2"
@@ -400,13 +374,10 @@ spec:
             cd /workspace
 
             # Build and push multi-arch image
-            # Tag format: ghcr.io/jedarden/pdftract:X.Y.Z and :latest (or :ocr, :full)
+            # Tag format: ghcr.io/jedarden/pdftract:X.Y.Z and :latest (or :full)
             VERSION_TAG="${REGISTRY}:${TAG}"
             if [ "${VARIANT}" = "latest" ]; then
               FLOATING_TAG="${REGISTRY}:latest"
-            elif [ "${VARIANT}" = "ocr" ]; then
-              VERSION_TAG="${REGISTRY}:ocr-${TAG}"
-              FLOATING_TAG="${REGISTRY}:ocr"
             else
               VERSION_TAG="${REGISTRY}:full-${TAG}"
               FLOATING_TAG="${REGISTRY}:full"
@@ -459,14 +430,12 @@ spec:
             # mirrors the pass/fail UX of the cargo-bloat binary-size gate in
             # pdftract-ci.yaml. Budgets (see docs/plan/plan.md weight targets):
             #   latest -> 20 MB  (distroless, CLI-only)
-            #   ocr    -> 120 MB (debian-slim + Tesseract)
-            #   full   -> 140 MB (all features + Tesseract)
+            #   full   -> 20 MB (distroless, buildable CLI features)
             echo "=== Measuring image size budget for pdftract:${VARIANT} ==="
 
             case "${VARIANT}" in
               latest) BUDGET_MB=20 ;;
-              ocr)    BUDGET_MB=120 ;;
-              full)   BUDGET_MB=140 ;;
+              full)   BUDGET_MB=20 ;;
               *)      echo "ERROR: unknown variant '${VARIANT}'" >&2; exit 1 ;;
             esac
 
@@ -562,6 +531,56 @@ spec:
             path: /tmp/image-size-report.json
             archiveNone: true
 
+    # === Build and smoke-test local verification images ===
+    # This runs before any release image is pushed. It exercises the exact
+    # default and full Dockerfile targets, checks the compiled feature list,
+    # and extracts the canonical W3C smoke fixture from a bind mount.
+    - name: verify-docker
+      activeDeadlineSeconds: 2400
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnError
+        backoff:
+          duration: 60s
+          factor: "2"
+      container:
+        image: docker:dind
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+
+            dockerd-entrypoint.sh &
+            until docker info >/dev/null 2>&1; do sleep 1; done
+
+            cd /workspace
+            PDFTRACT_DOCKER_VARIANTS="default full" \
+              PDFTRACT_DOCKER_REPORT=/tmp/docker-smoke-report.json \
+              PDFTRACT_DOCKER_IMAGE_PREFIX=pdftract-ci-verify \
+              sh scripts/verify-docker.sh
+        env:
+          - name: DOCKER_HOST
+            value: tcp://127.0.0.1:2375
+          - name: DOCKER_TLS_CERTDIR
+            value: ""
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 4Gi
+          limits:
+            cpu: 8000m
+            memory: 16Gi
+        securityContext:
+          privileged: true
+      outputs:
+        artifacts:
+          - name: docker-smoke-report
+            path: /tmp/docker-smoke-report.json
+            archiveNone: true
+
     # === Sign Image with Cosign ===
     # Signs the multi-arch manifest list using keyless OIDC
     # and attaches SLSA provenance attestation
@@ -569,7 +588,7 @@ spec:
       inputs:
         parameters:
           - name: variant
-            description: "Image variant: latest, ocr, or full"
+            description: "Image variant: latest or full"
           - name: digest
             description: "Manifest digest to sign"
       activeDeadlineSeconds: 600
@@ -598,8 +617,6 @@ spec:
             # Construct image reference with digest
             if [ "${VARIANT}" = "latest" ]; then
               IMAGE_REF="${REGISTRY}:${TAG}@${DIGEST}"
-            elif [ "${VARIANT}" = "ocr" ]; then
-              IMAGE_REF="${REGISTRY}:ocr-${TAG}@${DIGEST}"
             else
               IMAGE_REF="${REGISTRY}:full-${TAG}@${DIGEST}"
             fi
@@ -725,7 +742,7 @@ spec:
       inputs:
         parameters:
           - name: variant
-            description: "Image variant: latest, ocr, or full"
+            description: "Image variant: latest or full"
           - name: digest
             description: "Manifest digest to attest"
         artifacts:
@@ -756,8 +773,6 @@ spec:
             # Construct image reference with digest
             if [ "${VARIANT}" = "latest" ]; then
               IMAGE_REF="${REGISTRY}:${TAG}@${DIGEST}"
-            elif [ "${VARIANT}" = "ocr" ]; then
-              IMAGE_REF="${REGISTRY}:ocr-${TAG}@${DIGEST}"
             else
               IMAGE_REF="${REGISTRY}:full-${TAG}@${DIGEST}"
             fi
@@ -800,4 +815,3 @@ spec:
           limits:
             cpu: 2000m
             memory: 2Gi
-

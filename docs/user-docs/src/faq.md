@@ -100,19 +100,15 @@ For academic citations, include:
 
 ### How do I install pdftract?
 
-See the [Installation](installation.md) guide for complete instructions. Quick summary:
+See the [Installation](installation.md) guide for complete instructions. The
+only supported channel today is a source checkout:
 
-**With cargo (Rust toolchain):**
 ```bash
-cargo install pdftract
+cargo install --locked --path crates/pdftract-cli
 ```
 
-**With pip (Python bindings):**
-```bash
-pip install pdftract
-```
-
-**Pre-built binaries:** Download from the [releases page](https://github.com/your-org/pdftract/releases).
+The crates.io, PyPI, and GitHub Releases channels are planned but unpublished;
+their commands must not be used as if they were available.
 
 ### How do I run pdftract behind a corporate proxy?
 

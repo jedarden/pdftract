@@ -1,5 +1,9 @@
 # packaging/homebrew — Homebrew formula template
 
+> This directory is a release template only. No Homebrew formula is currently
+> published; the placeholders below are filled only after a real release has
+> been built and independently verified.
+
 `pdftract.rb.template` is the source of truth for the `pdftract` formula shipped
 in the `jedarden/homebrew-tap` tap as `Formula/pdftract.rb`. The file is a
 **template**: the release cascade's `pdftract-homebrew-publish` leg renders it

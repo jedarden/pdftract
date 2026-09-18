@@ -1,14 +1,13 @@
-# Python SDK
+# Python SDK (planned)
 
-The Python SDK (`pdftract`) provides native Python bindings with idiomatic ergonomics including an exception hierarchy, dataclass types, and optional asyncio wrappers.
+The Python SDK (`pdftract`) is a planned distribution channel. It is not on
+PyPI yet, so the installation and examples below are an API preview rather
+than a currently usable package.
 
 ## Installation
 
-```bash
-pip install pdftract
-```
-
-The package includes a precompiled native module for your platform. If the native module fails to import, a subprocess fallback is automatically used (with significantly degraded performance).
+No supported `pip install` command exists until a versioned wheel has been
+published and verified.
 
 ## Basic Extraction
 

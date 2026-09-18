@@ -8,9 +8,9 @@
 
 **pdftract** is a pure-Rust PDF text extraction library built for the cases where other tools give up: scanned documents, unusual font encodings, multi-column layouts, footnotes, mixed-mode pages, and encrypted files. Where most extractors treat PDF text extraction as a coordinate sort, pdftract runs a full reading-order pipeline — segmenting layout regions, recovering broken font encodings, routing each page to the right extraction mode (vector, OCR, or hybrid), and emitting structured JSON with per-span provenance. If your PDFs are academic papers, legal filings, financial reports, or anything else that wasn't typeset in a word processor, pdftract is what you want.
 
-> **⚠️ Development status (evidence-audited 2026-09-15).** pdftract is pre-release and mid-stabilization (tracked in bead `pdftract-f19fd721`). The tables below describe the *designed* capability set; what is actually verified today:
+> **⚠️ Development status (evidence-audited 2026-09-17).** pdftract is pre-release and mid-stabilization (tracked in bead `pdftract-f19fd721`). The tables below describe the *designed* capability set; what is actually verified today:
 >
-> - **Extraction is broken at HEAD** — `pdftract extract` fails on the fixture corpus with `No /Root reference in trailer` (a page-tree parse regression). Every extraction-dependent path is blocked behind this fix. Evidence: `crates/pdftract-py/conformance-report.json` (2026-09-05: 32 conformance cases, **0 passing**); re-confirmed at HEAD on 2026-09-15 by direct CLI run.
+> - **The canonical smoke extraction passes at HEAD** — the W3C WAI dummy PDF at `tests/fixtures/test-minimal.pdf` extracts the text `Dummy PDF file`. The broader fixture corpus remains pre-release work and is not represented as a shipped compatibility guarantee.
 > - **`pdftract serve` is broken at HEAD** — every request, including `GET /health`, returns HTTP 500 (missing axum `ConnectInfo` wiring; re-confirmed at HEAD on 2026-09-15).
 > - **CI is not wired to git events yet** — nothing runs automatically on push/PR (bead `pdftract-a8d7bd1d`, open), and no completed end-to-end CI run has been retained — the CI cluster holds zero pdftract workflow runs (the stabilization baseline records "no retained end-to-end CI proof").
 > - **Nothing is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels, images, or release archives exist yet (the single `v0.1.0-test` tag exists for release-cascade testing only).
@@ -55,91 +55,47 @@ See [docs/operations/manual-platform-smoke.md](docs/operations/manual-platform-s
 
 ## Installation
 
-**🚧 Public releases coming soon** — pdftract is preparing for its first public release (v0.1.0). The install commands below are planned but not yet available. For now, use the development installation instructions below.
+**Available channel:** build from this repository. No package registry, release
+archive, container image, Homebrew formula, or hosted documentation site is
+published yet. Do not use the planned commands below as installation
+instructions.
 
 **Minimum Supported Rust Version (MSRV):** 1.78
 
-### Development installation
+### Build from source
 
-Build from source:
+The workspace does not publish a root package, so target the CLI crate:
 
 ```bash
-# Clone the repository
 git clone https://github.com/jedarden/pdftract.git
 cd pdftract
-
-# Build the CLI
-cargo build --release
-
-# Install the CLI locally
-cargo install --path .
+cargo build --locked --release -p pdftract-cli --bin pdftract
+cargo install --locked --path crates/pdftract-cli
 ```
 
-### Planned release channels (coming soon)
+The canonical source smoke fixture is `tests/fixtures/test-minimal.pdf`; it is
+the W3C WAI dummy PDF and should produce `Dummy PDF file` when extracted.
 
-#### Cargo
+### Planned release channels — not published
 
-```bash
-# Add as a library dependency
-cargo add pdftract-core
+The following channels are design targets only. They are intentionally not
+usable until a real release has been published and independently verified.
 
-# Or install the CLI
-cargo install pdftract
-```
+| Channel | Intended location | Current status |
+| --- | --- | --- |
+| Rust library and CLI | crates.io | Not published; source build only |
+| Python bindings | PyPI | Not published |
+| Container images | GHCR (`ghcr.io/jedarden/pdftract`) | Not published |
+| Pre-built binaries | GitHub Releases | No release exists |
+| Homebrew | `jedarden/homebrew-tap` | No formula exists |
+| Hosted user guide | `pdftract.com` | Domain is not a supported channel |
 
-*Status: not yet published to crates.io.*
-
-#### pip
-
-```bash
-pip install pdftract
-```
-
-*Status: not yet published to PyPI (verified 2026-09-15: the package does not exist on PyPI yet).*
-
-#### Docker
-
-Pin to a released semver tag — never `:latest`:
-
-```bash
-docker pull ronaldraygun/pdftract:X.Y.Z          # default build
-docker pull ronaldraygun/pdftract:ocr-X.Y.Z      # with OCR
-docker pull ronaldraygun/pdftract:full-X.Y.Z     # all features
-```
-
-For reproducible consumption (CI, deployment manifests), pin the immutable
-digest instead of the tag:
-
-```bash
-# Resolve the digest for a tag first
-docker buildx imagetools inspect ronaldraygun/pdftract:X.Y.Z
-
-# Then pull by digest — this is what you record in your Dockerfile / manifest
-docker pull ronaldraygun/pdftract@sha256:<digest>
-```
-
-Images are published as cosign-signed, version-tagged multi-arch (amd64 +
-arm64) manifest lists; no floating `:latest` tag exists. The image digest
-above is the integrity pin for the container itself. The aggregate
-`SHA256SUMS` checksum file (covering the binary archives, wheels, sdist, and
-SBOM) plus its cosign signature `SHA256SUMS.sig` are published alongside each
-release and verify in one shot (generation is implemented — bead
-`pdftract-1wfp`, closed — but no release has shipped yet, so no file exists
-yet):
-
-```bash
-cosign verify-blob --signature SHA256SUMS.sig SHA256SUMS
-```
-
-*Status: not yet published to Docker Hub (verified 2026-09-15: the repository does not exist on Docker Hub yet).*
-
-#### Homebrew
-
-```bash
-brew install jedarden/tap/pdftract
-```
-
-*Status: tap live at [jedarden/homebrew-tap](https://github.com/jedarden/homebrew-tap). Formulas are generated from the versioned release archives and SHA256SUMS and pushed by the `pdftract-homebrew-publish` step of the release cascade (`.ci/argo-workflows/pdftract-homebrew-publish.yaml`), which also verifies `brew install` and `pdftract --version` in a pinned Homebrew container for each release. The first formula lands with the first milestone release. A homebrew-core submission for plain `brew install pdftract` can follow once the project meets homebrew-core notability criteria.*
+The locally supported Docker variants are `default` and `full`; their build and
+smoke-test contract is automated by
+[`scripts/verify-docker.sh`](scripts/verify-docker.sh). The release workflow
+must publish and verify an immutable versioned reference before any pull
+command is added here. OCR, remote sources, profiles, and PDFium remain
+planned feature tiers until their clean-checkout builds are repaired.
 
 ## Quickstart
 
@@ -246,16 +202,20 @@ pdftract mcp
 
 ## Features
 
-The full extraction pipeline compiles from source out of the box; extraction *correctness* is mid-stabilization — see the development-status note above for what is currently verified. Optional features unlock heavier dependencies:
+The default extraction pipeline compiles from source; extraction *correctness*
+is mid-stabilization — see the development-status note above for what is
+currently verified. Optional features unlock heavier dependencies when their
+feature gates are buildable:
 
 | Feature | What it adds | Enable with |
 |---|---|---|
-| `ocr` | Tesseract/Leptonica OCR for scanned and mixed pages | `cargo add pdftract-core --features ocr` |
+| `ocr` | Tesseract/Leptonica OCR for scanned and mixed pages | Planned; not buildable in the current clean checkout |
 | `decrypt` | RC4, AES-128, AES-256 PDF decryption | `cargo add pdftract-core --features decrypt` |
 | `cjk` | CJK script support (Chinese, Japanese, Korean) | `cargo add pdftract-core --features cjk` |
 | `full-render` | Full-page rasterization for assisted OCR and inspect UI | `cargo add pdftract-core --features full-render` |
 
-When the Python wheels and Docker image ship, they will come with `ocr`, `decrypt`, and `cjk` pre-enabled (no wheels or images exist yet — see the development-status note above).
+Python wheels and additional Docker feature tiers are planned; no wheels or
+published images exist yet.
 
 ## What it does
 
@@ -277,25 +237,25 @@ pdftract ships multiple integration surfaces from a single Rust core:
 
 | SDK | Package | Notes |
 |---|---|---|
-| Rust library | [`pdftract-core`](https://crates.io/crates/pdftract-core) on crates.io | Primary API — **🚧 coming soon** |
-| CLI binary | [`pdftract`](https://crates.io/crates/pdftract) on crates.io | Wraps the library — **🚧 coming soon** |
-| Python bindings | [`pdftract`](https://pypi.org/project/pdftract/) on PyPI | PyO3-based, wheels for Linux/macOS/Windows — **🚧 coming soon** |
+| Rust library | `pdftract-core` on crates.io (planned) | Primary API — **🚧 not published** |
+| CLI binary | `pdftract` on crates.io (planned) | Wraps the library — **🚧 not published** |
+| Python bindings | `pdftract` on PyPI (planned) | PyO3-based wheels — **🚧 not published** |
 | C shared library | `libpdftract` | Stable C ABI; use `pdftract codegen` to generate FFI headers for your language — **🚧 coming soon** |
-| Docker image | [`ronaldraygun/pdftract`](https://hub.docker.com/r/ronaldraygun/pdftract) | Includes `serve` mode HTTP microservice — **🚧 coming soon** |
+| Docker image | `ghcr.io/jedarden/pdftract` (planned) | Local `default`/`full` builds only; **🚧 not published** |
 | HTTP microservice | `pdftract serve` | REST API for language-agnostic integration (build from source) — ⚠ broken at HEAD, see status note above |
 
 Additional language SDK packages (Go, Node.js, Ruby) are in progress, built on top of the C ABI.
 
 ## Documentation
 
-- **User guide:** [pdftract.com](https://pdftract.com) — **🚧 coming soon, live after the first tagged release** (until then, see [docs/user-docs/src/](docs/user-docs/src/) for the full user guide)
+- **User guide:** [docs/user-docs/src/](docs/user-docs/src/) in this repository — hosted documentation is planned, but no supported website URL exists yet
 - **API reference:** docs.rs/pdftract-core — 🚧 coming soon (crate not yet published)
 - **Extraction output schema:** [docs/research/extraction-output-schema.md](docs/research/extraction-output-schema.md)
 - **SDK architecture:** [docs/notes/sdk-architecture.md](docs/notes/sdk-architecture.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Security policy:** [SECURITY.md](SECURITY.md)
-- **Releases:** [GitHub Releases](https://github.com/jedarden/pdftract/releases)
+- **Releases:** GitHub Releases — no public release exists yet
 
 ## License
 
