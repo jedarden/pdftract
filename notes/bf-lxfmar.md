@@ -103,3 +103,18 @@ is exit 0 — the fenced command passes in both environments.
 Split NOT performed (no children created, no umbrella conversion, no
 SPLIT_COMPLETE). Bead closed with evidence; closure contract satisfied by
 the substantial-path commit above plus a notes-field update.
+
+---
+
+## Addendum — bf-2qxezi re-derivation (2026-09-18, sibling split order)
+
+bf-2qxezi (this feature's fixture+verify sub-scope) drew the same auto-split
+order; declined and evidence-closed for the same reasons. Re-derived at
+pristine HEAD `de71535c` (fresh `cargo build -p pdftract-py`, rc=0 18.22s,
+extraction `/var/tmp/bf-2qxezi-head`): pytest **7 passed**; native search
+`synthetic_10.pdf` "ipsum" → 3 matches, first `{page_index: 1, span_index: 0,
+bbox: [100.0, 542.0, 416.8, 704.0]}`; kwargs baseline (ci/cs/whole_word/
+regex) identical to the baseline above. Caveat recorded: the shared tree's
+stale Sep-5 untracked `_native.abi3.so` fails 7/7 with "Document contains no
+pages" (old-parser window) — pristine-HEAD module parses the same fixture
+fine. Details: `notes/bf-2qxezi.md`.
