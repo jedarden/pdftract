@@ -19,15 +19,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 try:
     import pdftract
 except ImportError as exc:
-    # The SDK import raises when the compiled native module is absent (it is a
-    # build artifact, never committed) AND the pdftract CLI fallback binary is
-    # not on PATH. Skip the whole module with a clear message instead of
-    # failing collection with a raw import traceback.
-    pytest.skip(
-        "pdftract SDK not importable: no compiled native module under "
-        f"python/pdftract and no pdftract CLI on PATH ({exc})",
-        allow_module_level=True,
-    )
+    # The compiled native module is a build artifact (never committed) and the
+    # pdftract CLI fallback binary may be absent from PATH, so a clean checkout
+    # cannot import the SDK at all. Mark the SDK-dependent tests with
+    # @_requires_sdk below so they skip with a descriptive reason instead of
+    # failing collection; the two pure-fixture structure tests still run.
+    pdftract = None
+    _SDK_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+else:
+    _SDK_IMPORT_ERROR = None
+
+_requires_sdk = pytest.mark.skipif(
+    pdftract is None,
+    reason=f"pdftract SDK not importable ({_SDK_IMPORT_ERROR}): no compiled "
+    "native module under python/pdftract and no pdftract CLI on PATH",
+)
 
 
 @pytest.fixture
@@ -51,6 +57,7 @@ def fixture_data() -> dict[str, Any]:
         return json.load(f)
 
 
+@_requires_sdk
 def test_extract_returns_document_type() -> None:
     """Verify extract() returns a Document instance.
 
@@ -76,6 +83,7 @@ def test_extract_returns_document_type() -> None:
     assert doc.pages, "Document should contain pages"
 
 
+@_requires_sdk
 def test_document_has_required_attributes() -> None:
     """Verify Document has all required attributes.
 
@@ -96,6 +104,7 @@ def test_document_has_required_attributes() -> None:
         assert hasattr(doc, attr), f"Document should have '{attr}' attribute"
 
 
+@_requires_sdk
 def test_metadata_is_typed() -> None:
     """Verify metadata is a typed Metadata instance.
 
@@ -120,6 +129,7 @@ def test_metadata_is_typed() -> None:
         assert hasattr(doc.metadata, attr), f"Metadata should have '{attr}' attribute"
 
 
+@_requires_sdk
 def test_pages_is_list() -> None:
     """Verify doc.pages is a list of Page instances.
 
@@ -167,6 +177,7 @@ def test_fixture_data_structure(fixture_data: dict[str, Any]) -> None:
                 f"Fixture metadata should contain '{key}' key"
 
 
+@_requires_sdk
 def test_document_type_from_pdf_extraction() -> None:
     """Test type assertions from a real PDF extraction.
 
@@ -199,6 +210,7 @@ def test_document_type_from_pdf_extraction() -> None:
             f"Expected Page type, got {type(page).__name__}"
 
 
+@_requires_sdk
 def test_metadata_field_types() -> None:
     """Test that metadata fields have correct types.
 
@@ -227,6 +239,7 @@ def test_metadata_field_types() -> None:
             f"metadata.author should be str or None, got {type(metadata.author).__name__}"
 
 
+@_requires_sdk
 def test_document_type_from_fixture_data(fixture_data: dict[str, Any]) -> None:
     """Verify Document.from_native() returns a Document instance.
 
@@ -329,6 +342,7 @@ def test_type_assertions_from_fixture_data(fixture_data: dict[str, Any]) -> None
                 f"{list_field} should be a list"
 
 
+@_requires_sdk
 def test_page_type_assertion_from_document() -> None:
     """Test that Page objects accessed from Document are properly typed.
 
@@ -373,6 +387,7 @@ def test_page_type_assertion_from_document() -> None:
             f"doc.pages[{page_idx}] should be a typed Page instance, not a raw dict"
 
 
+@_requires_sdk
 def test_span_type_assertion(fixture_data: dict[str, Any]) -> None:
     """Test that span objects within Pages are properly typed.
 
