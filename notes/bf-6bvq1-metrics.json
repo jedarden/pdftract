@@ -1,0 +1,54 @@
+{
+  "cross_checks": {
+    "file_done_count_eq_file_start_count": true,
+    "file_done_matches_eq_stdout_match_lines": true,
+    "matched_files_eq_stdout_distinct_files": true,
+    "raw_timing_metrics_validation": "ok",
+    "run1_summary_files_eq_files_total": true,
+    "run1_summary_mib_matches_size_hint_sum": true,
+    "run2_eq_run3_files_matched": true,
+    "run2_eq_run3_match_lines": true
+  },
+  "observed": {
+    "bytes_per_second": 140217204.08163264,
+    "files_matched": 833,
+    "files_total": 1000,
+    "run1_summary": {
+      "displayed_seconds": 0.0,
+      "files": 1000,
+      "line": "1000 files (6.6 MB) in 0.0s (133.7 MB/s)",
+      "mib_per_second": 133.7,
+      "total_mib": 6.6
+    },
+    "run2_corroboration": {
+      "files_matched": 833,
+      "match_lines": 2510
+    },
+    "runtime": {
+      "derivation": "(total_bytes / 1 MiB) / 133.7 MiB/s * 1000 = 49 ms",
+      "note": "derived from the run 1 'Searched:' summary, the tool's own measurement; the log records the displayed duration only as 'in 0.0s' (no per-run millisecond wall time was captured)",
+      "wall_time_ms": 49
+    },
+    "total_bytes": 6870643,
+    "total_matches": 2510
+  },
+  "raw_timing_metrics": {
+    "files_per_second": 20408.16326530612,
+    "files_processed": 1000,
+    "system_time_sec": null,
+    "throughput_mb_s": 133.72154625094666,
+    "total_bytes": 6870643,
+    "total_matches": 2510,
+    "user_time_sec": null,
+    "wall_time_ms": 49
+  },
+  "schema_version": 1,
+  "source": {
+    "bead": "bf-50mfjl",
+    "captured_at": "2026-09-18T00:06:08Z",
+    "command": "pdftract grep 'the' tests/fixtures/grep-corpus/corpus/",
+    "commit": "fe40897cd58e976037d286434d37b1f42e716f02",
+    "log_path": "notes/bf-6bvq1-benchmark.log",
+    "progress_json_run": 3
+  }
+}
