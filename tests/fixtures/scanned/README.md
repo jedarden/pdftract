@@ -25,8 +25,14 @@ scanned/
 │   ├── receipt-300dpi.txt           # Ground truth
 │   └── receipt-300dpi-ocr.txt       # Reference OCR output
 ├── invoice/                      # Single-page service invoice
+│   ├── invoice-300dpi.pdf            # Clean 300 DPI scan (CC0 source)
+│   └── invoice-300dpi.txt            # Ground truth for the scanned page
 ├── letter/                       # Single-page business letter
+│   ├── letter-300dpi.pdf             # Clean 300 DPI scan (CC0 source)
+│   └── letter-300dpi.txt             # Ground truth for the scanned page
 ├── form/                         # Single-page employment application form
+│   ├── form-300dpi.pdf                # Clean 300 DPI scan (CC0 source)
+│   └── form-300dpi.txt                # Ground truth for the scanned page
 ├── multi-page/                   # report-300dpi (11 pages, canonical)
 │   └── doc-10page-300dpi*           # legacy 10-page fixture
 ├── low-quality/                  # degraded-200dpi (intentionally degraded)
@@ -36,6 +42,11 @@ scanned/
 Each canonical fixture directory carries the scanned PDF, a ground-truth
 `.txt`, and a reference OCR output `*-ocr.txt` produced by
 `pdfimages -png` + `tesseract stdout -l eng`.
+
+The invoice, letter, and form pages are original synthetic compositions
+dedicated to the public domain under CC0 1.0. Each is rendered as an
+image-only US Letter PDF at 300×300 PPI; the matching `*-300dpi.txt` file is
+the page ground truth. This is the concise provenance for the clean corpus.
 
 ## Fixtures and WER Status
 

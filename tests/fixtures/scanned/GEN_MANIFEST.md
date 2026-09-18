@@ -25,7 +25,7 @@ above 8%. DejaVu Serif also has a serifed capital I, avoiding the sans-serif
 - **Content**: Supermarket receipt with items, prices, totals
 
 ### invoice-300dpi
-- **Ground Truth**: `invoice/invoice-300dpi-ground-truth.txt` (105 words)
+- **Ground Truth**: `invoice/invoice-300dpi.txt` (105 words)
 - **Scanned PDF**: `invoice/invoice-300dpi.pdf` (1 page)
 - **Text twin**: `invoice/invoice-300dpi-text-embedded.pdf`
 - **Reference OCR**: `invoice/invoice-300dpi-ocr.txt`
@@ -33,7 +33,7 @@ above 8%. DejaVu Serif also has a serifed capital I, avoiding the sans-serif
 - **Content**: Service invoice with line items, totals, payment terms
 
 ### letter-300dpi
-- **Ground Truth**: `letter/letter-300dpi-ground-truth.txt` (227 words)
+- **Ground Truth**: `letter/letter-300dpi.txt` (227 words)
 - **Scanned PDF**: `letter/letter-300dpi.pdf` (1 page)
 - **Text twin**: `letter/letter-300dpi-text-embedded.pdf`
 - **Reference OCR**: `letter/letter-300dpi-ocr.txt`
@@ -41,7 +41,7 @@ above 8%. DejaVu Serif also has a serifed capital I, avoiding the sans-serif
 - **Content**: Business letter with letterhead, address block, salutation
 
 ### form-300dpi
-- **Ground Truth**: `form/form-300dpi-ground-truth.txt` (166 words)
+- **Ground Truth**: `form/form-300dpi.txt` (166 words)
 - **Scanned PDF**: `form/form-300dpi.pdf` (1 page)
 - **Text twin**: `form/form-300dpi-text-embedded.pdf`
 - **Reference OCR**: `form/form-300dpi-ocr.txt`
