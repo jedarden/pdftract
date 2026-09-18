@@ -299,10 +299,18 @@ class Match:
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
+        """Build a Match from a native match dict.
+
+        The PyO3 search() yields ``{text, page_index, span_index, bbox}``;
+        the CLI ``grep --json`` fallback yields ``{match_text, span_text,
+        page_index, bbox}``. Accept any of these spellings.
+        """
+        text = native_dict.get("text") or native_dict.get("match_text") or ""
+        page = native_dict.get("page", native_dict.get("page_index", 0))
         return cls(
-            text=native_dict["text"],
-            page=int(native_dict["page"]),
-            bbox=tuple(native_dict["bbox"]),
+            text=text,
+            page=int(page) if page is not None else 0,
+            bbox=tuple(native_dict.get("bbox") or (0.0, 0.0, 0.0, 0.0)),
             context=native_dict.get("context"),
         )
 

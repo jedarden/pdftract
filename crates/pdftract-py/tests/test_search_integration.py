@@ -1,10 +1,12 @@
 """Integration tests for pdftract.search() function.
 
-This module contains failing tests that demonstrate the current bug where
-search() returns empty matches even when the pattern exists in the PDF.
+These tests exercise the end-to-end search contract:
 
-These tests are the TDD "red" phase - they fail now, and will pass after
-the search() function is fixed.
+* the native PyO3 ``search()`` returns ``{"pattern": ..., "matches": [...]}``
+  where each match carries ``page_index``, ``span_index``, ``text`` and
+  ``bbox`` (mirroring ``pdftract_core::sdk::search`` output), and
+* the typed ``pdftract.search()`` wrapper yields non-empty ``Match`` objects
+  mapped from that result.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from pathlib import Path
 
 try:
     import pdftract
+    from pdftract import _native
     _native_available = True
 except ImportError as e:
     pytest.skip(f"pdftract not available: {e}", allow_module_level=True)
@@ -25,108 +28,122 @@ FIXTURES_DIR = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures"
 
 
 class TestSearchIntegration:
-    """Integration tests for search() function bug."""
+    """End-to-end tests for the search() contract."""
 
-    def test_search_empty_result_when_pattern_present(self):
-        """Test that search() returns non-empty matches when pattern exists.
-
-        This test FAILS because search() currently returns an empty iterator
-        even when the pattern is clearly present in the PDF.
-
-        Expected: search() should yield at least one match
-        Actual: search() yields no matches (empty iterator)
-        """
-        # Use a synthetic PDF that has known text content
+    def test_native_search_finds_pattern_present_in_pdf(self):
+        """Native search() returns non-empty matches for a present pattern."""
         fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_10.pdf"
         if not fixture_path.exists():
             pytest.skip(f"Fixture not found: {fixture_path}")
 
-        # Search for "text" which should appear in the synthetic PDF
-        matches = list(pdftract.search(str(fixture_path), "text"))
+        # The synthetic grep-corpus pages contain lorem-ipsum placeholder
+        # text; "ipsum" is present in every document, "text" is not.
+        result = _native.search(str(fixture_path), "ipsum")
 
-        # THE BUG: matches list is empty even though "text" exists in the PDF
-        # This assertion FAILS - demonstrating the bug
+        assert isinstance(result, dict), "native search() should return a dict"
+        assert result["pattern"] == "ipsum", "result should echo the pattern"
+        matches = result["matches"]
         assert len(matches) > 0, (
-            f"search() should return non-empty matches when pattern exists. "
-            f"Pattern: 'text', "
-            f"Matches found: {len(matches)}, "
-            f"Expected: at least 1 match"
+            "native search() should return non-empty matches when the "
+            f"pattern exists; got {len(matches)} matches"
         )
 
-    def test_search_returns_match_structure(self):
-        """Test that each match has the correct structure.
-
-        This test FAILS because the matches list is empty, so we can't verify
-        the structure of individual match objects.
-
-        Expected: each match should have page_index, span_index, text, bbox
-        Actual: matches list is empty, can't verify structure
-        """
-        fixture_path = FIXTURES_DIR / "valid-minimal.pdf"
+    def test_native_match_structure_carries_page_span_bbox(self):
+        """Each native match carries page_index, span_index, text and bbox."""
+        fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_10.pdf"
         if not fixture_path.exists():
             pytest.skip(f"Fixture not found: {fixture_path}")
 
-        # Search for a common pattern
-        matches = list(pdftract.search(str(fixture_path), "test"))
+        matches = _native.search(str(fixture_path), "ipsum")["matches"]
+        assert matches, "expected non-empty matches"
 
-        # If we have matches, verify their structure
-        # THE BUG: this loop doesn't execute because matches is empty
         for match in matches:
-            assert hasattr(match, "page_index"), "Match should have 'page_index'"
-            assert hasattr(match, "span_index"), "Match should have 'span_index'"
-            assert hasattr(match, "text"), "Match should have 'text'"
-            assert hasattr(match, "bbox"), "Match should have 'bbox'"
+            assert isinstance(match["page_index"], int), "page_index should be int"
+            assert isinstance(match["span_index"], int), "span_index should be int"
+            assert isinstance(match["text"], str) and match["text"], (
+                "text should be a non-empty str"
+            )
+            assert isinstance(match["bbox"], list), "bbox should be a list"
+            assert len(match["bbox"]) == 4, "bbox should have 4 elements [x0, y0, x1, y1]"
+            assert all(isinstance(x, (int, float)) for x in match["bbox"]), (
+                "bbox elements should be numeric"
+            )
 
-            # Verify types
-            assert isinstance(match.page_index, int), "page_index should be int"
-            assert isinstance(match.span_index, int), "span_index should be int"
-            assert isinstance(match.text, str), "text should be str"
-            assert isinstance(match.bbox, list), "bbox should be a list"
+    def test_typed_search_yields_match_objects(self):
+        """Typed pdftract.search() maps native matches to Match objects."""
+        fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_10.pdf"
+        if not fixture_path.exists():
+            pytest.skip(f"Fixture not found: {fixture_path}")
+
+        matches = list(pdftract.search(str(fixture_path), "ipsum"))
+        assert len(matches) > 0, "typed search() should yield matches"
+
+        for match in matches:
+            assert isinstance(match, pdftract.Match), "should yield typed Match objects"
+            assert isinstance(match.page, int) and match.page >= 0, (
+                "page should be a non-negative int"
+            )
+            assert isinstance(match.text, str) and match.text, "text should be non-empty"
             assert len(match.bbox) == 4, "bbox should have 4 elements [x0, y0, x1, y1]"
             assert all(isinstance(x, (int, float)) for x in match.bbox), (
                 "bbox elements should be numeric"
             )
 
-    def test_search_with_case_insensitive(self):
-        """Test search with case_insensitive option.
+    def test_typed_matches_consistent_with_native_result(self):
+        """Typed matches mirror the native sdk::search result one-to-one."""
+        fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_10.pdf"
+        if not fixture_path.exists():
+            pytest.skip(f"Fixture not found: {fixture_path}")
 
-        This test FAILS because search() returns empty matches regardless of
-        the case_insensitive option.
-        """
+        native_matches = _native.search(str(fixture_path), "ipsum")["matches"]
+        typed_matches = list(pdftract.search(str(fixture_path), "ipsum"))
+
+        assert len(typed_matches) == len(native_matches), (
+            "typed search() should yield exactly as many matches as native search()"
+        )
+        for native_match, typed_match in zip(native_matches, typed_matches):
+            assert typed_match.text == native_match["text"]
+            assert typed_match.page == native_match["page_index"]
+            assert list(typed_match.bbox) == list(native_match["bbox"])
+
+    def test_search_with_case_insensitive(self):
+        """case_insensitive=True matches regardless of letter case."""
         fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_100.pdf"
         if not fixture_path.exists():
             pytest.skip(f"Fixture not found: {fixture_path}")
 
-        # Search with different case
-        matches = list(pdftract.search(str(fixture_path), "TEXT", case_insensitive=True))
-
-        # Should find matches (case-insensitive)
+        # Fixture pages say "Lorem ipsum ...", so upper-case LOREM only
+        # matches when case_insensitive=True actually reaches the matcher.
+        matches = list(pdftract.search(str(fixture_path), "LOREM", case_insensitive=True))
         assert len(matches) > 0, (
-            f"case_insensitive search should find 'TEXT' matching 'text'. "
-            f"Matches found: {len(matches)}"
+            f"case_insensitive search should find 'LOREM' matching 'Lorem'; "
+            f"got {len(matches)} matches"
         )
 
-    def test_search_pattern_field_set_correctly(self):
-        """Test that search() returns matches with the pattern field set correctly.
-
-        This test FAILS because search() returns an empty iterator even though
-        the pattern is clearly present in the PDF.
-
-        Expected: search() should yield matches for the pattern
-        Actual: search() yields no matches (empty iterator)
-        """
-        fixture_path = FIXTURES_DIR / "valid-minimal.pdf"
+    def test_search_whole_word_and_regex_kwargs_pass_through(self):
+        """whole_word and regex kwargs pass through to the sdk matcher."""
+        fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_10.pdf"
         if not fixture_path.exists():
             pytest.skip(f"Fixture not found: {fixture_path}")
 
-        test_pattern = "sample"
-        matches = list(pdftract.search(str(fixture_path), test_pattern))
-
-        # THE BUG: matches should be populated for a pattern that exists
-        assert len(matches) > 0, (
-            f"search() should return matches for pattern '{test_pattern}'. "
-            f"Matches found: {len(matches)}"
+        whole = _native.search(str(fixture_path), "ipsum", whole_word=True)
+        assert len(whole["matches"]) > 0, (
+            "whole_word=True should still match the standalone word 'ipsum'"
         )
+        regexed = _native.search(str(fixture_path), "Lo.em", regex=True)
+        assert len(regexed["matches"]) > 0, (
+            "regex='Lo.em' should match 'Lorem' via the regex engine"
+        )
+
+    def test_search_pattern_field_set_correctly(self):
+        """The result echoes the requested pattern."""
+        fixture_path = FIXTURES_DIR / "grep-corpus" / "corpus" / "synthetic_10.pdf"
+        if not fixture_path.exists():
+            pytest.skip(f"Fixture not found: {fixture_path}")
+
+        test_pattern = "ipsum"
+        result = _native.search(str(fixture_path), test_pattern)
+        assert result["pattern"] == test_pattern
 
 
 if __name__ == "__main__":

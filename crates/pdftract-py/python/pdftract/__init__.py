@@ -297,10 +297,23 @@ def search(source, pattern, **options) -> Iterator[Match]:
 
     Raises:
         PdftractError: Extraction errors
+
+    Note:
+        The native backend returns a single ``{"pattern": ..., "matches":
+        [...]}`` result dict, while the subprocess fallback yields match
+        dicts directly; this wrapper normalises both into typed Match
+        objects.
     """
     extractor = _get_extractor()
-    # Wrap raw dict iterator from native module to yield typed Match objects
-    for match in extractor.search(source, pattern, **options):
+    result = extractor.search(source, pattern, **options)
+    # Native search() returns a {"pattern": ..., "matches": [...]} result
+    # dict; the subprocess fallback returns an iterator of match dicts (or
+    # already-typed Match objects). Normalise both to an iterable of matches.
+    if isinstance(result, dict):
+        raw_matches = result.get("matches") or ()
+    else:
+        raw_matches = result
+    for match in raw_matches:
         if isinstance(match, dict):
             yield Match.from_native(match)
         else:
