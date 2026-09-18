@@ -176,7 +176,7 @@ fn run1_command(log: &str) -> Option<String> {
 }
 
 /// Slice a run section `(start_after_marker, end_before_marker)` from the log.
-fn run_bounds(log: &str, start_marker: &str) -> Result<(usize, usize, Vec<&str>)> {
+fn run_bounds<'a>(log: &'a str, start_marker: &str) -> Result<(usize, usize, Vec<&'a str>)> {
     let lines: Vec<&str> = log.lines().collect();
     let start = lines
         .iter()
