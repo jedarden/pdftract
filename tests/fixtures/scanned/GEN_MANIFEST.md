@@ -41,12 +41,16 @@ above 8%. DejaVu Serif also has a serifed capital I, avoiding the sans-serif
 - **Content**: Business letter with letterhead, address block, salutation
 
 ### form-300dpi
-- **Ground Truth**: `form/form-300dpi-ground-truth.txt` (264 words)
-- **Scanned PDF**: `form/form-300dpi.pdf` (3 pages)
+- **Ground Truth**: `form/form-300dpi-ground-truth.txt` (166 words)
+- **Scanned PDF**: `form/form-300dpi.pdf` (1 page)
 - **Text twin**: `form/form-300dpi-text-embedded.pdf`
 - **Reference OCR**: `form/form-300dpi-ocr.txt`
 - **Specifications**: DejaVu Serif 11pt, Letter, 0.75" margins, 18pt spacing
 - **Content**: Employment application form with fields and checkboxes
+- **Note**: redesigned 2026-09-18 (bead `pdftract-d2201653`) from the original
+  3-page/264-word layout to a single page (36 GT lines) so the invoice/letter/form
+  trio is uniformly single-page; reference fields are packed onto shared lines,
+  which also eliminated the sparse `Name:` fill-line drops the 3-page version had
 
 ### report-300dpi (multi-page)
 - **Ground Truth**: `multi-page/report-300dpi-ground-truth.txt` (1383 words)
@@ -81,17 +85,32 @@ The ground-truth texts avoid constructs that tesseract cannot round-trip at
 - **ASCII box tables (`+----+`, `|` cells) do not round-trip** — the report's
   quarterly sales table uses aligned columns without box borders.
 
+## Source and License Attribution
+
+- receipt, invoice, letter, form, report are **original synthetic compositions**
+  created for this repository (fictional businesses and people). No third-party
+  document was scanned or reproduced. Ground-truth texts and the generated PDFs
+  are dedicated to the public domain (**CC0 1.0**).
+- Raster provenance (every clean fixture): ground-truth text -> reportlab PDF
+  (`tools/generate_scanned_fixtures.py`, DejaVu Serif) -> `pdftoppm -r 300` PNG
+  -> `img2pdf` image-only PDF. US Letter, 2550x3300 px, 300x300 ppi — the DPI is
+  embedded in the PDF images (`pdfimages -list` shows x-ppi/y-ppi 300).
+- degraded-200dpi derives from a genuine public-domain source: Abraham Lincoln's
+  1860 Cooper Union address via Project Gutenberg — attribution and legal notes
+  in `low-quality/source-document-abraham-lincoln-public-domain.txt`.
+
 ## WER Results
 
-Measured 2026-09-13 with tesseract 5.5.2 + `scripts/measure-wer.sh`
-(gate: WER <= 3% on clean 300 DPI fixtures):
+Receipt/report/degraded measured 2026-09-13; invoice/letter re-verified and form
+re-measured 2026-09-18 after the single-page redesign, with tesseract 5.5.2 +
+`scripts/measure-wer.sh` (gate: WER <= 3% on clean 300 DPI fixtures):
 
 | Fixture | Words | WER | Gate | Notes |
 |---------|-------|------|------|-------|
 | receipt-300dpi | 143 | 0.00% | PASS (exit 0) | exact match |
-| invoice-300dpi | 105 | 0.00% | PASS (exit 0) | exact match |
-| letter-300dpi | 227 | 0.00% | PASS (exit 0) | exact match |
-| form-300dpi | 264 | 2.27% | PASS (exit 0) | 3 sparse `Name:` fill lines dropped |
+| invoice-300dpi | 105 | 0.00% | PASS (exit 0) | exact match (re-verified 2026-09-18) |
+| letter-300dpi | 227 | 0.00% | PASS (exit 0) | exact match (re-verified 2026-09-18) |
+| form-300dpi | 166 | 0.60% | PASS (exit 0) | single page since 2026-09-18; 1 word substitution |
 | report-300dpi | 1383 | 0.87% | PASS (exit 0) | 11 pages; residual code-block I/l and split-token noise |
 | degraded-200dpi | 321 | 8.10% | n/a (degraded) | intentionally outside the gate |
 
@@ -143,3 +162,5 @@ The `low-quality/` subdirectory contains intentionally degraded OCR fixtures for
 - bf-2he4t: Initial corpus assembly
 - bf-33zjo: Regeneration (width-aware generator, DejaVu Serif, OCR-stable
   GT curation), WER gate verification across all clean fixtures
+- pdftract-d2201653: form-300dpi redesigned to a single page (invoice/letter/form
+  trio uniformly single-page), source/license attribution recorded
