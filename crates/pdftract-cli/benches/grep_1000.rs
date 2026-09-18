@@ -583,7 +583,7 @@ fn execute_grep_command(
 /// into the final BenchmarkResult. It is JSON-serializable for
 /// temporary storage and intermediate result caching.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-struct RawTimingMetrics {
+pub struct RawTimingMetrics {
     /// Wall-clock runtime in milliseconds
     pub wall_time_ms: u128,
     /// User CPU time in seconds (if available)
@@ -771,7 +771,10 @@ fn parse_match_count_from_stderr(stderr: &str) -> usize {
 ///
 /// # Returns
 /// * `RawTimingMetrics` - Structured metrics extracted from the output
-fn extract_raw_timing_metrics(
+///
+/// `pub` so other targets (e.g. the parse_bench_log example) can reuse the
+/// same extraction plumbing against captured output.
+pub fn extract_raw_timing_metrics(
     stdout: &str,
     stderr: &str,
     wall_time_ms: u128,
