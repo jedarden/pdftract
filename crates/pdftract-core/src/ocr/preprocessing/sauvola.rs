@@ -136,7 +136,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
         // degenerate/zero-dimension image), record the diagnostics and return the
         // unbinarized input image as a degraded result so the OCR pipeline can
         // still attempt extraction instead of aborting the whole process.
-        let pix = match grayimage_to_pix(image) {
+        let mut pix = match grayimage_to_pix(image) {
             Ok(p) => p,
             Err(diag) => {
                 diagnostics.extend(diag);
@@ -154,7 +154,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
         };
 
         // Call pixSauvolaBinarize via leptonica-sys
-        let (binary_pix, _result) = unsafe {
+        let (mut binary_pix, _result) = unsafe {
             // Window size must be odd
             let wh = window_size as i32;
             let wl = window_size as i32;
@@ -177,7 +177,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
                 // leptonica failed to binarize (e.g. internal allocation failure).
                 // Recoverable per the no-panic model: free the input Pix and fall
                 // back to the unbinarized input image as a degraded result.
-                pixDestroy(pix);
+                pixDestroy(&mut pix);
                 warn!(
                     "sauvola_binarize: pixSauvolaBinarize returned null; returning \
                      unbinarized input as a degraded result (window_size={}, k={})",
@@ -573,6 +573,53 @@ mod tests {
             binary_default.into_raw(),
             binary_explicit.into_raw(),
             "Default parameters should match constant values"
+        );
+    }
+
+    /// Test: GrayImage→Pix conversion failure does not panic (regression: bf-41jlc7)
+    ///
+    /// A zero-dimension `GrayImage::new(0, 0)` deterministically drives the
+    /// `grayimage_to_pix` failure path: leptonica's `pixCreate` rejects a
+    /// zero width/height ("Error in pixCreateHeader: width must be > 0"),
+    /// so the conversion returns `Err`. This is the deterministic trigger
+    /// established by the bf-5v0q2f spike (leptonica 1.87.0).
+    ///
+    /// Per the plan's no-panic error model, the function must NOT propagate a
+    /// panic through the FFI boundary: it emits a `tracing::warn!` and returns
+    /// the **unbinarized input** as a degraded result.
+    ///
+    /// The zero-dimension image is load-bearing here: a non-empty "degenerate"
+    /// image must NOT be used for this test, because the GrayImage→Pix copy
+    /// path currently writes out of bounds for non-empty images (tracked as
+    /// pdftract-20dc6118) — such an input would exercise that heap overflow
+    /// instead of the conversion-failure branch.
+    #[test]
+    fn test_sauvola_conversion_failure_no_panic_returns_degraded_input() {
+        let degenerate = GrayImage::new(0, 0);
+        let input = degenerate.clone();
+
+        // AssertUnwindSafe: the closure only reads `degenerate`, but GrayImage
+        // carries no RefUnwindSafe guarantee and we need to observe a panic
+        // here rather than have it fail the test before we can assert on it.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // 15 / 0.34 are the documented defaults (see DEFAULT_WINDOW_SIZE
+            // and DEFAULT_K); spelled out so this regression test stays
+            // independent of future constant changes.
+            sauvola_binarize(&degenerate, 15, 0.34)
+        }));
+
+        let out = result.expect(
+            "sauvola_binarize panicked on GrayImage→Pix conversion failure; \
+             the no-panic error model requires a degraded result instead",
+        );
+
+        // Degraded result: the unbinarized input, returned unchanged.
+        assert_eq!(out.width(), input.width());
+        assert_eq!(out.height(), input.height());
+        assert_eq!(
+            out.into_raw(),
+            input.into_raw(),
+            "conversion failure must return the unbinarized input unchanged"
         );
     }
 
