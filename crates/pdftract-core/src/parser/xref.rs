@@ -5198,3 +5198,443 @@ trailer\n<< /Size 3 >>\n";
         }
     }
 }
+/// Characterization probe for bead pdftract-d0b22a6e (test-only; no production changes).
+///
+/// Drives the xref layer chain over the two checked-in minimal fixtures and
+/// asserts, with a distinct panic message per step, where `XrefSection.trailer`
+/// (or its `/Root` key) is first lost:
+///
+/// - layer 0: startxref offset — replicates `document.rs find_startxref`
+///   (private; one of four private copies: document.rs, extract.rs, remote.rs x2)
+/// - layer 1: [`load_single_xref`] — the auto-detecting wrapper
+/// - layer 2: [`parse_traditional_xref`] — the traditional table parser
+/// - layer 3: [`parse_trailer_dict`] — driven directly at the trailer keyword
+/// - layer 4: [`load_xref_with_prev_chain`] — what document.rs/extract.rs call
+/// - layer 5: [`parse_xref_stream`] — informational (stream path; a table file
+///   must not take it, but callers fall back to it)
+///
+/// A final test records the error string that escapes the public entry point
+/// [`crate::document::parse_pdf_file`] per fixture, tying the smoke-test
+/// failures to whichever layer loses the trailer.
+#[cfg(test)]
+mod trailer_loss_probe {
+    use super::*;
+    use crate::parser::stream::MemorySource;
+    use std::path::{Path, PathBuf};
+
+    fn fixture_path(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    fn fixture_bytes(name: &str) -> Vec<u8> {
+        let p = fixture_path(name);
+        std::fs::read(&p).unwrap_or_else(|e| panic!("probe: cannot read {}: {}", p.display(), e))
+    }
+
+    /// Replicates `document.rs:568 find_startxref` (private): scan the last
+    /// 1024 bytes for the LAST "startxref" keyword and parse the decimal
+    /// offset that follows it.
+    fn probe_startxref(data: &[u8]) -> u64 {
+        let scan_start = data.len().saturating_sub(1024);
+        let tail = &data[scan_start..];
+        let pos = tail
+            .windows(9)
+            .rposition(|w| w == b"startxref")
+            .expect("probe LAYER 0: startxref keyword not found in last 1024 bytes");
+        let after = &tail[pos + 9..];
+        let ws = after
+            .iter()
+            .position(|&b| !matches!(b, b' ' | b'\r' | b'\n' | b'\t'))
+            .unwrap_or(after.len());
+        let rest = &after[ws..];
+        let nl = rest
+            .iter()
+            .position(|&b| b == b'\n' || b == b'\r')
+            .unwrap_or(rest.len());
+        std::str::from_utf8(&rest[..nl])
+            .expect("probe LAYER 0: startxref offset not UTF-8")
+            .trim()
+            .parse()
+            .expect("probe LAYER 0: startxref offset not a valid number")
+    }
+
+    fn dump_layer(fixture: &str, label: &str, section: &XrefSection) {
+        let keys: Vec<String> = section
+            .trailer
+            .as_ref()
+            .map(|t| t.keys().map(|k| k.to_string()).collect())
+            .unwrap_or_default();
+        println!(
+            "[{fixture}] {label}: entries={} trailer={} keys={keys:?} hybrid={} diags={}",
+            section.entries.len(),
+            section.trailer.is_some(),
+            section.is_hybrid,
+            section.diagnostics.len(),
+        );
+        for d in &section.diagnostics {
+            println!("[{fixture}]   diag: {}", d.message);
+        }
+    }
+
+    /// Drive every layer over `fixture` (whose trailer correctly states its
+    /// own startxref offset) and assert the trailer survives each one.
+    /// Used for well-formed fixtures (test-minimal.pdf).
+    fn drive_layers(fixture: &str, expected_startxref: u64) {
+        let data = fixture_bytes(fixture);
+        let src = MemorySource::new(data.clone());
+
+        // LAYER 0: startxref offset (replica of the private find_startxref).
+        let off = probe_startxref(&data);
+        assert_eq!(
+            off, expected_startxref,
+            "[{fixture}] LAYER 0 find_startxref (replica of document.rs:568): expected \
+             {expected_startxref}, got {off}"
+        );
+
+        // LAYER 2 first, so layer 1's auto-detection can be compared against
+        // the raw traditional parse at the same offset.
+        let trad = parse_traditional_xref(&src, off);
+        dump_layer(
+            fixture,
+            "LAYER 2 parse_traditional_xref (xref.rs:489)",
+            &trad,
+        );
+        assert!(
+            !trad.entries.is_empty(),
+            "[{fixture}] LAYER 2 parse_traditional_xref (xref.rs:489): entries EMPTY — \
+             the traditional table was not parsed"
+        );
+        let trad_trailer = trad.trailer.as_ref().unwrap_or_else(|| {
+            panic!(
+                "[{fixture}] LAYER 2 parse_traditional_xref (xref.rs:489): \
+                 XrefSection.trailer is None — trailer lost HERE"
+            )
+        });
+        assert!(
+            trad_trailer.get("Root").is_some(),
+            "[{fixture}] LAYER 2 parse_traditional_xref (xref.rs:489): trailer parsed but \
+             /Root key missing; keys={:?}",
+            trad_trailer.keys().collect::<Vec<_>>()
+        );
+
+        // LAYER 1: load_single_xref (the auto-detecting wrapper).
+        let single = load_single_xref(&src, off);
+        dump_layer(fixture, "LAYER 1 load_single_xref (xref.rs:2212)", &single);
+        let single_trailer = single.trailer.as_ref().unwrap_or_else(|| {
+            panic!(
+                "[{fixture}] LAYER 1 load_single_xref (xref.rs:2212): trailer is None while \
+                 parse_traditional_xref at the same offset HAS one — loss is inside \
+                 load_single_xref's hybrid/fallback logic"
+            )
+        });
+        assert!(
+            single_trailer.get("Root").is_some(),
+            "[{fixture}] LAYER 1 load_single_xref (xref.rs:2212): /Root missing from trailer; \
+             keys={:?}",
+            single_trailer.keys().collect::<Vec<_>>()
+        );
+
+        // LAYER 3: parse_trailer_dict driven directly at the trailer keyword.
+        let tpos =
+            data.windows(7)
+                .rposition(|w| w == b"trailer")
+                .expect("probe LAYER 3: 'trailer' keyword not found in fixture") as u64
+                + 7;
+        let mut pos = tpos;
+        let mut diags: Vec<Diag> = Vec::new();
+        match parse_trailer_dict(&src, &mut pos, &mut diags) {
+            Some(d) => {
+                println!(
+                    "[{fixture}] LAYER 3 parse_trailer_dict (xref.rs:946): keys={:?} diags={}",
+                    d.keys().collect::<Vec<_>>(),
+                    diags.len()
+                );
+                assert!(
+                    d.get("Root").is_some(),
+                    "[{fixture}] LAYER 3 parse_trailer_dict (xref.rs:946): dict parsed, \
+                     keys={:?}, but no /Root — key normalization loses Root",
+                    d.keys().collect::<Vec<_>>()
+                );
+            }
+            None => panic!(
+                "[{fixture}] LAYER 3 parse_trailer_dict (xref.rs:946): returned None; diags={diags:?}"
+            ),
+        }
+
+        // LAYER 4: load_xref_with_prev_chain — what document.rs/extract.rs call.
+        let chained = load_xref_with_prev_chain(&src, off);
+        dump_layer(
+            fixture,
+            "LAYER 4 load_xref_with_prev_chain (xref.rs:2293)",
+            &chained,
+        );
+        let chained_trailer = chained.trailer.as_ref().unwrap_or_else(|| {
+            panic!("[{fixture}] LAYER 4 load_xref_with_prev_chain (xref.rs:2293): trailer is None")
+        });
+        assert!(
+            chained_trailer.get("Root").is_some(),
+            "[{fixture}] LAYER 4 load_xref_with_prev_chain (xref.rs:2293): /Root missing after \
+             /Prev merge; keys={:?}",
+            chained_trailer.keys().collect::<Vec<_>>()
+        );
+
+        // LAYER 5 (informational): the xref-stream path at the same offset.
+        let xs = parse_xref_stream(&src, off);
+        dump_layer(
+            fixture,
+            "LAYER 5 parse_xref_stream (xref.rs:1584) [informational]",
+            &xs,
+        );
+    }
+
+    #[test]
+    fn probe_test_minimal_layer_by_layer() {
+        drive_layers("test-minimal.pdf", 12787);
+    }
+
+    /// CHARACTERIZATION for bead pdftract-d0b22a6e — pins the CURRENT chain
+    /// behavior over valid-minimal.pdf at the offset its own trailer states
+    /// (`startxref: 439`). The fixture is self-inconsistent: its xref keyword
+    /// actually sits at byte 406, so 439 lands inside entry 1's digits and the
+    /// parser never finds the trailer. These asserts document the defect; the
+    /// chain child fixing the xref layer should FLIP them once it recovers.
+    #[test]
+    fn probe_valid_minimal_layer_by_layer() {
+        let data = fixture_bytes("valid-minimal.pdf");
+        let src = MemorySource::new(data.clone());
+
+        // LAYER 0: find_startxrep replica faithfully returns the fixture's own
+        // (wrong) value — the misdirection enters here.
+        let off = probe_startxref(&data);
+        assert_eq!(off, 439, "LAYER 0: fixture states startxref 439; got {off}");
+
+        // LAYER 2 (parse_traditional_xref, xref.rs:489): the header check at
+        // xref.rs:532 rejects with XrefInvalidHeader "xref keyword not found".
+        let trad = parse_traditional_xref(&src, off);
+        dump_layer(
+            "valid-minimal.pdf",
+            "LAYER 2 parse_traditional_xref (xref.rs:489) [at stated offset 439]",
+            &trad,
+        );
+        assert!(
+            trad.entries.is_empty(),
+            "CHARACTERIZATION (flip when the xref layer recovers from a bad \
+             startxref): entries unexpectedly parsed at the misdirected offset"
+        );
+        assert!(
+            trad.trailer.is_none(),
+            "CHARACTERIZATION (flip when fixed): trailer unexpectedly found at \
+             the misdirected offset 439"
+        );
+        assert!(
+            trad.diagnostics
+                .iter()
+                .any(|d| d.message.contains("xref keyword not found")),
+            "CHARACTERIZATION: expected the XrefInvalidHeader 'xref keyword not \
+             found' diag; got {:?}",
+            trad.diagnostics
+        );
+
+        // LAYER 1/LAYER 4: the wrapper and the /Prev chain propagate the loss
+        // (trailer stays None), so document.rs:422 raises "No trailer in xref
+        // section" for parse_pdf_file callers (see probe_entry_point_error_strings).
+        assert!(
+            load_single_xref(&src, off).trailer.is_none(),
+            "CHARACTERIZATION (flip when fixed): load_single_xref found a trailer"
+        );
+        let chained = load_xref_with_prev_chain(&src, off);
+        dump_layer(
+            "valid-minimal.pdf",
+            "LAYER 4 load_xref_with_prev_chain (xref.rs:2293) [at stated offset 439]",
+            &chained,
+        );
+        assert!(
+            chained.trailer.is_none(),
+            "CHARACTERIZATION (flip when fixed): prev-chain merge recovered a trailer"
+        );
+    }
+
+    /// Entry-level check: which error string escapes the public entry point
+    /// `crate::document::parse_pdf_file` for each fixture (ties the
+    /// test_sdk_smoke failures to a layer). Informational — prints, never fails.
+    #[test]
+    fn probe_entry_point_error_strings() {
+        for fixture in ["valid-minimal.pdf", "test-minimal.pdf"] {
+            let p = fixture_path(fixture);
+            match crate::document::parse_pdf_file(&p) {
+                Ok((_, catalog, pages, _, _)) => println!(
+                    "[{fixture}] parse_pdf_file: OK (pages={} pages_ref={:?})",
+                    pages.len(),
+                    catalog.pages_ref
+                ),
+                Err(e) => println!("[{fixture}] parse_pdf_file: ERR {e:#}"),
+            }
+        }
+    }
+
+    /// CHARACTERIZATION for bead pdftract-d0b22a6e — even at the CORRECT xref
+    /// offset (406, found by literal byte scan) the table's 19-byte entries
+    /// parse under the 20-byte window: the spill byte after the entry type
+    /// splits off as whitespace (`split_whitespace` on `"0000000000 65535 f\n0"`,
+    /// gives a parseable 3-prefix), so the 19-byte fallback (xref.rs:754-757)
+    /// never triggers, `pos` drifts +1 byte per entry (xref.rs:684 sets
+    /// `stride = 20` and xref.rs:746 advances by it), and after 6 entries the
+    /// `trailer` keyword check (xref.rs:586) lands mid-word and never matches.
+    /// parse_trailer_dict (xref.rs:946) is never reached. Child 2's fix should
+    /// FLIP the trailer assertions below.
+    #[test]
+    fn probe_valid_minimal_corrected_offset_chain() {
+        let data = fixture_bytes("valid-minimal.pdf");
+        let src = MemorySource::new(data.clone());
+        let off = data
+            .windows(5)
+            .position(|w| w == b"xref\n")
+            .expect("probe: literal 'xref\\n' not found in valid-minimal.pdf")
+            as u64;
+        assert_eq!(off, 406, "actual offset of the xref keyword");
+
+        // LAYER 2 at the true offset: entries parse (6 objects), but the
+        // drifted position misses the trailer keyword entirely.
+        let traditional = parse_traditional_xref(&src, off);
+        dump_layer(
+            "valid-minimal.pdf",
+            "LAYER 2 parse_traditional_xref (xref.rs:489) [at corrected offset 406]",
+            &traditional,
+        );
+        assert!(
+            !traditional.entries.is_empty(),
+            "entries should parse at the correct offset (stride drift still \
+             produces parseable entries)"
+        );
+        assert_eq!(
+            traditional.entries.len(),
+            6,
+            "the table declares 6 objects (0..6)"
+        );
+        assert!(
+            traditional.trailer.is_none(),
+            "CHARACTERIZATION FLIP POINT (child 2): trailer found at the correct \
+             offset — the 19/20-byte stride handling is fixed; update this probe \
+             and re-check sdk::extract on valid-minimal.pdf"
+        );
+        assert!(
+            traditional
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("Trailer dictionary not found")),
+            "CHARACTERIZATION: expected XrefTrailerNotFound 'Trailer dictionary \
+             not found (xref table may be truncated)' from the missed keyword; \
+             got {:?}",
+            traditional.diagnostics
+        );
+
+        // The wrapper and the /Prev chain propagate the None trailer upward.
+        let single = load_single_xref(&src, off);
+        let chained = load_xref_with_prev_chain(&src, off);
+        dump_layer(
+            "valid-minimal.pdf",
+            "LAYER 1 load_single_xref (xref.rs:2212) [at corrected offset 406]",
+            &single,
+        );
+        dump_layer(
+            "valid-minimal.pdf",
+            "LAYER 4 load_xref_with_prev_chain (xref.rs:2293) [at corrected offset 406]",
+            &chained,
+        );
+        assert!(
+            single.trailer.is_none(),
+            "CHARACTERIZATION FLIP POINT (child 2): load_single_xref recovered a \
+             trailer at the correct offset"
+        );
+        assert!(
+            chained.trailer.is_none(),
+            "CHARACTERIZATION FLIP POINT (child 2): prev-chain recovered a trailer \
+             at the correct offset"
+        );
+    }
+
+    /// Bounded sample of the checked-in corpus (parent-bead context: 0/1377
+    /// extracted with "No /Root reference in trailer" on 2026-09-15). Tally at
+    /// the current HEAD which error strings still escape `parse_pdf_file`.
+    /// Informational — prints, never fails.
+    #[test]
+    fn probe_corpus_sample_entry_errors() {
+        fn collect_pdfs(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in rd.filter_map(|e| e.ok()) {
+                let p = e.path();
+                if p.is_dir() {
+                    collect_pdfs(&p, out);
+                } else if p.extension().map(|x| x == "pdf").unwrap_or(false) {
+                    out.push(p);
+                }
+            }
+        }
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
+        let mut buckets: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut samples: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        let mut checked = 0usize;
+        for (sub, take) in [("grep-corpus", 8usize), ("classifier", 6), ("profiles", 6)] {
+            let mut pdfs = Vec::new();
+            collect_pdfs(&base.join(sub), &mut pdfs);
+            pdfs.sort();
+            for p in pdfs.into_iter().take(take) {
+                checked += 1;
+                let label = match crate::document::parse_pdf_file(&p) {
+                    Ok((_, _, pages, _, _)) => format!("OK(pages={})", pages.len()),
+                    Err(e) => format!("{e}"),
+                };
+                *buckets.entry(label.clone()).or_default() += 1;
+                let s = samples.entry(label).or_default();
+                if s.len() < 2 {
+                    s.push(p.display().to_string());
+                }
+            }
+        }
+        println!("[corpus sample] checked={checked} files");
+        for (k, v) in &buckets {
+            println!("[corpus sample] {v:>3} x {k}  e.g. {:?}", samples[k]);
+        }
+    }
+
+    /// Per-entry-point error strings against the (malformed) valid-minimal.pdf
+    /// fixture, captured from real `sdk` calls: documents which of the two
+    /// error strings each entry emits for the SAME root cause, and shows the
+    /// extract.rs trailer-None → "No /Root reference in trailer" conflation.
+    /// Informational — prints, never fails.
+    #[test]
+    fn probe_sdk_entry_error_strings_valid_minimal() {
+        use crate::options::ExtractionOptions;
+        use crate::sdk;
+        fn report<T: std::fmt::Debug>(label: &str, r: anyhow::Result<T>) {
+            match r {
+                Ok(v) => println!("[valid-minimal.pdf] sdk::{label}: OK ({v:?})"),
+                Err(e) => println!("[valid-minimal.pdf] sdk::{label}: ERR {e:#}"),
+            }
+        }
+        let p = fixture_path("valid-minimal.pdf");
+        report(
+            "extract",
+            sdk::extract(&p, &ExtractionOptions::default())
+                .map(|r| format!("pages={}", r.pages.len())),
+        );
+        report(
+            "extract_text",
+            sdk::extract_text(&p, &ExtractionOptions::default()),
+        );
+        report("get_metadata", sdk::get_metadata(&p));
+        report("hash", sdk::hash(&p));
+        report(
+            "extract_stream",
+            sdk::extract_stream(&p, &ExtractionOptions::default()).map(|mut it| match it.next() {
+                Some(Ok(page)) => format!("first page index={}", page.index),
+                Some(Err(e)) => format!("first page ERR {e:#}"),
+                None => "empty stream".to_string(),
+            }),
+        );
+    }
+}
