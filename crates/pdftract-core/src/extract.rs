@@ -3670,12 +3670,14 @@ startxref
 
         // Verify the tagged PDF diagnostic is emitted
         assert!(!result.metadata.diagnostics.is_empty());
-        let deferred_diag = result
-            .metadata
-            .diagnostics
-            .iter()
-            .find(|d| d.contains("TAGGED_PDF_STRUCT_TREE_DEFERRED"))
-            .expect("TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic should be emitted for tagged PDFs");
+        assert!(
+            result
+                .metadata
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("TAGGED_PDF_STRUCT_TREE_DEFERRED")),
+            "TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic should be emitted for tagged PDFs"
+        );
 
         // Verify the reading order algorithm is xy_cut
         assert_eq!(
