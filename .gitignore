@@ -220,3 +220,6 @@ build/
 .beads/*.temp
 .beads/*.journal
 .br_recovery/
+
+# vendored Ruby SDK is a standalone repo (bead pdftract-3daf71a1); protect its .git from git clean
+pdftract-ruby/.git/
