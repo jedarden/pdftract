@@ -600,11 +600,11 @@ pub struct DocumentContext<'a> {
 /// use pdftract_core::font::type3_rasterizer::calculate_bitmap_dimensions;
 ///
 /// // Glyph with bbox [10.0, 20.0, 50.0, 60.0] in points
-/// // Raw size: 40x30 points
-/// // With default padding: 42x32 pixels
+/// // Raw size: 40x40 points (height = y1 - y0 = 60 - 20 = 40)
+/// // With default padding: 42x42 pixels
 /// let (width, height) = calculate_bitmap_dimensions(&[10.0, 20.0, 50.0, 60.0], None);
 /// assert_eq!(width, 42);
-/// assert_eq!(height, 32);
+/// assert_eq!(height, 42);
 /// ```
 pub fn calculate_bitmap_dimensions(bbox: &[f32; 4], padding: Option<u32>) -> (usize, usize) {
     let padding = padding.unwrap_or(1);
