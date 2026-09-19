@@ -108,6 +108,11 @@ pub struct ServeState {
     pub audit: AuditState,
     /// Default maximum decompression size in bytes (from --max-decompress-gb)
     pub max_decompress_bytes: u64,
+    /// Metrics registry shared by every handler of this server
+    /// (`metrics` feature). Created at startup, so `pdftract_build_info`
+    /// is populated for the process's whole lifetime.
+    #[cfg(feature = "metrics")]
+    pub metrics: crate::metrics::Registry,
 }
 
 impl ServeState {
@@ -134,6 +139,8 @@ impl ServeState {
             cache: Arc::new(Mutex::new(cache)),
             audit,
             max_decompress_bytes,
+            #[cfg(feature = "metrics")]
+            metrics: crate::metrics::Registry::new(),
         }
     }
 }
@@ -408,10 +415,73 @@ pub async fn run(
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
 
+    // Sample `pdftract_rayon_pool_utilization` periodically for the whole
+    // lifetime of the server (`metrics` feature).
+    #[cfg(feature = "metrics")]
+    {
+        let sampler_registry = state.metrics.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                sampler_registry
+                    .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
+            }
+        });
+    }
+
+    let app = build_router(state, max_body_bytes);
+
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
+        .await
+        .context(format!("Failed to bind to {}", bind_addr))?;
+
+    // Print startup banner with security warning
+    eprintln!("pdftract serve is starting on http://{}", bind_addr);
+    eprintln!("*** NO BUILT-IN AUTH *** — Deploy behind a reverse proxy for production.");
+    if let Some(dir) = cache_dir_for_logging {
+        eprintln!(
+            "Cache enabled: {} (max {} bytes)",
+            dir.display(),
+            cache_size_bytes
+        );
+    } else {
+        eprintln!("Cache disabled");
+    }
+    if let Some(ref path) = audit_log {
+        eprintln!("Audit log: {}", path.display());
+    }
+    eprintln!("Max upload size: {} MB", max_upload_mb);
+    eprintln!("Max decompression size: {} GB", max_decompress_gb);
+
+    axum::serve(listener, app)
+        .await
+        .context("HTTP server error")?;
+
+    Ok(())
+}
+
+/// Value of the `ocr` label on `pdftract_extractions_total`: whether the
+/// OCR request path exists in this build. The serve layer cannot observe
+/// per-page OCR usage from outside pdftract-core, so the label records
+/// build capability, not per-document OCR activity.
+#[cfg(feature = "metrics")]
+const OCR_PATH_ENABLED: bool = cfg!(feature = "ocr");
+
+/// Build the serve application router (shared by [`run`] and tests).
+///
+/// Layer order, outermost first: metrics counting (`metrics` feature),
+/// body limit, 413 JSON conversion, audit. The metrics layer sits
+/// outermost so it observes the response actually sent, after the 413
+/// conversion.
+fn build_router(state: ServeState, max_body_bytes: usize) -> Router {
+    #[cfg(feature = "metrics")]
+    let metrics_registry = state.metrics.clone();
+
     // Apply body limit with custom 413 JSON response
     // The custom rejection handler converts tower-http's default text/plain 413 to JSON
     let limit_bytes = max_body_bytes;
-    let app = Router::new()
+    let router = Router::new()
         .route("/", get(root_handler))
         .route(
             "/extract",
@@ -467,36 +537,71 @@ pub async fn run(
                 response
             },
         ))
-        .layer(DefaultBodyLimit::max(max_body_bytes))
-        .with_state(state);
+        .layer(DefaultBodyLimit::max(max_body_bytes));
 
-    let listener = tokio::net::TcpListener::bind(&bind_addr)
-        .await
-        .context(format!("Failed to bind to {}", bind_addr))?;
+    // Count every response (including router 404s and converted 413s) in
+    // `pdftract_http_requests_total`. Observation only — no new route.
+    #[cfg(feature = "metrics")]
+    let router = router.layer(axum::middleware::from_fn_with_state(
+        metrics_registry,
+        metrics_http_middleware,
+    ));
 
-    // Print startup banner with security warning
-    eprintln!("pdftract serve is starting on http://{}", bind_addr);
-    eprintln!("*** NO BUILT-IN AUTH *** — Deploy behind a reverse proxy for production.");
-    if let Some(dir) = cache_dir_for_logging {
-        eprintln!(
-            "Cache enabled: {} (max {} bytes)",
-            dir.display(),
-            cache_size_bytes
-        );
-    } else {
-        eprintln!("Cache disabled");
+    router.with_state(state)
+}
+
+/// Map a request path to its registered route template for the `endpoint`
+/// label. Unregistered paths collapse to `"unmatched"` — the label never
+/// carries a raw request path (plan cardinality policy).
+#[cfg(feature = "metrics")]
+fn endpoint_label(path: &str) -> &'static str {
+    match path {
+        "/" => "/",
+        "/health" => "/health",
+        "/extract" => "/extract",
+        "/extract/text" => "/extract/text",
+        "/extract/stream" => "/extract/stream",
+        _ => "unmatched",
     }
-    if let Some(ref path) = audit_log {
-        eprintln!("Audit log: {}", path.display());
+}
+
+/// Count one HTTP response in `pdftract_http_requests_total`
+/// (`metrics` feature).
+#[cfg(feature = "metrics")]
+async fn metrics_http_middleware(
+    State(registry): State<crate::metrics::Registry>,
+    req: Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> Response<axum::body::Body> {
+    let endpoint = endpoint_label(req.uri().path());
+    let response = next.run(req).await;
+    registry.inc_http_request(endpoint, response.status().as_u16());
+    response
+}
+
+/// Record one completed extraction on the registry (`metrics` feature):
+/// duration histogram, result/ocr counter, emitted pages, cache hit or
+/// miss, and the document's diagnostics with code and severity labels.
+#[cfg(feature = "metrics")]
+fn record_extraction(
+    metrics: &crate::metrics::Registry,
+    elapsed_seconds: f64,
+    result_label: &str,
+    pages: u64,
+    cache_status: Option<&str>,
+    diagnostics_detailed: &[pdftract_core::schema::DiagnosticJson],
+) {
+    metrics.observe_extraction_duration(elapsed_seconds);
+    metrics.inc_extraction(result_label, OCR_PATH_ENABLED);
+    metrics.add_pages_extracted(pages);
+    match cache_status {
+        Some("hit") => metrics.inc_cache_hit(),
+        Some("miss") => metrics.inc_cache_miss(),
+        _ => {}
     }
-    eprintln!("Max upload size: {} MB", max_upload_mb);
-    eprintln!("Max decompression size: {} GB", max_decompress_gb);
-
-    axum::serve(listener, app)
-        .await
-        .context("HTTP server error")?;
-
-    Ok(())
+    for diagnostic in diagnostics_detailed {
+        metrics.inc_diagnostic(&diagnostic.code, &diagnostic.severity);
+    }
 }
 
 /// Root handler - returns server info.
@@ -552,35 +657,82 @@ async fn extract_handler(
     drop(cache_state);
 
     // Perform extraction with cache integration
+    #[cfg(feature = "metrics")]
+    let request_metrics = state.metrics.clone();
+    #[cfg(feature = "metrics")]
+    let extraction_started = std::time::Instant::now();
+    #[cfg(feature = "metrics")]
+    request_metrics.inc_inflight_extractions();
+
     let pdf_file_clone = pdf_file.clone();
-    let (result, cache_status, cache_age) = tokio::task::spawn_blocking(move || {
-        let cache_dir_ref = cache_dir.as_deref();
-        cache::extract_with_cache(
-            &pdf_file_clone,
-            &options,
-            cache_dir_ref,
-            cache_disabled,
-            Some(cache_size_bytes),
-        )
-        .map_err(|e| {
-            let msg = format!("{:?}", e);
-            let diag_code = extract_diag_code_from_error(&msg);
-            AxumError::Extraction(msg, diag_code)
+    let extracted = {
+        #[cfg(feature = "metrics")]
+        let task_metrics = request_metrics.clone();
+        tokio::task::spawn_blocking(move || {
+            let cache_dir_ref = cache_dir.as_deref();
+            let extraction = cache::extract_with_cache(
+                &pdf_file_clone,
+                &options,
+                cache_dir_ref,
+                cache_disabled,
+                Some(cache_size_bytes),
+            );
+            // Sample the cache's own tracked on-disk size after every
+            // cache-enabled extraction (`metrics` feature).
+            #[cfg(feature = "metrics")]
+            if !cache_disabled {
+                if let Some(dir) = cache_dir_ref {
+                    if let Ok(Some(index)) = pdftract_core::cache::layout::load_index(dir) {
+                        task_metrics.set_cache_size_bytes(index.total_bytes);
+                    }
+                }
+            }
+            extraction.map_err(|e| {
+                let msg = format!("{:?}", e);
+                let diag_code = extract_diag_code_from_error(&msg);
+                AxumError::Extraction(msg, diag_code)
+            })
         })
-    })
-    .await
-    .map_err(|e| {
-        // Distinguish between cancellation (task dropped) and panic
-        if e.is_cancelled() {
-            AxumError::Internal(format!("Task cancelled: {}", e))
-        } else {
-            // is_panic() true means the task panicked - indicates a bug
-            AxumError::InternalPanic(format!("Extraction task panicked: {}", e))
-        }
-    })??;
+        .await
+        .map_err(|e| {
+            // Distinguish between cancellation (task dropped) and panic
+            if e.is_cancelled() {
+                AxumError::Internal(format!("Task cancelled: {}", e))
+            } else {
+                // is_panic() true means the task panicked - indicates a bug
+                AxumError::InternalPanic(format!("Extraction task panicked: {}", e))
+            }
+        })
+    };
+
+    // Observation only (`metrics` feature): the gauge always settles, and
+    // duration/result/pages/cache/diagnostics are recorded for both the
+    // success and the error outcome.
+    #[cfg(feature = "metrics")]
+    {
+        request_metrics.dec_inflight_extractions();
+        let (result_label, pages, cache_status_label, diagnostics_detailed) = match &extracted {
+            Ok((result, status, _age)) => (
+                "success",
+                result.pages.len() as u64,
+                Some(status.as_str()),
+                result.metadata.diagnostics_detailed.as_slice(),
+            ),
+            Err(_) => ("error", 0, None, &[]),
+        };
+        record_extraction(
+            &request_metrics,
+            extraction_started.elapsed().as_secs_f64(),
+            result_label,
+            pages,
+            cache_status_label,
+            diagnostics_detailed,
+        );
+    }
+
+    let (mut result, cache_status, cache_age) = extracted?;
 
     // Build JSON response with cache status
-    let mut result = result;
     result.metadata.cache_status = Some(cache_status.clone());
     result.metadata.cache_age_seconds = cache_age;
 
@@ -632,31 +784,77 @@ async fn extract_text_handler(
     let cache_disabled = params.no_cache || cache_state.cache_disabled || cache_dir.is_none();
     drop(cache_state);
 
-    let (result, cache_status, _cache_age) = tokio::task::spawn_blocking(move || {
-        let cache_dir_ref = cache_dir.as_deref();
-        cache::extract_with_cache(
-            &pdf_file,
-            &options,
-            cache_dir_ref,
-            cache_disabled,
-            Some(cache_size_bytes),
-        )
-        .map_err(|e| {
-            let msg = format!("{:?}", e);
-            let diag_code = extract_diag_code_from_error(&msg);
-            AxumError::Extraction(msg, diag_code)
+    #[cfg(feature = "metrics")]
+    let request_metrics = state.metrics.clone();
+    #[cfg(feature = "metrics")]
+    let extraction_started = std::time::Instant::now();
+    #[cfg(feature = "metrics")]
+    request_metrics.inc_inflight_extractions();
+
+    let extracted = {
+        #[cfg(feature = "metrics")]
+        let task_metrics = request_metrics.clone();
+        tokio::task::spawn_blocking(move || {
+            let cache_dir_ref = cache_dir.as_deref();
+            let extraction = cache::extract_with_cache(
+                &pdf_file,
+                &options,
+                cache_dir_ref,
+                cache_disabled,
+                Some(cache_size_bytes),
+            );
+            // Sample the cache's own tracked on-disk size after every
+            // cache-enabled extraction (`metrics` feature).
+            #[cfg(feature = "metrics")]
+            if !cache_disabled {
+                if let Some(dir) = cache_dir_ref {
+                    if let Ok(Some(index)) = pdftract_core::cache::layout::load_index(dir) {
+                        task_metrics.set_cache_size_bytes(index.total_bytes);
+                    }
+                }
+            }
+            extraction.map_err(|e| {
+                let msg = format!("{:?}", e);
+                let diag_code = extract_diag_code_from_error(&msg);
+                AxumError::Extraction(msg, diag_code)
+            })
         })
-    })
-    .await
-    .map_err(|e| {
-        // Distinguish between cancellation (task dropped) and panic
-        if e.is_cancelled() {
-            AxumError::Internal(format!("Task cancelled: {}", e))
-        } else {
-            // is_panic() true means the task panicked - indicates a bug
-            AxumError::InternalPanic(format!("Extraction task panicked: {}", e))
-        }
-    })??;
+        .await
+        .map_err(|e| {
+            // Distinguish between cancellation (task dropped) and panic
+            if e.is_cancelled() {
+                AxumError::Internal(format!("Task cancelled: {}", e))
+            } else {
+                // is_panic() true means the task panicked - indicates a bug
+                AxumError::InternalPanic(format!("Extraction task panicked: {}", e))
+            }
+        })
+    };
+
+    // Observation only (`metrics` feature) — see extract_handler.
+    #[cfg(feature = "metrics")]
+    {
+        request_metrics.dec_inflight_extractions();
+        let (result_label, pages, cache_status_label, diagnostics_detailed) = match &extracted {
+            Ok((result, status, _age)) => (
+                "success",
+                result.pages.len() as u64,
+                Some(status.as_str()),
+                result.metadata.diagnostics_detailed.as_slice(),
+            ),
+            Err(_) => ("error", 0, None, &[]),
+        };
+        record_extraction(
+            &request_metrics,
+            extraction_started.elapsed().as_secs_f64(),
+            result_label,
+            pages,
+            cache_status_label,
+            diagnostics_detailed,
+        );
+    }
+
+    let (result, cache_status, _cache_age) = extracted?;
 
     // Extract fingerprint and diagnostics for audit log
     let fingerprint = result.fingerprint.clone();
@@ -721,6 +919,11 @@ async fn extract_stream_handler(
     // Create a channel for streaming pages
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
 
+    #[cfg(feature = "metrics")]
+    let stream_metrics = state.metrics.clone();
+    #[cfg(feature = "metrics")]
+    stream_metrics.inc_inflight_extractions();
+
     // Spawn extraction task in background
     tokio::task::spawn_blocking(move || {
         use pdftract_core::extract::extract_pdf_ndjson;
@@ -749,8 +952,30 @@ async fn extract_stream_handler(
 
         let writer = ChannelWriter { tx };
 
+        #[cfg(feature = "metrics")]
+        let extraction_started = std::time::Instant::now();
+
         // Extract to NDJSON, streaming each page as it's extracted
-        if let Err(e) = extract_pdf_ndjson(&pdf_file, &options, writer) {
+        let extraction = extract_pdf_ndjson(&pdf_file, &options, writer);
+
+        // Observation only (`metrics` feature). Recorded before the last
+        // channel sender drops, so a fully-drained response always sees
+        // these values.
+        #[cfg(feature = "metrics")]
+        {
+            stream_metrics.dec_inflight_extractions();
+            stream_metrics
+                .observe_extraction_duration(extraction_started.elapsed().as_secs_f64());
+            match &extraction {
+                Ok(metadata) => {
+                    stream_metrics.inc_extraction("success", OCR_PATH_ENABLED);
+                    stream_metrics.add_pages_extracted(metadata.page_count as u64);
+                }
+                Err(_) => stream_metrics.inc_extraction("error", OCR_PATH_ENABLED),
+            }
+        }
+
+        if let Err(e) = extraction {
             // Send error as a JSON line
             let error_json = serde_json::json!({
                 "error": format!("{:?}", e)
@@ -1532,5 +1757,296 @@ mod tests {
             }
             _ => panic!("Expected BadRequest error"),
         }
+    }
+
+    // ---- Metrics instrumentation tests (`metrics` feature) ----
+    //
+    // These drive real extractions through the handlers in process and
+    // assert on the rendered registry; `tests/fixtures/test-minimal.pdf`
+    // is the provenance-recorded fixture that extracts successfully
+    // (1 page, "Dummy PDF file").
+
+    /// Bytes of the extraction fixture used by the metrics tests.
+    #[cfg(feature = "metrics")]
+    fn fixture_pdf_bytes() -> Vec<u8> {
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/test-minimal.pdf"
+        ))
+        .expect("test fixture should be readable")
+    }
+
+    /// Build a multipart POST request carrying the PDF in a `file` field.
+    #[cfg(feature = "metrics")]
+    fn multipart_file_request(uri: &'static str, pdf: &[u8]) -> Request<Body> {
+        const BOUNDARY: &str = "pdftractmetricstestboundary";
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\n\
+                 Content-Disposition: form-data; name=\"file\"; filename=\"fixture.pdf\"\r\n\
+                 Content-Type: application/pdf\r\n\
+                 \r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(pdf);
+        body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={BOUNDARY}"),
+            )
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    /// Metrics: one successful extraction through POST /extract increments
+    /// the extraction counter (correct result/ocr labels), the pages
+    /// counter, the duration histogram, and the HTTP counter, and settles
+    /// the inflight gauge.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_extraction_success_through_serve_handler() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
+        let metrics = state.metrics.clone();
+        let app = build_router(state, 256 * 1024 * 1024);
+
+        let response = app
+            .oneshot(multipart_file_request("/extract", &fixture_pdf_bytes()))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_extractions_total{result=\"success\",ocr=\"false\"} 1\n"),
+            "missing success extraction counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_pages_extracted_total 1\n"),
+            "missing pages counter:\n{text}"
+        );
+        assert!(
+            text.contains(
+                "pdftract_http_requests_total{endpoint=\"/extract\",status=\"200\"} 1\n"
+            ),
+            "missing http counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extraction_duration_seconds_count 1\n"),
+            "missing duration observation:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extraction_duration_seconds_bucket{le=\"+Inf\"} 1\n"),
+            "missing duration bucket:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_inflight_extractions 0\n"),
+            "inflight gauge did not settle:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_build_info{version=\""),
+            "build_info missing:\n{text}"
+        );
+    }
+
+    /// Metrics: exercising the existing cache integration through
+    /// POST /extract moves the hit, miss, and size counters (a miss writes
+    /// an entry; the identical second request hits it).
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_cache_hit_miss_and_size_counters() {
+        use tower::ServiceExt;
+
+        let cache_dir = tempfile::tempdir().expect("temp cache dir");
+        let state = ServeState::new(
+            Some(cache_dir.path().to_path_buf()),
+            64 * 1024 * 1024,
+            false,
+            None,
+            1 << 30,
+            false,
+        );
+        let metrics = state.metrics.clone();
+        let app = build_router(state, 256 * 1024 * 1024);
+        let pdf = fixture_pdf_bytes();
+
+        // First extraction: cache miss, entry written.
+        let response = app
+            .clone()
+            .oneshot(multipart_file_request("/extract", &pdf))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_cache_misses_total 1\n"),
+            "missing cache miss:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_cache_hits_total 0\n"),
+            "hits should still be zero:\n{text}"
+        );
+        assert!(
+            !text.contains("pdftract_cache_size_bytes 0\n"),
+            "cache size should reflect the written entry:\n{text}"
+        );
+
+        // Second extraction of the same document: cache hit.
+        let response = app
+            .oneshot(multipart_file_request("/extract", &pdf))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_cache_hits_total 1\n"),
+            "missing cache hit:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_cache_misses_total 1\n"),
+            "misses must not double-count:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extractions_total{result=\"success\",ocr=\"false\"} 2\n"),
+            "both extractions counted:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_pages_extracted_total 2\n"),
+            "pages from both extractions counted:\n{text}"
+        );
+        assert!(
+            !text.contains("pdftract_cache_size_bytes 0\n"),
+            "cache size stays positive:\n{text}"
+        );
+    }
+
+    /// Metrics: a failing extraction records result="error", the duration,
+    /// and the 422 HTTP response, and settles the inflight gauge.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_extraction_error_records_error_result_and_422() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
+        let metrics = state.metrics.clone();
+        let app = build_router(state, 256 * 1024 * 1024);
+
+        // Valid magic bytes, unparseable body.
+        let not_a_pdf = b"%PDF-1.4\nthis is not a parseable PDF body".to_vec();
+        let response = app
+            .oneshot(multipart_file_request("/extract", &not_a_pdf))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_extractions_total{result=\"error\",ocr=\"false\"} 1\n"),
+            "missing error extraction counter:\n{text}"
+        );
+        assert!(
+            text.contains(
+                "pdftract_http_requests_total{endpoint=\"/extract\",status=\"422\"} 1\n"
+            ),
+            "missing 422 http counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extraction_duration_seconds_count 1\n"),
+            "error extractions are timed too:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_inflight_extractions 0\n"),
+            "inflight gauge did not settle:\n{text}"
+        );
+    }
+
+    /// Metrics: a streamed extraction counts its result, pages, duration,
+    /// and the HTTP response once the body is fully drained.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_stream_extraction_counts_pages_and_http() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
+        let metrics = state.metrics.clone();
+        let app = build_router(state, 256 * 1024 * 1024);
+
+        let response = app
+            .oneshot(multipart_file_request(
+                "/extract/stream",
+                &fixture_pdf_bytes(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Drain to completion; the background task records its metrics
+        // before the response stream closes.
+        let collected = response.into_body().collect().await.unwrap();
+        assert!(
+            String::from_utf8_lossy(&collected.to_bytes()).contains("Dummy PDF file"),
+            "stream should carry the extracted page"
+        );
+
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_extractions_total{result=\"success\",ocr=\"false\"} 1\n"),
+            "missing stream extraction counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_pages_extracted_total 1\n"),
+            "missing stream pages counter:\n{text}"
+        );
+        assert!(
+            text.contains(
+                "pdftract_http_requests_total{endpoint=\"/extract/stream\",status=\"200\"} 1\n"
+            ),
+            "missing stream http counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extraction_duration_seconds_count 1\n"),
+            "missing stream duration observation:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_inflight_extractions 0\n"),
+            "inflight gauge did not settle:\n{text}"
+        );
+    }
+
+    /// Metrics: responses on unregistered paths count under the
+    /// "unmatched" endpoint label, never the raw path.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_unmatched_path_uses_unmatched_label() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
+        let metrics = state.metrics.clone();
+        let app = build_router(state, 256 * 1024 * 1024);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/nope/some/raw/path")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let text = metrics.render();
+        assert!(
+            text.contains(
+                "pdftract_http_requests_total{endpoint=\"unmatched\",status=\"404\"} 1\n"
+            ),
+            "raw path leaked into the endpoint label:\n{text}"
+        );
     }
 }

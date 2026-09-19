@@ -17,13 +17,12 @@
 //!   [`Registry::render`](registry::Registry::render), plus the
 //!   [`CONTENT_TYPE`](openmetrics::CONTENT_TYPE) the future `/metrics`
 //!   endpoint must serve.
-//!
-//! This child ships the registry only: no HTTP listener, no CLI flag,
-//! and no instrumentation of existing call sites (downstream split
-//! children own those).
+//! - [`sampler`] — the rayon busy-task tracking behind
+//!   `pdftract_rayon_pool_utilization`.
 
 pub mod openmetrics;
 pub mod registry;
+pub mod sampler;
 
 pub use openmetrics::{
     escape_help_text, escape_label_value, format_float, render, MetricFamily, MetricKind, Sample,

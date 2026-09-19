@@ -76,6 +76,12 @@ pub struct McpServerState {
 
     /// Audit log state
     pub audit: AuditState,
+
+    /// Metrics registry shared by this server's handlers (`metrics`
+    /// feature). Created at startup, so `pdftract_build_info` is
+    /// populated for the process's whole lifetime.
+    #[cfg(feature = "metrics")]
+    metrics: crate::metrics::Registry,
 }
 
 impl McpServerState {
@@ -97,7 +103,15 @@ impl McpServerState {
             tool_registry: Arc::new(tools::all_tools()),
             root,
             audit: AuditState::new(audit_writer),
+            #[cfg(feature = "metrics")]
+            metrics: crate::metrics::Registry::new(),
         }
+    }
+
+    /// The metrics registry handle (`metrics` feature).
+    #[cfg(feature = "metrics")]
+    pub fn metrics(&self) -> &crate::metrics::Registry {
+        &self.metrics
     }
 
     /// Broadcast a notification to all connected SSE clients.
@@ -159,23 +173,23 @@ pub async fn run_server(
         root.map(|p| p.to_path_buf()),
         audit_writer,
     );
-    let _max_body_bytes = state.max_body_bytes;
 
-    // Build the router
-    // Note: Set DefaultBodyLimit to a very high value (256 MB) so our handler
-    // can catch oversized requests and return a proper JSON error response.
-    // Our custom check in handle_post_request enforces the actual limit.
-    let app = Router::new()
-        .route("/", post(handle_post_request))
-        .route("/sse", get(handle_sse))
-        .route("/health", get(handle_health))
-        .layer(axum::middleware::from_fn_with_state(
-            state.audit.clone(),
-            audit_middleware,
-        ))
-        .with_state(state)
-        .layer(DefaultBodyLimit::max(256 * 1024 * 1024)) // 256 MB hard limit
-        .layer(axum::middleware::from_fn(logging_middleware));
+    // Sample `pdftract_rayon_pool_utilization` periodically for the whole
+    // lifetime of the server (`metrics` feature).
+    #[cfg(feature = "metrics")]
+    {
+        let sampler_registry = state.metrics().clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                sampler_registry
+                    .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
+            }
+        });
+    }
+
+    let app = build_router(state);
 
     // Resolve the bind address
     let addr = bind_addr
@@ -198,6 +212,87 @@ pub async fn run_server(
     axum::serve(listener, app).await.context("Server error")?;
 
     Ok(())
+}
+
+/// Build the MCP HTTP+SSE application router (shared by [`run_server`]
+/// and tests).
+///
+/// Layer order, outermost first: metrics counting (`metrics` feature),
+/// request logging, body limit, audit. The metrics layer sits outermost
+/// so it observes the response actually sent.
+fn build_router(state: McpServerState) -> Router {
+    #[cfg(feature = "metrics")]
+    let metrics_registry = state.metrics().clone();
+
+    // Note: Set DefaultBodyLimit to a very high value (256 MB) so our handler
+    // can catch oversized requests and return a proper JSON error response.
+    // Our custom check in handle_post_request enforces the actual limit.
+    let router = Router::new()
+        .route("/", post(handle_post_request))
+        .route("/sse", get(handle_sse))
+        .route("/health", get(handle_health))
+        .layer(axum::middleware::from_fn_with_state(
+            state.audit.clone(),
+            audit_middleware,
+        ))
+        .with_state(state)
+        .layer(DefaultBodyLimit::max(256 * 1024 * 1024)) // 256 MB hard limit
+        .layer(axum::middleware::from_fn(logging_middleware));
+
+    // Count every response in `pdftract_http_requests_total`. Observation
+    // only — no new route.
+    #[cfg(feature = "metrics")]
+    let router = router.layer(axum::middleware::from_fn_with_state(
+        metrics_registry,
+        metrics_http_middleware,
+    ));
+
+    router
+}
+
+/// Map a request path to its registered route template for the `endpoint`
+/// label. Unregistered paths collapse to `"unmatched"` — the label never
+/// carries a raw request path (plan cardinality policy).
+#[cfg(feature = "metrics")]
+fn endpoint_label(path: &str) -> &'static str {
+    match path {
+        "/" => "/",
+        "/health" => "/health",
+        "/sse" => "/sse",
+        _ => "unmatched",
+    }
+}
+
+/// Count one HTTP response in `pdftract_http_requests_total`
+/// (`metrics` feature).
+#[cfg(feature = "metrics")]
+async fn metrics_http_middleware(
+    State(registry): State<crate::metrics::Registry>,
+    req: AxumRequest,
+    next: axum::middleware::Next,
+) -> AxumResponse {
+    let endpoint = endpoint_label(req.uri().path());
+    let response = next.run(req).await;
+    registry.inc_http_request(endpoint, response.status().as_u16());
+    response
+}
+
+/// The tool name a `tools/call` request invokes, if well-formed.
+///
+/// Used for `pdftract_mcp_requests_total`; the invocation is counted by
+/// its requested name, including names absent from the registry (the
+/// client did invoke that tool; it gets a method-not-found error back).
+#[cfg(feature = "metrics")]
+fn tool_call_name(request: &Request) -> Option<String> {
+    if request.method != "tools/call" {
+        return None;
+    }
+    request
+        .params
+        .as_ref()?
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
 }
 
 /// POST / handler - process JSON-RPC requests.
@@ -247,6 +342,11 @@ async fn handle_post_request(
     let root = state.root.as_deref();
 
     for request in requests {
+        // Count the tool invocation (`metrics` feature).
+        #[cfg(feature = "metrics")]
+        if let Some(tool_name) = tool_call_name(&request) {
+            state.metrics.inc_mcp_request(&tool_name);
+        }
         let response = handle_request(request, registry, root);
         responses.push(response);
     }
@@ -975,6 +1075,56 @@ mod tests {
             median_short,
             median_long,
             ratio
+        );
+    }
+
+    /// Metrics: a `tools/call` driven through the HTTP router counts in
+    /// `pdftract_mcp_requests_total` with the tool label, and the HTTP
+    /// response counts under the "/" endpoint label.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_registry_counts_tool_call_and_http() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+
+        let state = McpServerState::new(None, None, None, None);
+        let metrics = state.metrics().clone();
+        let app = build_router(state);
+
+        let pdf_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/test-minimal.pdf"
+        );
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "hash",
+                "arguments": {"path": pdf_path}
+            }
+        });
+        let request = AxumRequest::builder()
+            .method("POST")
+            .uri("/")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_mcp_requests_total{tool=\"hash\"} 1\n"),
+            "missing mcp tool counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_http_requests_total{endpoint=\"/\",status=\"200\"} 1\n"),
+            "missing mcp http counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_build_info{version=\""),
+            "build_info missing:\n{text}"
         );
     }
 }

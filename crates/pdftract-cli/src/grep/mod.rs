@@ -352,6 +352,9 @@ pub fn run_grep(args: GrepArgs) -> Result<()> {
         .with_context(|| "Failed to build thread pool")?
         .install(|| {
             work_items.par_iter().for_each(|item| {
+                // Feed `pdftract_rayon_pool_utilization` (`metrics` feature).
+                #[cfg(feature = "metrics")]
+                let _busy = crate::metrics::sampler::BusyGuard::begin();
                 if let Err(e) = worker_run(
                     item,
                     &matcher_clone,
