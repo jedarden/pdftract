@@ -730,7 +730,7 @@ async fn extract_handler(
         );
     }
 
-    let (mut result, cache_status, cache_age) = extracted?;
+    let (mut result, cache_status, cache_age) = extracted??;
 
     // Build JSON response with cache status
     result.metadata.cache_status = Some(cache_status.clone());
@@ -854,7 +854,7 @@ async fn extract_text_handler(
         );
     }
 
-    let (result, cache_status, _cache_age) = extracted?;
+    let (result, cache_status, _cache_age) = extracted??;
 
     // Extract fingerprint and diagnostics for audit log
     let fingerprint = result.fingerprint.clone();
