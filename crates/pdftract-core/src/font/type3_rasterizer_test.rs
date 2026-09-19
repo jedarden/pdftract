@@ -2873,8 +2873,22 @@ fn test_all_fixtures_accessible() {
 /// coordinates land 1:1 on bitmap pixels (34x34 with the 1px padding),
 /// so ink positions can be asserted exactly.
 fn create_context_path_font(obj_nr: u32) -> Type3Font {
+    create_context_path_font_multi(&[("/A", obj_nr)])
+}
+
+/// Build a Type3 font mapping every (name, obj_nr) pair in /CharProcs.
+///
+/// Same identity FontMatrix and FontBBox [0 0 32 32] as the single-glyph
+/// builder above, so glyph-space coordinates land 1:1 on bitmap pixels
+/// (34x34 with the 1px padding) and ink positions can be asserted exactly.
+/// The multi-entry CharProcs dict is what the end-to-end fixture tests at
+/// the bottom of this file need: several glyph kinds rasterized through one
+/// DocumentContext.
+fn create_context_path_font_multi(entries: &[(&str, u32)]) -> Type3Font {
     let mut char_procs = PdfDict::new();
-    char_procs.insert(intern("/A"), PdfObject::Ref(ObjRef::new(obj_nr, 0)));
+    for (name, obj_nr) in entries {
+        char_procs.insert(intern(name), PdfObject::Ref(ObjRef::new(*obj_nr, 0)));
+    }
 
     let mut font_dict = PdfDict::new();
     font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs)));
@@ -3030,5 +3044,161 @@ fn test_rasterize_without_context_or_callback_returns_none() {
     assert!(
         result.is_none(),
         "no callback and no context must degrade to None"
+    );
+}
+
+// ============================================================================
+// End-to-End DocumentContext Fixture Tests (multi-glyph, parent criterion 5)
+//
+// The tests above prove individual resolution failures degrade to None and
+// that a single filled rect rasterizes. These tests exercise the FULL
+// pipeline — Type3 font dict -> char_proc ObjRef -> DocumentContext
+// dereference -> decode_stream -> execute_content_stream -> rasterized
+// bitmap — across several glyph kinds sharing one document, on a fixture
+// with a FontBBox and multiple CharProcs entries (pdftract-384db234).
+// ============================================================================
+
+/// Build the multi-glyph end-to-end fixture: a Type3 font with FontBBox
+/// [0 0 32 32] and four CharProcs entries, one per glyph kind, all
+/// resolving through a single DocumentContext.
+///
+/// Object numbers are spaced 200 bytes apart so the helper-assembled
+/// indirect objects cannot overlap inside the synthesized source buffer.
+/// The identity FontMatrix keeps glyph-space coordinates 1:1 with bitmap
+/// pixels, so every ink position below is asserted exactly.
+fn create_multi_glyph_fixture() -> (Type3Font, DocumentContext<'static>) {
+    let filled_rect = create_pdf_stream_object(31, 0, "", b"3 3 6 6 re f");
+    let stroked_line = create_pdf_stream_object(41, 0, "", b"6 10 m 26 10 l S");
+    let multi_op = create_pdf_stream_object(
+        42,
+        0,
+        "",
+        b"q 1 0 0 1 4 6 cm 2 2 8 8 re f Q 10 20 m 24 20 l S",
+    );
+    let malformed = create_pdf_stream_object(43, 0, "", b"ZZ (junk) [1 2 /Nm 8 8 12 12");
+
+    let doc_context = create_valid_dereference_context(vec![
+        (31, 400, 0, filled_rect),
+        (41, 600, 0, stroked_line),
+        (42, 800, 0, multi_op),
+        (43, 1000, 0, malformed),
+    ]);
+    let font = create_context_path_font_multi(&[("/A", 31), ("/B", 41), ("/C", 42), ("/D", 43)]);
+    (font, doc_context)
+}
+
+/// Glyph kind 2 of 3: a stroked path reached through the DocumentContext.
+///
+/// Rasterizing "A" (filled rect) and "B" (stroked line) from the same
+/// multi-entry fixture proves CharProcs navigation across several entries
+/// and that a stroked path — not just a scanline fill — reaches the bitmap
+/// through document resolution. The stroke convention is 1-pixel Bresenham
+/// ink (0), so '6 10 m 26 10 l S' must ink exactly row 10, columns 6..=26.
+#[test]
+fn test_rasterize_via_document_context_stroked_path_glyph() {
+    let (font, doc_context) = create_multi_glyph_fixture();
+    assert!(
+        font.has_glyph("A") && font.has_glyph("B"),
+        "fixture must carry at least two CharProcs entries"
+    );
+
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!((width, height), (34, 34));
+
+    // Glyph A: '3 3 6 6 re f' fills exactly [3..=9]x[3..=9] = 7x7 pixels.
+    let bitmap_a = rasterize_type3_glyph(&font, "A", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("filled-rect glyph must resolve via the context and rasterize");
+    assert_eq!(bitmap_a.len(), width * height);
+    assert_eq!(
+        bitmap_a.iter().filter(|&&p| p != 255).count(),
+        7 * 7,
+        "filled-rect glyph must ink exactly its 7x7 geometry"
+    );
+
+    // Glyph B: the stroked line.
+    let bitmap_b = rasterize_type3_glyph(&font, "B", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("stroked-path glyph must resolve via the context and rasterize");
+    assert_eq!(bitmap_b.len(), width * height);
+
+    let px = |x: usize, y: usize| bitmap_b[y * width + x];
+    assert_eq!(px(6, 10), 0, "line start must be black ink");
+    assert_eq!(px(16, 10), 0, "line midpoint must be black ink");
+    assert_eq!(px(26, 10), 0, "line end must be black ink");
+    assert_eq!(px(16, 9), 255, "stroke must stay one pixel tall above");
+    assert_eq!(px(16, 11), 255, "stroke must stay one pixel tall below");
+    assert_eq!(px(0, 0), 255, "padding outside the stroke must stay white");
+
+    let inked = bitmap_b.iter().filter(|&&p| p != 255).count();
+    assert_eq!(
+        inked, 21,
+        "Bresenham must ink exactly columns 6..=26 of row 10"
+    );
+    assert_ne!(
+        bitmap_a, bitmap_b,
+        "the two glyph kinds must rasterize to different bitmaps"
+    );
+}
+
+/// Glyph kind 3 of 3: a multi-operator charproc reached through the
+/// DocumentContext. 'q 1 0 0 1 4 6 cm 2 2 8 8 re f Q 10 20 m 24 20 l S'
+/// combines graphics-state save/restore, a cm transform, a fill, and a
+/// stroke in one stream; the ink positions below can only be produced by
+/// executing every operator in order against the document-resolved bytes.
+#[test]
+fn test_rasterize_via_document_context_multi_operator_glyph() {
+    let (font, doc_context) = create_multi_glyph_fixture();
+    assert!(font.has_glyph("C"), "fixture must map glyph C");
+
+    let bitmap = rasterize_type3_glyph(&font, "C", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("multi-operator glyph must resolve via the context and rasterize");
+
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!((width, height), (34, 34));
+    assert_eq!(bitmap.len(), width * height);
+
+    let px = |x: usize, y: usize| bitmap[y * width + x];
+    // cm translates the rect (2,2)-(10,10) by (4,6) -> (6,8)-(14,16).
+    assert_eq!(px(6, 8), 0, "translated rect lower-left must be inked");
+    assert_eq!(px(10, 13), 0, "translated rect interior must be inked");
+    assert_eq!(px(14, 16), 0, "translated rect upper-right must be inked");
+    assert_eq!(px(2, 2), 255, "untranslated corner must stay white: cm was applied");
+    assert_eq!(px(2, 10), 255, "untranslated left edge must stay white: cm was applied");
+    // After Q restores the identity CTM, the stroke lands at raw coordinates.
+    assert_eq!(px(10, 20), 0, "post-restore stroke start must be inked");
+    assert_eq!(px(24, 20), 0, "post-restore stroke end must be inked");
+    assert_eq!(px(17, 19), 255, "stroke must stay one pixel tall above");
+    assert_eq!(px(17, 21), 255, "stroke must stay one pixel tall below");
+    assert_eq!(px(0, 0), 255, "padding must stay white");
+
+    // Fill [6..=14]x[8..=18] = 9x9 pixels plus a 15-pixel stroke on row 20.
+    let inked = bitmap.iter().filter(|&&p| p != 255).count();
+    assert_eq!(
+        inked,
+        9 * 9 + 15,
+        "fill and stroke must each contribute exactly their own geometry"
+    );
+}
+
+/// A charproc whose stream RESOLVES but whose content is garbage must not
+/// panic and must not fabricate ink. execute_content_stream's documented
+/// contract is tolerant degradation — unknown operators are skipped and
+/// dangling operands are ignored — so the pipeline returns a full-size
+/// blank bitmap. Resolution-level failures (missing ref, non-stream target,
+/// unparseable object bytes) are the cases that return None; the sibling
+/// tests above cover those end-to-end.
+#[test]
+fn test_rasterize_via_document_context_malformed_content_degrades_gracefully() {
+    let (font, doc_context) = create_multi_glyph_fixture();
+    assert!(font.has_glyph("D"), "fixture must map glyph D");
+
+    let bitmap = rasterize_type3_glyph(&font, "D", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("resolved-but-malformed content degrades to a blank bitmap, not None");
+
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!((width, height), (34, 34), "malformed content must not change bitmap dimensions");
+    assert_eq!(bitmap.len(), width * height);
+    assert!(
+        bitmap.iter().all(|&p| p == 255),
+        "garbage content carries no painting operator, so every pixel must stay white"
     );
 }
