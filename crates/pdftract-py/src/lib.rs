@@ -6,6 +6,7 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::path::Path;
+use std::sync::OnceLock;
 
 // Type alias for PyO3 owned references
 type PyResultAny<'py> = PyResult<Py<PyAny>>;
@@ -52,17 +53,85 @@ use pdftract_core::diagnostics::DIAGNOSTIC_CATALOG;
 // Exception hierarchy
 // ============================================================================
 
-// Use PyO3's create_exception! macro to create proper exception types
-// with Python inheritance. EncryptionError inherits from PdftractError,
-// and all others inherit from PdftractError.
-pyo3::create_exception!(pdftract, PdftractError, pyo3::exceptions::PyException);
-pyo3::create_exception!(pdftract, EncryptionError, PdftractError);
-pyo3::create_exception!(pdftract, CorruptPdfError, PdftractError);
-pyo3::create_exception!(pdftract, SourceUnreachableError, PdftractError);
-pyo3::create_exception!(pdftract, RemoteFetchInterruptedError, PdftractError);
-pyo3::create_exception!(pdftract, TlsError, PdftractError);
-pyo3::create_exception!(pdftract, ReceiptVerifyError, PdftractError);
-pyo3::create_exception!(pdftract, UnsupportedOperationError, PdftractError);
+/// The exception types this module raises.
+///
+/// The hierarchy is *defined* once, in `python/pdftract/exceptions.py`; this
+/// module resolves those very class objects at import time and raises them. The
+/// alternative — `pyo3::create_exception!` here — would mint a second, unrelated
+/// `PdftractError`, and `except pdftract.PdftractError` would never catch a
+/// native failure.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ErrorKind {
+    Base,
+    CorruptPdf,
+    Encryption,
+    SourceUnreachable,
+    RemoteFetchInterrupted,
+    Tls,
+    ReceiptVerify,
+    UnsupportedOperation,
+}
+
+static EXCEPTION_TYPES: OnceLock<ExceptionTypes> = OnceLock::new();
+
+#[derive(Clone)]
+struct ExceptionTypes {
+    base: Py<PyAny>,
+    corrupt_pdf: Py<PyAny>,
+    encryption: Py<PyAny>,
+    source_unreachable: Py<PyAny>,
+    remote_fetch_interrupted: Py<PyAny>,
+    tls: Py<PyAny>,
+    receipt_verify: Py<PyAny>,
+    unsupported_operation: Py<PyAny>,
+}
+
+impl ExceptionTypes {
+    /// Import the hierarchy from `pdftract.exceptions`, the package's public
+    /// source of truth for exception identity.
+    ///
+    /// Called from `#[pymodule]`; importing `pdftract.exceptions` while
+    /// `pdftract/__init__.py` is still executing is safe because that module
+    /// never reads anything from the parent package.
+    fn from_python(py: Python<'_>) -> PyResult<Self> {
+        let exceptions = py.import("pdftract.exceptions")?;
+        Ok(Self {
+            base: exceptions.getattr("PdftractError")?.into(),
+            corrupt_pdf: exceptions.getattr("CorruptPdfError")?.into(),
+            encryption: exceptions.getattr("EncryptionError")?.into(),
+            source_unreachable: exceptions.getattr("SourceUnreachableError")?.into(),
+            remote_fetch_interrupted: exceptions
+                .getattr("RemoteFetchInterruptedError")?
+                .into(),
+            tls: exceptions.getattr("TlsError")?.into(),
+            receipt_verify: exceptions.getattr("ReceiptVerifyError")?.into(),
+            unsupported_operation: exceptions.getattr("UnsupportedOperationError")?.into(),
+        })
+    }
+
+    /// The resolved types, or the init failure that prevented resolving them.
+    fn get() -> PyResult<&'static Self> {
+        EXCEPTION_TYPES.get().ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "pdftract exception types not initialised; pdftract._native must be \
+                 imported as part of the pdftract package",
+            )
+        })
+    }
+
+    fn get_type(&self, kind: ErrorKind) -> &Py<PyAny> {
+        match kind {
+            ErrorKind::Base => &self.base,
+            ErrorKind::CorruptPdf => &self.corrupt_pdf,
+            ErrorKind::Encryption => &self.encryption,
+            ErrorKind::SourceUnreachable => &self.source_unreachable,
+            ErrorKind::RemoteFetchInterrupted => &self.remote_fetch_interrupted,
+            ErrorKind::Tls => &self.tls,
+            ErrorKind::ReceiptVerify => &self.receipt_verify,
+            ErrorKind::UnsupportedOperation => &self.unsupported_operation,
+        }
+    }
+}
 
 // ============================================================================
 // Helper functions
@@ -76,75 +145,61 @@ fn get_hint_for_code(code: &str) -> Option<&'static str> {
         .map(|info| info.suggested_action)
 }
 
-/// Convert a Rust error to the appropriate Python exception with attributes.
+/// Classify an extraction failure into the exception kind and diagnostic code
+/// it should surface as.
 ///
-/// This function maps anyhow::Error to the appropriate Python exception type
-/// and sets the code, page_index, and hint attributes from the error context.
-/// Since anyhow::Error doesn't directly expose Diagnostic information, we
-/// parse the error message to identify the diagnostic code and set attributes
-/// accordingly.
-fn map_error_to_py(py: Python, err: anyhow::Error) -> PyErr {
-    let msg = err.to_string();
-    let err_str = msg.to_lowercase();
+/// `anyhow::Error` carries no structured diagnostic, so this reads the message.
+fn classify_error(msg: &str) -> (ErrorKind, Option<String>) {
+    let msg = msg.to_lowercase();
 
-    // Determine exception type, diagnostic code, and hint based on error message
-    let (code, hint): (Option<String>, Option<String>) = if err_str.contains("encrypted")
-        || err_str.contains("password")
-    {
-        let diag_code = if err_str.contains("wrong") || err_str.contains("incorrect") {
+    if msg.contains("encrypted") || msg.contains("password") {
+        let diag_code = if msg.contains("wrong") || msg.contains("incorrect") {
             "ENCRYPTION_WRONG_PASSWORD"
         } else {
             "ENCRYPTION_UNSUPPORTED"
         };
+        (ErrorKind::Encryption, Some(diag_code.to_string()))
+    } else if msg.contains("corrupt") || msg.contains("invalid") {
+        (ErrorKind::CorruptPdf, Some("STRUCT_INVALID_NAME".to_string()))
+    } else if msg.contains("tls") || msg.contains("certificate") || msg.contains("ssl") {
+        (ErrorKind::Tls, Some("REMOTE_TLS_ERROR".to_string()))
+    } else if msg.contains("network") || msg.contains("interrupted") {
         (
-            Some(diag_code.to_string()),
-            get_hint_for_code(diag_code).map(|h| h.to_string()),
-        )
-    } else if err_str.contains("corrupt") || err_str.contains("invalid") {
-        (
-            Some("STRUCT_INVALID_NAME".to_string()),
-            get_hint_for_code("STRUCT_INVALID_NAME").map(|h| h.to_string()),
-        )
-    } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl")
-    {
-        (
-            Some("REMOTE_TLS_ERROR".to_string()),
-            get_hint_for_code("REMOTE_TLS_ERROR").map(|h| h.to_string()),
-        )
-    } else if err_str.contains("network") || err_str.contains("interrupted") {
-        (
+            ErrorKind::RemoteFetchInterrupted,
             Some("REMOTE_FETCH_INTERRUPTED".to_string()),
-            get_hint_for_code("REMOTE_FETCH_INTERRUPTED").map(|h| h.to_string()),
         )
-    } else if err_str.contains("unreachable") || err_str.contains("not found") {
+    } else if msg.contains("unreachable") || msg.contains("not found") {
         (
+            ErrorKind::SourceUnreachable,
             Some("REMOTE_HOST_UNREACHABLE".to_string()),
-            get_hint_for_code("REMOTE_HOST_UNREACHABLE").map(|h| h.to_string()),
         )
     } else {
-        (None, None)
-    };
+        (ErrorKind::Base, None)
+    }
+}
 
-    // Map to specific exception based on error message
-    // Create PyErr and set attributes on the instance
-    let PyErr = if err_str.contains("encrypted") || err_str.contains("password") {
-        EncryptionError::new_err(msg)
-    } else if err_str.contains("corrupt") || err_str.contains("invalid") {
-        CorruptPdfError::new_err(msg)
-    } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl")
-    {
-        TlsError::new_err(msg)
-    } else if err_str.contains("network") || err_str.contains("interrupted") {
-        RemoteFetchInterruptedError::new_err(msg)
-    } else if err_str.contains("unreachable") || err_str.contains("not found") {
-        SourceUnreachableError::new_err(msg)
-    } else {
-        PdftractError::new_err(msg)
-    };
+/// Convert a Rust error to the appropriate Python exception with attributes.
+///
+/// Maps `anyhow::Error` to one of the exception types defined in
+/// `pdftract.exceptions` and sets the code, page_index, and hint attributes
+/// derived from the error message.
+fn map_error_to_py(py: Python, err: anyhow::Error) -> PyErr {
+    let msg = err.to_string();
+    let (kind, code) = classify_error(&msg);
+    let hint = code.as_deref().and_then(get_hint_for_code);
 
-    // Set attributes on the exception instance
-    // We need to get the instance and set attributes using Python's setattr
-    let instance = PyErr.value(py);
+    let types = match ExceptionTypes::get() {
+        Ok(types) => types,
+        Err(uninitialised) => return uninitialised,
+    };
+    let exc_type = match types.get_type(kind).downcast::<pyo3::types::PyType>(py) {
+        Ok(exc_type) => exc_type,
+        Err(e) => return PyErr::from(e),
+    };
+    let exc = PyErr::from_type(exc_type, (msg,));
+
+    // Attach the diagnostic attributes to the instance PyErr::from_type built
+    let instance = exc.value(py);
     if let Some(ref c) = code {
         let _ = instance.setattr("code", c);
     }
@@ -153,7 +208,7 @@ fn map_error_to_py(py: Python, err: anyhow::Error) -> PyErr {
         let _ = instance.setattr("hint", h);
     }
 
-    PyErr
+    exc
 }
 
 /// Convert Python kwargs to ExtractionOptions.
@@ -499,23 +554,32 @@ fn attachment_to_py<'py>(py: Python<'py>, attachment: AttachmentJson) -> PyResul
 
 #[pymodule]
 fn _native(py: Python, m: &PyModule) -> PyResult<()> {
-    // Add exception classes with proper Python inheritance
-    m.add("PdftractError", py.get_type::<PdftractError>())?;
-    m.add("EncryptionError", py.get_type::<EncryptionError>())?;
-    m.add("CorruptPdfError", py.get_type::<CorruptPdfError>())?;
+    // Resolve the exception hierarchy defined in pdftract.exceptions and
+    // re-expose it here, so `pdftract._native.PdftractError` is the very same
+    // object `pdftract.PdftractError` is.
+    let types = ExceptionTypes::from_python(py)?;
+    if EXCEPTION_TYPES.set(types).is_err() {
+        return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            "pdftract exception types already initialised",
+        ));
+    }
+    let types = EXCEPTION_TYPES.get().expect("just set above");
+    m.add("PdftractError", types.base.clone_ref(py))?;
+    m.add("EncryptionError", types.encryption.clone_ref(py))?;
+    m.add("CorruptPdfError", types.corrupt_pdf.clone_ref(py))?;
     m.add(
         "SourceUnreachableError",
-        py.get_type::<SourceUnreachableError>(),
+        types.source_unreachable.clone_ref(py),
     )?;
     m.add(
         "RemoteFetchInterruptedError",
-        py.get_type::<RemoteFetchInterruptedError>(),
+        types.remote_fetch_interrupted.clone_ref(py),
     )?;
-    m.add("TlsError", py.get_type::<TlsError>())?;
-    m.add("ReceiptVerifyError", py.get_type::<ReceiptVerifyError>())?;
+    m.add("TlsError", types.tls.clone_ref(py))?;
+    m.add("ReceiptVerifyError", types.receipt_verify.clone_ref(py))?;
     m.add(
         "UnsupportedOperationError",
-        py.get_type::<UnsupportedOperationError>(),
+        types.unsupported_operation.clone_ref(py),
     )?;
 
     // Add extract_stream function

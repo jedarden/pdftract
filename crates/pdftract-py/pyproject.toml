@@ -33,6 +33,11 @@ Issues = "https://github.com/jedarden/pdftract/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# The PyO3 extension is declared as `#[pymodule] fn _native` and lives inside the
+# `pdftract` package, not in a top-level `pdftract_py` module — without this hint
+# maturin infers `pdftract_py` from the Cargo package name and fails to build.
+# Keeping the extension in the package also lets it share `pdftract.exceptions`.
+module-name = "pdftract._native"
 # Strip symbols from the final wheel for smaller size
 strip = true
 # Use abi3 for forward compatibility across Python 3.10+

@@ -400,7 +400,7 @@ impl StreamIterator {
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     // Sender is done - check thread result
-                    return self.check_thread_complete();
+                    return self.check_thread_complete(py);
                 }
                 Err(mpsc::TryRecvError::Empty) => {
                     // Fall through to blocking recv below
@@ -423,21 +423,25 @@ impl StreamIterator {
                 let py_obj = page_frame_to_py(py, &frame)?;
                 Ok(Some(py_obj))
             }
-            Err(mpsc::RecvError) => self.check_thread_complete(),
+            Err(mpsc::RecvError) => self.check_thread_complete(py),
         }
     }
 }
 
 impl StreamIterator {
-    fn check_thread_complete(&mut self) -> PyResult<Option<Py<PyAny>>> {
+    fn check_thread_complete(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
         if let Some(handle) = self.handle.take() {
             self.receiver.take();
 
             match handle.join() {
                 Ok(Ok(())) => Err(PyStopIteration::new_err(())),
-                Ok(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e)),
-                Err(_) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    "Extraction thread panicked",
+                // Extraction failures surface through the documented hierarchy
+                // (PdftractError and its subtypes), not a bare RuntimeError;
+                // the mapper uses the same classes as the one-shot paths.
+                Ok(Err(e)) => Err(crate::map_error_to_py(py, anyhow::Error::msg(e))),
+                Err(_) => Err(crate::map_error_to_py(
+                    py,
+                    anyhow::Error::msg("Extraction thread panicked"),
                 )),
             }
         } else {

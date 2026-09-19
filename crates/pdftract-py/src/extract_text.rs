@@ -198,31 +198,11 @@ pub fn extract_text_fn(py: Python<'_>, path: &str, kwargs: Option<&PyDict>) -> P
     // Resolve path (local file or URL)
     let pdf_path = Path::new(path);
 
-    // Run extraction with GIL released so other Python threads can run
+    // Run extraction with GIL released so other Python threads can run. The
+    // mapper resolves the package-owned exception classes after reacquiring it.
     let text = py
         .allow_threads(|| extract_text(pdf_path, &opts))
-        .map_err(|e| {
-            // Map anyhow::Error to appropriate Python exception
-            let msg = e.to_string();
-            let err_str = msg.to_lowercase();
-
-            if err_str.contains("encrypted") || err_str.contains("password") {
-                PyErr::new::<crate::EncryptionError, _>(msg)
-            } else if err_str.contains("corrupt") || err_str.contains("invalid") {
-                PyErr::new::<crate::CorruptPdfError, _>(msg)
-            } else if err_str.contains("tls")
-                || err_str.contains("certificate")
-                || err_str.contains("ssl")
-            {
-                PyErr::new::<crate::TlsError, _>(msg)
-            } else if err_str.contains("network") || err_str.contains("interrupted") {
-                PyErr::new::<crate::RemoteFetchInterruptedError, _>(msg)
-            } else if err_str.contains("unreachable") || err_str.contains("not found") {
-                PyErr::new::<crate::SourceUnreachableError, _>(msg)
-            } else {
-                PyErr::new::<crate::PdftractError, _>(msg)
-            }
-        })?;
+        .map_err(|e| crate::map_error_to_py(py, e))?;
 
     Ok(text)
 }

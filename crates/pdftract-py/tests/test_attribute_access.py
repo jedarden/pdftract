@@ -77,19 +77,8 @@ def _load_document() -> Document:
 
 
 def _extraction_error_types() -> tuple:
-    """Every exception type extraction can raise for an unreadable PDF.
-
-    ``pdftract/exceptions.py`` declares a pure-Python hierarchy whose names
-    shadow the ones the PyO3 module registers, so ``pdftract.PdftractError``
-    is *not* the base of the errors the native extractor actually raises.
-    Both bases are accepted here so a parser failure is reported as a parser
-    failure rather than as an unhandled error.
-    """
-    bases = [pdftract.PdftractError]
-    native_base = getattr(getattr(pdftract, "_native", None), "PdftractError", None)
-    if native_base is not None and native_base not in bases:
-        bases.append(native_base)
-    return tuple(bases)
+    """Every exception type extraction can raise for an unreadable PDF."""
+    return (pdftract.PdftractError,)
 
 
 def test_doc_pages_attribute_accessible():
