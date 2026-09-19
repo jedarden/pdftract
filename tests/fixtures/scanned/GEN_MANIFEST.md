@@ -54,6 +54,8 @@ above 8%. DejaVu Serif also has a serifed capital I, avoiding the sans-serif
 
 ### report-300dpi (multi-page)
 - **Ground Truth**: `multi-page/report-300dpi-ground-truth.txt` (1383 words)
+- **Ground Truth alias**: `multi-page/report-300dpi.txt` (byte-identical copy of
+  the ground truth under the plain `<name>.txt` name, matching invoice/letter/form)
 - **Scanned PDF**: `multi-page/report-300dpi.pdf` (11 pages)
 - **Reference OCR**: `multi-page/report-300dpi-ocr.txt`
 - **Specifications**: DejaVu Serif 12pt, Letter, 1.0" L/R + 0.75" T/B margins,
