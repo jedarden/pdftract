@@ -711,14 +711,21 @@ async fn extract_handler(
     #[cfg(feature = "metrics")]
     {
         request_metrics.dec_inflight_extractions();
+        // `extracted` nests two Results: the join error (outer) and the
+        // extraction error (inner) — either outcome is a metric "error".
         let (result_label, pages, cache_status_label, diagnostics_detailed) = match &extracted {
-            Ok((result, status, _age)) => (
+            Ok(Ok((result, status, _age))) => (
                 "success",
                 result.pages.len() as u64,
                 Some(status.as_str()),
                 result.metadata.diagnostics_detailed.as_slice(),
             ),
-            Err(_) => ("error", 0, None, &[]),
+            _ => (
+                "error",
+                0,
+                None,
+                &[] as &[pdftract_core::schema::DiagnosticJson],
+            ),
         };
         record_extraction(
             &request_metrics,
@@ -835,14 +842,20 @@ async fn extract_text_handler(
     #[cfg(feature = "metrics")]
     {
         request_metrics.dec_inflight_extractions();
+        // `extracted` nests two Results — see extract_handler.
         let (result_label, pages, cache_status_label, diagnostics_detailed) = match &extracted {
-            Ok((result, status, _age)) => (
+            Ok(Ok((result, status, _age))) => (
                 "success",
                 result.pages.len() as u64,
                 Some(status.as_str()),
                 result.metadata.diagnostics_detailed.as_slice(),
             ),
-            Err(_) => ("error", 0, None, &[]),
+            _ => (
+                "error",
+                0,
+                None,
+                &[] as &[pdftract_core::schema::DiagnosticJson],
+            ),
         };
         record_extraction(
             &request_metrics,

@@ -14,6 +14,11 @@ mod hash;
 mod header;
 mod inspect;
 mod mcp;
+// Metrics registry and OpenMetrics exposition (`metrics` feature) — the bin
+// re-declares the lib's modules, so serve/mcp/grep can resolve
+// `crate::metrics` here too.
+#[cfg(feature = "metrics")]
+mod metrics;
 mod middleware;
 mod migrate;
 mod output;
