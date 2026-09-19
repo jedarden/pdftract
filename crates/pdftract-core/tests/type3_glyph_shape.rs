@@ -427,3 +427,43 @@ fn callback_takes_precedence_over_document_context() {
         .expect("callback bytes must rasterize");
     assert_inked_exactly(&bitmap, 0, 0, 4, 4);
 }
+
+/// A charproc whose resolution re-enters an object already being resolved is
+/// circular: the DocumentContext path must return None, not recurse forever
+/// or panic.
+///
+/// The production cycle detector is the per-thread RESOLVING set
+/// (`parser::object::cycle`): a `10 0 R -> ... -> 10 0 R` chain trips it when
+/// the rasterizer re-enters the object that is mid-resolution up-stack.
+/// Holding a `ResolutionGuard` for the glyph's object reproduces exactly that
+/// re-entrant state — the first resolution of a ref cannot be circular by
+/// construction, so the guard is the only way to reach the detector from
+/// outside a live resolution chain.
+#[test]
+fn document_context_path_returns_none_for_circular_ref() {
+    use pdftract_core::parser::object::cycle::ResolutionGuard;
+
+    let ctx = document_context_over(&[(
+        10,
+        "10 0 obj\n<< >>\nstream\n5 5 10 10 re f\nendstream\nendobj\n",
+    )]);
+
+    let font = font_with_glyphs(&[("loop", 10)]);
+
+    // Object 10 is "already being resolved" on this thread — the state a
+    // circular char_proc chain produces when rasterize_type3_glyph re-enters
+    // it. The resolver's CircularRef error must surface as None.
+    let _cycle_guard = ResolutionGuard::new(ObjRef::new(10, 0));
+
+    assert!(
+        rasterize_type3_glyph(&font, "loop", Some(&ctx), None::<&StreamResolverFn>).is_none(),
+        "a re-entrant (circular) resolution must return None, not recurse or panic"
+    );
+
+    // The None came from cycle detection, not a broken fixture: with the
+    // guard released the same context resolves and rasterizes normally.
+    drop(_cycle_guard);
+    let bitmap = rasterize_type3_glyph(&font, "loop", Some(&ctx), None::<&StreamResolverFn>)
+        .expect("the same context must rasterize once the cycle guard is released");
+    assert_inked_exactly(&bitmap, 5, 5, 15, 15);
+}
