@@ -7651,6 +7651,159 @@ mod tests {
         assert!(failed.is_none(), "failed stream resolution must return None");
     }
 
+    // ------------------------------------------------------------------------
+    // DocumentContext resolution path (resolve_stream callback absent).
+    //
+    // The tests above exercise the callback route; these exercise the other
+    // half of the stream-resolution contract (pdftract-3923eb56): the
+    // char_proc ObjRef is dereferenced through the DocumentContext's
+    // XrefResolver + PdfSource and the stream is decoded with decode_stream.
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_resolve_char_proc_via_context_valid_stream_yields_decoded_bytes() {
+        use crate::font::type3_rasterizer_test::{
+            create_pdf_stream_object, create_valid_dereference_context,
+        };
+
+        // Object 12: an uncompressed charproc content stream drawing a rect.
+        let content = b"8 8 12 12 re f";
+        let obj_bytes = create_pdf_stream_object(12, 0, "", content);
+        let doc_context = create_valid_dereference_context(vec![(12, 400, 0, obj_bytes)]);
+
+        let bytes = resolve_char_proc_via_context(ObjRef::new(12, 0), &doc_context)
+            .expect("a valid char_proc ObjRef must resolve to decoded stream bytes");
+        assert_eq!(
+            bytes, content,
+            "unfiltered stream must decode to exactly its payload bytes"
+        );
+    }
+
+    #[test]
+    fn test_resolve_char_proc_via_context_flate_stream_yields_decompressed_bytes() {
+        use crate::font::type3_rasterizer_test::create_valid_dereference_context;
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        // Compress the glyph program so only a real decode can recover it.
+        let content = b"2 2 20 20 re f";
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(content).unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert_ne!(&compressed[..], &content[..]);
+
+        // Build the indirect object by hand: the payload is binary, so the
+        // from_utf8_lossy-based helper would mangle it.
+        let mut obj_bytes = format!(
+            "14 0 obj\n<< /Filter /FlateDecode /Length {} >>\nstream\n",
+            compressed.len()
+        )
+        .into_bytes();
+        obj_bytes.extend_from_slice(&compressed);
+        obj_bytes.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let doc_context = create_valid_dereference_context(vec![(14, 300, 0, obj_bytes)]);
+
+        let bytes = resolve_char_proc_via_context(ObjRef::new(14, 0), &doc_context)
+            .expect("a FlateDecode char_proc ObjRef must resolve to decoded bytes");
+        assert_eq!(
+            bytes, content,
+            "decode_stream must inflate the payload, not pass it through"
+        );
+    }
+
+    #[test]
+    fn test_resolve_char_proc_via_context_missing_ref_returns_none() {
+        use crate::font::type3_rasterizer_test::create_valid_dereference_context;
+
+        // Empty xref: object 999 has no entry, so resolution is NotFound.
+        let doc_context = create_valid_dereference_context(vec![]);
+
+        assert_eq!(
+            resolve_char_proc_via_context(ObjRef::new(999, 0), &doc_context),
+            None,
+            "a char_proc reference absent from the xref must degrade to None"
+        );
+    }
+
+    #[test]
+    fn test_resolve_char_proc_via_context_non_stream_targets_return_none() {
+        use crate::font::type3_rasterizer_test::{
+            create_pdf_dict_object, create_valid_dereference_context,
+        };
+
+        // Three resolvable targets, none of which is a stream: a dictionary,
+        // an integer, and an indirect object whose payload is another ref
+        // (a ref chain the single-hop resolution deliberately does not chase,
+        // mirroring the production resolve_stream callback's convention).
+        let dict_obj = create_pdf_dict_object(15, 0, "/Type /Font /Subtype /Type3");
+        let int_obj = b"16 0 obj\n42\nendobj\n".to_vec();
+        let ref_obj = b"17 0 obj\n18 0 R\nendobj\n".to_vec();
+        let doc_context = create_valid_dereference_context(vec![
+            (15, 100, 0, dict_obj),
+            (16, 200, 0, int_obj),
+            (17, 250, 0, ref_obj),
+        ]);
+
+        for obj_nr in [15u32, 16, 17] {
+            assert_eq!(
+                resolve_char_proc_via_context(ObjRef::new(obj_nr, 0), &doc_context),
+                None,
+                "object {} resolves but is not a stream; it must degrade to None",
+                obj_nr
+            );
+        }
+    }
+
+    #[test]
+    fn test_resolve_char_proc_via_context_malformed_object_returns_none() {
+        use crate::font::type3_rasterizer_test::create_valid_dereference_context;
+
+        // The xref entry points at bytes that do not parse as an indirect
+        // object at all, so resolve_with_source fails with NotFound.
+        let garbage = b"\xde\xad\xbe\xef not an object".to_vec();
+        let doc_context = create_valid_dereference_context(vec![(18, 500, 0, garbage)]);
+
+        assert_eq!(
+            resolve_char_proc_via_context(ObjRef::new(18, 0), &doc_context),
+            None,
+            "unparseable bytes at the target offset must degrade to None"
+        );
+    }
+
+    #[test]
+    fn test_resolve_char_proc_via_context_incomplete_context_returns_none() {
+        use crate::font::type3_rasterizer_test::{
+            create_pdf_stream_object, create_valid_dereference_context,
+        };
+
+        let obj_bytes = create_pdf_stream_object(12, 0, "", b"0 0 10 10 re f");
+        let doc_context = create_valid_dereference_context(vec![(12, 100, 0, obj_bytes)]);
+
+        // A context missing either half of the resolver/source pair cannot
+        // dereference; both omissions must degrade to None, not panic.
+        let no_resolver = DocumentContext {
+            resolver: None,
+            source: doc_context.source,
+        };
+        assert_eq!(
+            resolve_char_proc_via_context(ObjRef::new(12, 0), &no_resolver),
+            None,
+            "context without a resolver must degrade to None"
+        );
+
+        let no_source = DocumentContext {
+            resolver: doc_context.resolver,
+            source: None,
+        };
+        assert_eq!(
+            resolve_char_proc_via_context(ObjRef::new(12, 0), &no_source),
+            None,
+            "context without a source must degrade to None"
+        );
+    }
+
     #[test]
     fn test_edge_properties_preserved_at_y_min() {
         // Test that edge properties (x, y_max, slope) are preserved when edge is activated at y_min

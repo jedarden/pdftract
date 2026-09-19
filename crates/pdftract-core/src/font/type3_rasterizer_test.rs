@@ -20,7 +20,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 
-use crate::font::type3_rasterizer::{detect_char_proc_type, rasterize_type3_glyph, CharProcType, DocumentContext};
+use crate::font::type3_rasterizer::{
+    calculate_bitmap_dimensions, detect_char_proc_type, rasterize_type3_glyph, CharProcType,
+    DocumentContext, StreamResolverFn,
+};
 use crate::font::type3::Type3Font;
 use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject, PdfStream};
 use crate::parser::xref::XrefResolver;
@@ -2851,4 +2854,181 @@ fn test_all_fixtures_accessible() {
     let _entry = GlyphEntry::minimal("test".to_string(), test_ref);
 
     // Test passes - all fixtures are accessible and functional
+}
+
+// ============================================================================
+// DocumentContext Resolution Path Tests (resolve_stream callback absent)
+//
+// Every rasterize_type3_glyph test above supplies a resolve_stream callback,
+// making the callback authoritative. These tests exercise the other half of
+// the stream-resolution contract (pdftract-3923eb56): with no callback, the
+// char_proc ObjRef must be dereferenced through the DocumentContext's
+// XrefResolver + PdfSource, decoded, and executed — with no synthetic or
+// hardcoded stream standing in for the document's real bytes.
+// ============================================================================
+
+/// Build a Type3 font whose /CharProcs maps "A" to obj_nr 0 R.
+///
+/// The identity FontMatrix and FontBBox [0 0 32 32] make glyph-space
+/// coordinates land 1:1 on bitmap pixels (34x34 with the 1px padding),
+/// so ink positions can be asserted exactly.
+fn create_context_path_font(obj_nr: u32) -> Type3Font {
+    let mut char_procs = PdfDict::new();
+    char_procs.insert(intern("/A"), PdfObject::Ref(ObjRef::new(obj_nr, 0)));
+
+    let mut font_dict = PdfDict::new();
+    font_dict.insert(intern("/CharProcs"), PdfObject::Dict(Box::new(char_procs)));
+    font_dict.insert(
+        intern("/FontMatrix"),
+        PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(1),
+            PdfObject::Integer(0),
+            PdfObject::Integer(0),
+            PdfObject::Integer(1),
+            PdfObject::Integer(0),
+            PdfObject::Integer(0),
+        ])),
+    );
+    font_dict.insert(
+        intern("/FontBBox"),
+        PdfObject::Array(Box::new(vec![
+            PdfObject::Integer(0),
+            PdfObject::Integer(0),
+            PdfObject::Integer(32),
+            PdfObject::Integer(32),
+        ])),
+    );
+
+    Type3Font::load(&font_dict)
+}
+
+/// Compress `data` with zlib for /FlateDecode stream payloads.
+fn zlib_compress(data: &[u8]) -> Vec<u8> {
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
+/// A valid charproc stream reached through the DocumentContext must be
+/// dereferenced from the document's own bytes and actually rasterized.
+///
+/// The rect drawn here spans (8,8)-(20,20) — geometry distinct from every
+/// other rasterizer test — and the pixel-level assertions below can only be
+/// satisfied by executing the real decoded stream, not by any fixed bitmap.
+#[test]
+fn test_rasterize_via_document_context_valid_stream_rasterizes_real_glyph() {
+    let obj_bytes = create_pdf_stream_object(21, 0, "", b"8 8 12 12 re f");
+    let doc_context = create_valid_dereference_context(vec![(21, 600, 0, obj_bytes)]);
+    let font = create_context_path_font(21);
+    assert!(font.has_glyph("A"), "fixture must map glyph A to object 21");
+
+    let bitmap = rasterize_type3_glyph(&font, "A", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("a valid char_proc ObjRef must resolve via the context and rasterize");
+
+    // FontBBox [0 0 32 32] + 1px padding => 34x34 row-major bitmap.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!((width, height), (34, 34));
+    assert_eq!(bitmap.len(), width * height);
+
+    let px = |x: usize, y: usize| bitmap[y * width + x];
+    assert_eq!(px(8, 8), 0, "rect lower-left corner must be black ink");
+    assert_eq!(px(14, 14), 0, "rect interior must be black ink");
+    assert_eq!(px(20, 20), 0, "rect upper-right corner must be black ink");
+    assert_eq!(px(0, 0), 255, "padding outside the rect must stay white");
+    assert_eq!(px(25, 25), 255, "pixels beyond the rect must stay white");
+
+    let inked = bitmap.iter().filter(|&&p| p != 255).count();
+    assert_eq!(
+        inked,
+        13 * 13,
+        "scanline fill must cover exactly the 13x13 pixel rect"
+    );
+}
+
+/// A FlateDecode charproc reached through the DocumentContext must come back
+/// decompressed: the compressed payload contains no valid operators, so any
+/// ink in the bitmap proves decode_stream actually inflated the stream.
+#[test]
+fn test_rasterize_via_document_context_flate_stream_decodes() {
+    let content = b"2 2 20 20 re f";
+    let compressed = zlib_compress(content);
+    assert_ne!(compressed, content.to_vec());
+
+    // Binary payload: assemble the indirect object by hand so the bytes are
+    // not round-tripped through from_utf8_lossy.
+    let mut obj_bytes = format!(
+        "22 0 obj\n<< /Filter /FlateDecode /Length {} >>\nstream\n",
+        compressed.len()
+    )
+    .into_bytes();
+    obj_bytes.extend_from_slice(&compressed);
+    obj_bytes.extend_from_slice(b"\nendstream\nendobj\n");
+
+    let doc_context = create_valid_dereference_context(vec![(22, 700, 0, obj_bytes)]);
+    let font = create_context_path_font(22);
+
+    let bitmap = rasterize_type3_glyph(&font, "A", Some(&doc_context), None::<&StreamResolverFn>)
+        .expect("a compressed char_proc ObjRef must decode via the context and rasterize");
+
+    // '2 2 20 20 re f' fills the 21x21 pixel rect from (2,2) to (22,22).
+    let inked = bitmap.iter().filter(|&&p| p != 255).count();
+    assert_eq!(inked, 21 * 21, "decoded stream must ink the 21x21 rect");
+}
+
+/// A charproc reference with no xref entry must degrade to None.
+#[test]
+fn test_rasterize_via_document_context_missing_ref_returns_none() {
+    // The context knows object 21; the font points glyph A at absent object 99.
+    let obj_bytes = create_pdf_stream_object(21, 0, "", b"0 0 10 10 re f");
+    let doc_context = create_valid_dereference_context(vec![(21, 600, 0, obj_bytes)]);
+    let font = create_context_path_font(99);
+    assert!(font.has_glyph("A"), "glyph A exists; only its target is missing");
+
+    let result = rasterize_type3_glyph(&font, "A", Some(&doc_context), None::<&StreamResolverFn>);
+    assert!(result.is_none(), "missing charproc object must degrade to None");
+}
+
+/// A charproc reference that resolves to a non-stream object must degrade
+/// to None rather than executing or fabricating a stream.
+#[test]
+fn test_rasterize_via_document_context_non_stream_target_returns_none() {
+    let dict_obj = create_pdf_dict_object(23, 0, "/Type /Font /Subtype /Type3");
+    let doc_context = create_valid_dereference_context(vec![(23, 800, 0, dict_obj)]);
+    let font = create_context_path_font(23);
+
+    let result = rasterize_type3_glyph(&font, "A", Some(&doc_context), None::<&StreamResolverFn>);
+    assert!(
+        result.is_none(),
+        "charproc target that is a dictionary, not a stream, must degrade to None"
+    );
+}
+
+/// A charproc reference whose xref entry points at unparseable bytes must
+/// degrade to None.
+#[test]
+fn test_rasterize_via_document_context_malformed_object_returns_none() {
+    let garbage = b"\xff\xfe garbage bytes".to_vec();
+    let doc_context = create_valid_dereference_context(vec![(24, 900, 0, garbage)]);
+    let font = create_context_path_font(24);
+
+    let result = rasterize_type3_glyph(&font, "A", Some(&doc_context), None::<&StreamResolverFn>);
+    assert!(result.is_none(), "unparseable target bytes must degrade to None");
+}
+
+/// With neither a callback nor a DocumentContext there is no resolution
+/// route at all; a known glyph must still degrade to None, not panic.
+#[test]
+fn test_rasterize_without_context_or_callback_returns_none() {
+    let font = create_context_path_font(21);
+    assert!(font.has_glyph("A"));
+
+    let result = rasterize_type3_glyph(&font, "A", None, None::<&StreamResolverFn>);
+    assert!(
+        result.is_none(),
+        "no callback and no context must degrade to None"
+    );
 }
