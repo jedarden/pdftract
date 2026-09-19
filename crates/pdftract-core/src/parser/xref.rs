@@ -490,7 +490,7 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
     let mut result = XrefSection::new();
     let mut pos = start_offset;
 
-    // Read initial chunk to look for xref keyword
+    // Read initial chunk to look for xref keyword.
     let header_bytes = match source.read_at(pos, 1024) {
         Ok(bytes) if !bytes.is_empty() => bytes,
         _ => {
@@ -503,33 +503,73 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         }
     };
 
-    // Look for xref keyword (case-sensitive per PDF spec)
-    // Find it in the raw bytes, accounting for leading whitespace
-    let xref_keyword_pos = loop {
-        let header_str = match std::str::from_utf8(&header_bytes) {
-            Ok(s) => s,
-            Err(_) => {
-                result.diagnostics.push(Diag::with_static(
+    // Look for xref keyword (case-sensitive per PDF spec), accounting for
+    // leading whitespace. A few producers write a startxref value that lands
+    // inside the table rather than at its xref keyword. In that case, recover
+    // the nearest line-aligned xref keyword before the requested offset while
+    // retaining a diagnostic for the bad offset.
+    let xref_keyword_pos = match std::str::from_utf8(&header_bytes) {
+        Ok(header_str) => {
+            let trimmed = header_str.trim_start();
+            let ws_offset = header_str.len() - trimmed.len();
+            if trimmed.starts_with("xref") {
+                ws_offset
+            } else {
+                let lookback_start = start_offset.saturating_sub(1024);
+                let lookback_len = (start_offset - lookback_start) as usize;
+                let recovered =
+                    source
+                        .read_at(lookback_start, lookback_len)
+                        .ok()
+                        .and_then(|bytes| {
+                            bytes
+                                .windows(4)
+                                .enumerate()
+                                .filter(|(_, window)| *window == b"xref")
+                                .filter(|(index, _)| {
+                                    let before_is_boundary = *index == 0
+                                        || matches!(
+                                            bytes[*index - 1],
+                                            b' ' | b'\t' | b'\r' | b'\n'
+                                        );
+                                    let after = *index + 4;
+                                    let after_is_boundary = after == bytes.len()
+                                        || matches!(bytes[after], b' ' | b'\t' | b'\r' | b'\n');
+                                    before_is_boundary && after_is_boundary
+                                })
+                                .map(|(index, _)| lookback_start + index as u64)
+                                .last()
+                        });
+
+                let recovered_offset = match recovered {
+                    Some(offset) => offset,
+                    None => {
+                        result.diagnostics.push(Diag::with_static(
+                            DiagCode::XrefInvalidHeader,
+                            pos,
+                            "xref keyword not found",
+                        ));
+                        return result;
+                    }
+                };
+
+                result.diagnostics.push(Diag::with_dynamic(
                     DiagCode::XrefInvalidHeader,
-                    pos,
-                    "Invalid UTF-8 in xref header",
+                    start_offset,
+                    format!(
+                        "xref keyword not found at startxref offset; recovered xref at {}",
+                        recovered_offset
+                    ),
                 ));
-                return result;
+                pos = recovered_offset;
+                0
             }
-        };
-
-        // Skip leading whitespace to find xref
-        let trimmed = header_str.trim_start();
-        let ws_offset = header_str.len() - trimmed.len();
-
-        if trimmed.starts_with("xref") {
-            // Found it! ws_offset is the position of "xref" in header_bytes
-            break ws_offset;
-        } else {
+        }
+        Err(_) => {
             result.diagnostics.push(Diag::with_static(
                 DiagCode::XrefInvalidHeader,
                 pos,
-                "xref keyword not found",
+                "Invalid UTF-8 in xref header",
             ));
             return result;
         }
@@ -679,18 +719,31 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
         };
         pos = subsection_start + header_line.len() as u64 + line_ending_len as u64;
 
-        // Parse subsection entries
-        // We need to detect stride (20 vs 19 bytes) by trying the first entry
-        let mut stride = 20; // Default to 20 bytes
+        // Parse subsection entries. Classic xref entries are fixed-width, but
+        // buggy producers commonly omit the optional padding space before a
+        // bare LF, making those entries 19 bytes. Determine the stride from
+        // the first entry's line ending before consuming the subsection so a
+        // 20-byte window cannot eat the first byte of the next entry.
+        let initial_stride = match source.read_at(pos, 20) {
+            Ok(bytes) if bytes.len() >= 19 => {
+                if bytes[18] == b'\n' || (bytes[18] == b'\r' && bytes.get(19) != Some(&b'\n')) {
+                    19
+                } else {
+                    20
+                }
+            }
+            Ok(_) => 19,
+            Err(_) => 20,
+        };
+        let initial_short_stride = initial_stride == 19;
+        let mut stride = initial_stride;
         let mut entries_parsed = 0u32;
 
         while entries_parsed < obj_count {
             let entry_start = pos;
-
-            // Read a candidate entry (try 20 bytes first, fall back to 19)
             let entry_bytes = match source.read_at(pos, 20) {
                 Ok(bytes) => bytes,
-                _ => {
+                Err(_) => {
                     result.diagnostics.push(Diag::with_static(
                         DiagCode::XrefTruncated,
                         pos,
@@ -704,14 +757,21 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                 // Definitely truncated
                 result.diagnostics.push(Diag::with_static(
                     DiagCode::XrefTruncated,
-                    pos,
+                    entry_start,
                     "Xref entry truncated (< 19 bytes)",
                 ));
                 break;
             }
 
-            // Try to parse as 20-byte entry first
-            let parsed = if entry_bytes.len() >= 20 {
+            let parsed = if initial_short_stride && stride == 19 {
+                parse_xref_entry(
+                    &entry_bytes[..19],
+                    obj_start + entries_parsed,
+                    entry_start,
+                    stride,
+                    &mut result.diagnostics,
+                )
+            } else if entry_bytes.len() >= 20 {
                 parse_xref_entry(
                     &entry_bytes[..20],
                     obj_start + entries_parsed,
@@ -720,7 +780,6 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                     &mut result.diagnostics,
                 )
             } else {
-                // Try 19-byte entry for buggy producers
                 stride = 19;
                 parse_xref_entry(
                     &entry_bytes[..19],
@@ -750,12 +809,10 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
                     entries_parsed += 1;
                 }
                 None => {
-                    // Failed to parse - try 19-byte stride if we haven't yet
                     if stride == 20 && entry_bytes.len() >= 19 {
                         stride = 19;
                         continue;
                     }
-                    // Skip this entry and move on
                     pos += stride as u64;
                     entries_parsed += 1;
                 }
@@ -917,7 +974,11 @@ fn read_line_at(source: &dyn PdfSource, pos: u64) -> Option<String> {
 /// Read a line from the source, updating the position.
 ///
 /// Returns None on EOF or error.
-fn read_line(source: &dyn PdfSource, pos: &mut u64, _diagnostics: &mut Vec<Diag>) -> Option<String> {
+fn read_line(
+    source: &dyn PdfSource,
+    pos: &mut u64,
+    _diagnostics: &mut Vec<Diag>,
+) -> Option<String> {
     let line = read_line_at(source, *pos)?;
     // Advance position past the line (including line ending)
     // We need to find the actual line ending length
@@ -2758,7 +2819,7 @@ trailer\n<< /Size 3 >>\n";
                 gen_nr: 65535
             })
         );
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 3);
         assert_eq!(
             result.entries.get(&1),
             Some(&XrefEntry::InUse {
@@ -5394,24 +5455,21 @@ mod trailer_loss_probe {
         drive_layers("test-minimal.pdf", 12787);
     }
 
-    /// CHARACTERIZATION for bead pdftract-d0b22a6e — pins the CURRENT chain
-    /// behavior over valid-minimal.pdf at the offset its own trailer states
-    /// (`startxref: 439`). The fixture is self-inconsistent: its xref keyword
-    /// actually sits at byte 406, so 439 lands inside entry 1's digits and the
-    /// parser never finds the trailer. These asserts document the defect; the
-    /// chain child fixing the xref layer should FLIP them once it recovers.
+    /// Regression coverage for valid-minimal.pdf. Its startxref value is
+    /// self-inconsistent (439 lands inside the table; the xref keyword is at
+    /// 406), so the parser recovers the nearby table and retains a diagnostic.
     #[test]
     fn probe_valid_minimal_layer_by_layer() {
         let data = fixture_bytes("valid-minimal.pdf");
         let src = MemorySource::new(data.clone());
 
-        // LAYER 0: find_startxrep replica faithfully returns the fixture's own
-        // (wrong) value — the misdirection enters here.
+        // LAYER 0: find_startxref faithfully returns the fixture's own wrong
+        // value. The parser must recover the nearby xref keyword.
         let off = probe_startxref(&data);
         assert_eq!(off, 439, "LAYER 0: fixture states startxref 439; got {off}");
 
-        // LAYER 2 (parse_traditional_xref, xref.rs:489): the header check at
-        // xref.rs:532 rejects with XrefInvalidHeader "xref keyword not found".
+        // LAYER 2 (parse_traditional_xref, xref.rs:489): recover the xref
+        // keyword at byte 406 and parse its trailer.
         let trad = parse_traditional_xref(&src, off);
         dump_layer(
             "valid-minimal.pdf",
@@ -5419,31 +5477,27 @@ mod trailer_loss_probe {
             &trad,
         );
         assert!(
-            trad.entries.is_empty(),
-            "CHARACTERIZATION (flip when the xref layer recovers from a bad \
-             startxref): entries unexpectedly parsed at the misdirected offset"
+            !trad.entries.is_empty(),
+            "xref recovery should parse entries despite the bad startxref"
         );
         assert!(
-            trad.trailer.is_none(),
-            "CHARACTERIZATION (flip when fixed): trailer unexpectedly found at \
-             the misdirected offset 439"
+            trad.trailer
+                .as_ref()
+                .and_then(|trailer| trailer.get("Root"))
+                .is_some(),
+            "xref recovery should carry the trailer and its /Root key"
         );
         assert!(
             trad.diagnostics
                 .iter()
-                .any(|d| d.message.contains("xref keyword not found")),
-            "CHARACTERIZATION: expected the XrefInvalidHeader 'xref keyword not \
-             found' diag; got {:?}",
+                .any(|d| d.message.contains("recovered xref at 406")),
+            "expected a diagnostic for recovering from the bad startxref; got {:?}",
             trad.diagnostics
         );
 
-        // LAYER 1/LAYER 4: the wrapper and the /Prev chain propagate the loss
-        // (trailer stays None), so document.rs:422 raises "No trailer in xref
-        // section" for parse_pdf_file callers (see probe_entry_point_error_strings).
-        assert!(
-            load_single_xref(&src, off).trailer.is_none(),
-            "CHARACTERIZATION (flip when fixed): load_single_xref found a trailer"
-        );
+        // LAYER 1/LAYER 4: the wrapper and the /Prev chain preserve the
+        // recovered trailer for document.rs callers.
+        assert!(load_single_xref(&src, off).trailer.is_some());
         let chained = load_xref_with_prev_chain(&src, off);
         dump_layer(
             "valid-minimal.pdf",
@@ -5451,8 +5505,12 @@ mod trailer_loss_probe {
             &chained,
         );
         assert!(
-            chained.trailer.is_none(),
-            "CHARACTERIZATION (flip when fixed): prev-chain merge recovered a trailer"
+            chained
+                .trailer
+                .as_ref()
+                .and_then(|trailer| trailer.get("Root"))
+                .is_some(),
+            "prev-chain merge should preserve the recovered trailer"
         );
     }
 
@@ -5474,16 +5532,9 @@ mod trailer_loss_probe {
         }
     }
 
-    /// CHARACTERIZATION for bead pdftract-d0b22a6e — even at the CORRECT xref
-    /// offset (406, found by literal byte scan) the table's 19-byte entries
-    /// parse under the 20-byte window: the spill byte after the entry type
-    /// splits off as whitespace (`split_whitespace` on `"0000000000 65535 f\n0"`,
-    /// gives a parseable 3-prefix), so the 19-byte fallback (xref.rs:754-757)
-    /// never triggers, `pos` drifts +1 byte per entry (xref.rs:684 sets
-    /// `stride = 20` and xref.rs:746 advances by it), and after 6 entries the
-    /// `trailer` keyword check (xref.rs:586) lands mid-word and never matches.
-    /// parse_trailer_dict (xref.rs:946) is never reached. Child 2's fix should
-    /// FLIP the trailer assertions below.
+    /// The table at the CORRECT xref offset (406, found by literal byte scan)
+    /// uses 19-byte bare-LF entries. The parser must follow each physical
+    /// line so it reaches and carries the trailer dictionary.
     #[test]
     fn probe_valid_minimal_corrected_offset_chain() {
         let data = fixture_bytes("valid-minimal.pdf");
@@ -5495,8 +5546,7 @@ mod trailer_loss_probe {
             as u64;
         assert_eq!(off, 406, "actual offset of the xref keyword");
 
-        // LAYER 2 at the true offset: entries parse (6 objects), but the
-        // drifted position misses the trailer keyword entirely.
+        // LAYER 2 at the true offset: entries and trailer both parse.
         let traditional = parse_traditional_xref(&src, off);
         dump_layer(
             "valid-minimal.pdf",
@@ -5514,23 +5564,23 @@ mod trailer_loss_probe {
             "the table declares 6 objects (0..6)"
         );
         assert!(
-            traditional.trailer.is_none(),
-            "CHARACTERIZATION FLIP POINT (child 2): trailer found at the correct \
-             offset — the 19/20-byte stride handling is fixed; update this probe \
-             and re-check sdk::extract on valid-minimal.pdf"
+            traditional
+                .trailer
+                .as_ref()
+                .and_then(|trailer| trailer.get("Root"))
+                .is_some(),
+            "19-byte entries must preserve the trailer and its /Root key"
         );
         assert!(
-            traditional
+            !traditional
                 .diagnostics
                 .iter()
                 .any(|d| d.message.contains("Trailer dictionary not found")),
-            "CHARACTERIZATION: expected XrefTrailerNotFound 'Trailer dictionary \
-             not found (xref table may be truncated)' from the missed keyword; \
-             got {:?}",
+            "19-byte entries must not make the trailer appear truncated: {:?}",
             traditional.diagnostics
         );
 
-        // The wrapper and the /Prev chain propagate the None trailer upward.
+        // The wrapper and the /Prev chain propagate the trailer upward.
         let single = load_single_xref(&src, off);
         let chained = load_xref_with_prev_chain(&src, off);
         dump_layer(
@@ -5543,15 +5593,10 @@ mod trailer_loss_probe {
             "LAYER 4 load_xref_with_prev_chain (xref.rs:2293) [at corrected offset 406]",
             &chained,
         );
+        assert!(single.trailer.is_some());
         assert!(
-            single.trailer.is_none(),
-            "CHARACTERIZATION FLIP POINT (child 2): load_single_xref recovered a \
-             trailer at the correct offset"
-        );
-        assert!(
-            chained.trailer.is_none(),
-            "CHARACTERIZATION FLIP POINT (child 2): prev-chain recovered a trailer \
-             at the correct offset"
+            chained.trailer.is_some(),
+            "prev-chain should preserve the trailer at the corrected offset"
         );
     }
 
