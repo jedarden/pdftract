@@ -6,7 +6,7 @@
 
 #![cfg(feature = "remote")]
 
-use crate::source::PdfSource;
+use crate::source::{BytesDownloadedHook, PdfSource};
 use bytes::Bytes;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -67,6 +67,9 @@ pub struct HttpRangeSource {
     url: String,
     /// Custom headers to include on every request.
     headers: Vec<(String, String)>,
+    /// Observation-only bytes-downloaded hook (metrics seam); see
+    /// [`BytesDownloadedHook`].
+    download_hook: Option<BytesDownloadedHook>,
     /// Total content length from HEAD request.
     content_length: u64,
     /// Whether server supports Range requests.
@@ -110,6 +113,21 @@ impl HttpRangeSource {
     /// let source = HttpRangeSource::with_headers("https://example.com/doc.pdf", headers)?;
     /// ```
     pub fn with_headers(url: &str, headers: Vec<(String, String)>) -> io::Result<Self> {
+        Self::with_headers_and_hook(url, headers, None)
+    }
+
+    /// Open a PDF from a URL with custom headers and an observation-only
+    /// bytes-downloaded hook.
+    ///
+    /// The hook, if present, is invoked with the number of body bytes
+    /// successfully read from each completed fetch (see
+    /// [`BytesDownloadedHook`]). Registering one never changes fetch
+    /// behavior.
+    pub fn with_headers_and_hook(
+        url: &str,
+        headers: Vec<(String, String)>,
+        download_hook: Option<BytesDownloadedHook>,
+    ) -> io::Result<Self> {
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
             .build();
@@ -128,7 +146,7 @@ impl HttpRangeSource {
                 if let Some(ureq::Error::Status(code, _)) = Some(&e) {
                     if *code == 405 {
                         // Fall back to GET with Range: bytes=0-0 to probe server
-                        return Self::open_with_get_probe(&agent, &url, &headers);
+                        return Self::open_with_get_probe(&agent, &url, &headers, download_hook);
                     }
                 }
                 return Err(err);
@@ -139,7 +157,7 @@ impl HttpRangeSource {
             // Check for 405 Method Not Allowed
             if response.status() == 405 {
                 // Fall back to GET with Range: bytes=0-0 to probe server
-                return Self::open_with_get_probe(&agent, &url, &headers);
+                return Self::open_with_get_probe(&agent, &url, &headers, download_hook);
             }
             return Err(io::Error::new(
                 io::ErrorKind::Other,
@@ -162,6 +180,7 @@ impl HttpRangeSource {
             agent: Arc::new(agent),
             url,
             headers,
+            download_hook,
             content_length,
             supports_range,
             cache: Mutex::new(cache),
@@ -188,6 +207,21 @@ impl HttpRangeSource {
         &self.headers
     }
 
+    /// Register (or clear) the observation-only bytes-downloaded hook.
+    ///
+    /// See [`BytesDownloadedHook`]. Registering a hook never changes
+    /// fetch behavior.
+    pub fn set_bytes_downloaded_hook(&mut self, hook: Option<BytesDownloadedHook>) {
+        self.download_hook = hook;
+    }
+
+    /// Fire the bytes-downloaded hook, if one is registered.
+    fn notify_bytes_downloaded(&self, bytes: u64) {
+        if let Some(hook) = &self.download_hook {
+            hook(bytes);
+        }
+    }
+
     /// Open using GET with Range: bytes=0-0 to probe server capabilities.
     ///
     /// This is a fallback for servers that don't support HEAD requests (return 405).
@@ -196,6 +230,7 @@ impl HttpRangeSource {
         agent: &ureq::Agent,
         url: &str,
         headers: &[(String, String)],
+        download_hook: Option<BytesDownloadedHook>,
     ) -> io::Result<Self> {
         // Try GET with Range: bytes=0-0 to probe server
         let get_req = agent.get(url);
@@ -247,6 +282,7 @@ impl HttpRangeSource {
             agent: Arc::new(agent.clone()),
             url: url.to_string(),
             headers: headers.to_vec(),
+            download_hook,
             content_length,
             supports_range,
             cache: Mutex::new(cache),
@@ -284,6 +320,7 @@ impl HttpRangeSource {
                     format!("Failed to read response body: {}", e),
                 )
             })?;
+            self.notify_bytes_downloaded(data.len() as u64);
             return Ok(Bytes::from(data));
         }
 
@@ -645,6 +682,19 @@ pub fn download_to_temp_and_mmap(
     headers: &[(String, String)],
     diagnostics: Option<&mut Vec<crate::diagnostics::Diagnostic>>,
 ) -> io::Result<(tempfile::NamedTempFile, super::MmapSource)> {
+    download_to_temp_and_mmap_with_hook(url, headers, None, diagnostics)
+}
+
+/// [`download_to_temp_and_mmap`], firing an observation-only
+/// bytes-downloaded hook with the number of body bytes successfully
+/// downloaded (see [`BytesDownloadedHook`]). The hook never changes
+/// download behavior.
+pub fn download_to_temp_and_mmap_with_hook(
+    url: &str,
+    headers: &[(String, String)],
+    download_hook: Option<BytesDownloadedHook>,
+    diagnostics: Option<&mut Vec<crate::diagnostics::Diagnostic>>,
+) -> io::Result<(tempfile::NamedTempFile, super::MmapSource)> {
     #[cfg(feature = "remote")]
     {
         use crate::diagnostics::{DiagCode, Diagnostic};
@@ -730,12 +780,15 @@ pub fn download_to_temp_and_mmap(
         let mut reader = response.into_reader();
         let mut writer = temp_file.as_file_mut();
 
-        io::copy(&mut reader, &mut writer).map_err(|e| {
+        let downloaded = io::copy(&mut reader, &mut writer).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::Interrupted,
                 format!("Failed to download file: {}", e),
             )
         })?;
+        if let Some(hook) = &download_hook {
+            hook(downloaded);
+        }
 
         // Sync to disk
         writer.flush()?;
@@ -749,7 +802,7 @@ pub fn download_to_temp_and_mmap(
 
     #[cfg(not(feature = "remote"))]
     {
-        let _ = (url, headers);
+        let _ = (url, headers, download_hook);
         let _ = diagnostics;
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -848,5 +901,179 @@ mod tests {
         // Test with a mock-like scenario
         let result = HttpRangeSource::open("https://example.com/doc.pdf");
         assert!(result.is_err()); // No real server
+    }
+
+    /// Minimal loopback HTTP server with Range support, bound on `:0`,
+    /// for exercising the bytes-downloaded seam without the cli.
+    ///
+    /// Hygiene (repo CLAUDE.md): bound on `:0`; the accept loop polls a
+    /// shutdown flag, and `Drop` waits (bounded) for the thread's exit
+    /// flag instead of an unkillable join.
+    #[cfg(feature = "remote")]
+    struct HookLoopbackServer {
+        shutdown: Arc<std::sync::atomic::AtomicBool>,
+        finished: Arc<std::sync::atomic::AtomicBool>,
+        url: String,
+    }
+
+    #[cfg(feature = "remote")]
+    impl HookLoopbackServer {
+        fn spawn(body: Vec<u8>) -> io::Result<Self> {
+            use std::net::TcpListener;
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            listener.set_nonblocking(true)?;
+            let url = format!("http://{}/doc.pdf", listener.local_addr()?);
+
+            let body = Arc::new(body);
+            let shutdown = Arc::new(AtomicBool::new(false));
+            let finished = Arc::new(AtomicBool::new(false));
+
+            let thread_listener = listener.try_clone()?;
+            let thread_body = body;
+            let thread_shutdown = shutdown.clone();
+            let thread_finished = finished.clone();
+
+            std::thread::spawn(move || {
+                loop {
+                    if thread_shutdown.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    match thread_listener.accept() {
+                        Ok((mut stream, _)) => {
+                            let _ = stream.set_nonblocking(false);
+                            // Minimal handler: HEAD → size +
+                            // Accept-Ranges; GET with Range → 206 slice.
+                            let mut buf = [0u8; 8192];
+                            let mut head = Vec::new();
+                            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                                match stream.read(&mut buf) {
+                                    Ok(0) | Err(_) => break,
+                                    Ok(n) => {
+                                        head.extend_from_slice(&buf[..n]);
+                                        if head.len() > 64 * 1024 {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            let request = String::from_utf8_lossy(&head);
+                            let method = request.split_whitespace().next().unwrap_or("");
+                            let mut response = Vec::new();
+                            if method == "HEAD" {
+                                response.extend_from_slice(b"HTTP/1.1 200 OK\r\nContent-Length: ");
+                                response.extend_from_slice(thread_body.len().to_string().as_bytes());
+                                response.extend_from_slice(
+                                    b"\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                                );
+                            } else if method == "GET" {
+                                let (start, end) = request
+                                    .lines()
+                                    .find_map(|l| l.strip_prefix("Range: bytes="))
+                                    .and_then(|v| v.split_once('-'))
+                                    .map(|(s, e)| {
+                                        (
+                                            s.trim().parse::<usize>().unwrap_or(0),
+                                            e.trim()
+                                                .parse::<usize>()
+                                                .unwrap_or(thread_body.len() - 1),
+                                        )
+                                    })
+                                    .unwrap_or((0, thread_body.len() - 1));
+                                let end = end.min(thread_body.len() - 1);
+                                let data = &thread_body[start..=end];
+                                response.extend_from_slice(b"HTTP/1.1 206 Partial Content\r\n");
+                                response.extend_from_slice(
+                                    format!(
+                                        "Content-Range: bytes {}-{}/{}\r\n",
+                                        start,
+                                        end,
+                                        thread_body.len()
+                                    )
+                                    .as_bytes(),
+                                );
+                                response.extend_from_slice(b"Content-Length: ");
+                                response.extend_from_slice(data.len().to_string().as_bytes());
+                                response.extend_from_slice(
+                                    b"\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                                );
+                                response.extend_from_slice(data);
+                            } else {
+                                response.extend_from_slice(
+                                    b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n",
+                                );
+                            }
+                            let _ = std::io::Write::write_all(&mut stream, &response);
+                            let _ = std::io::Write::flush(&mut stream);
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(_) => break,
+                    }
+                }
+                thread_finished.store(true, Ordering::Relaxed);
+            });
+
+            Ok(Self {
+                shutdown,
+                finished,
+                url,
+            })
+        }
+    }
+
+    #[cfg(feature = "remote")]
+    impl Drop for HookLoopbackServer {
+        fn drop(&mut self) {
+            use std::sync::atomic::Ordering;
+            self.shutdown.store(true, Ordering::Relaxed);
+            let deadline = std::time::Instant::now() + Duration::from_millis(200);
+            while !self.finished.load(Ordering::Relaxed)
+                && std::time::Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+    }
+
+    /// The observation-only seam: a registered hook observes exactly the
+    /// body bytes of each completed fetch, and clearing the hook stops
+    /// observation. No network beyond loopback; no behavior assertions
+    /// beyond the hook itself.
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_bytes_downloaded_hook_observes_fetch_and_clears() {
+        let body = b"%PDF-1.4 hook seam probe body".to_vec();
+        let server = HookLoopbackServer::spawn(body.clone()).expect("bind loopback server on :0");
+
+        let seen = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let seen_writer = seen.clone();
+        let hook: BytesDownloadedHook = Arc::new(move |bytes| {
+            seen_writer.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed)
+        });
+
+        let mut source =
+            HttpRangeSource::with_headers_and_hook(&server.url, Vec::new(), Some(hook))
+                .expect("open remote source against loopback server");
+
+        let got = source.read_range(0, body.len()).expect("range read");
+        assert_eq!(got.as_ref(), body.as_slice());
+        assert_eq!(
+            seen.load(std::sync::atomic::Ordering::Relaxed),
+            body.len() as u64,
+            "hook must observe exactly the fetched body bytes"
+        );
+
+        // Clearing the hook stops observation; the cached re-read and a
+        // fresh fetch both leave the counter untouched.
+        source.set_bytes_downloaded_hook(None);
+        let _ = source.read_range(0, body.len()).expect("cached re-read");
+        assert_eq!(
+            seen.load(std::sync::atomic::Ordering::Relaxed),
+            body.len() as u64,
+            "cleared hook must not observe"
+        );
     }
 }

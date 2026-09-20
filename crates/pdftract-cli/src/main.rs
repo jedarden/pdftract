@@ -26,6 +26,10 @@ mod pages;
 mod panic_hook;
 mod password;
 mod profiles_cmd;
+// Feeds pdftract_remote_bytes_downloaded_total from the remote fetch
+// path (`metrics` + `remote` features).
+#[cfg(all(feature = "metrics", feature = "remote"))]
+mod remote_metrics;
 mod serve;
 mod url;
 mod validate;
@@ -1270,7 +1274,7 @@ fn cmd_extract(
 
         #[cfg(feature = "remote")]
         {
-            use pdftract_core::source::{open_source, HttpRangeSource};
+            use pdftract_core::source::HttpRangeSource;
 
             // Combine custom headers with URL credentials
             let mut headers_vec: Vec<(String, String)> =
@@ -1288,13 +1292,27 @@ fn cmd_extract(
 
             // Add custom headers to the URL
             // Note: ureq automatically handles basic auth when credentials are in the URL
-            let source = HttpRangeSource::with_headers(&extraction_url, headers_vec)
+            let mut source = HttpRangeSource::with_headers(&extraction_url, headers_vec)
                 .context("Failed to open remote PDF source")?;
 
-            use pdftract_core::extract::{extract_pdf_from_source, ExtractionSource};
-            let extraction_source = ExtractionSource::Remote(Box::new(source));
+            // Observation-only: feed pdftract_remote_bytes_downloaded_total
+            // for this extraction's remote fetches (see remote_metrics).
+            // The command-scoped registry is held for the extraction; the
+            // hook also keeps it alive through its own Arc while the
+            // source fetches.
+            #[cfg(feature = "metrics")]
+            let _command_metrics =
+                crate::remote_metrics::register_bytes_downloaded_hook(&mut source);
 
-            let result = extract_pdf_from_source(extraction_source, &options)
+            // pdftract-core has no source-level extraction API, so stream
+            // the document to a temp file through the (Range-aware) source
+            // and run the normal local extraction on it.
+            let temp_pdf = tempfile::NamedTempFile::new()
+                .context("Failed to create temporary file for remote PDF")?;
+            std::io::copy(&mut source, temp_pdf.as_file())
+                .context("Failed to download remote PDF")?;
+
+            let result = extract_pdf(temp_pdf.path(), &options)
                 .context("Failed to extract PDF from remote source")?;
 
             (result, "skipped".to_string(), None) // Cache not applicable for remote

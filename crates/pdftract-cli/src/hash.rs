@@ -135,6 +135,16 @@ fn compute_fingerprint_from_url(url: &str, headers: &[(String, String)]) -> Resu
     use pdftract_core::source::HttpRangeSource;
 
     // Open the remote PDF
+    #[cfg(all(feature = "metrics", feature = "remote"))]
+    let mut source = HttpRangeSource::with_headers(url, headers.to_vec())
+        .context("Failed to open remote PDF")?;
+    // Observation-only: feed pdftract_remote_bytes_downloaded_total for
+    // this fingerprint's remote fetches (see remote_metrics). The
+    // command-scoped registry is held for the fingerprint; the hook also
+    // keeps it alive through its own Arc while the source fetches.
+    #[cfg(all(feature = "metrics", feature = "remote"))]
+    let _command_metrics = crate::remote_metrics::register_bytes_downloaded_hook(&mut source);
+    #[cfg(not(all(feature = "metrics", feature = "remote")))]
     let source = HttpRangeSource::with_headers(url, headers.to_vec())
         .context("Failed to open remote PDF")?;
 

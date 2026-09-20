@@ -131,6 +131,16 @@ pub trait PdfSource: Read + Seek + Send + Sync {
     }
 }
 
+/// Observation-only callback for remote fetch instrumentation.
+///
+/// Invoked with the number of body bytes successfully read from a remote
+/// fetch (HTTP range reads and full fallback downloads). Callers above
+/// `pdftract-core` (the cli's metrics registry) register one of these
+/// because core cannot depend on cli types. A hook must never influence
+/// fetch behavior and must not panic.
+#[cfg(feature = "remote")]
+pub type BytesDownloadedHook = std::sync::Arc<dyn Fn(u64) + Send + Sync>;
+
 /// Options for opening a remote PDF source.
 ///
 /// # Example
@@ -143,10 +153,23 @@ pub trait PdfSource: Read + Seek + Send + Sync {
 ///     .with_header("X-API-Key", "key123");
 /// ```
 #[cfg(feature = "remote")]
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct RemoteOpts {
     /// Custom HTTP headers to include on every request.
     headers: Vec<(String, String)>,
+    /// Observation-only bytes-downloaded hook (metrics seam).
+    download_hook: Option<BytesDownloadedHook>,
+}
+
+#[cfg(feature = "remote")]
+impl std::fmt::Debug for RemoteOpts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The hook is deliberately omitted: it is not part of the
+        // options' identity and callbacks do not implement Debug.
+        f.debug_struct("RemoteOpts")
+            .field("headers", &self.headers)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(feature = "remote")]
@@ -198,6 +221,20 @@ impl RemoteOpts {
     /// Get the headers as a vector.
     pub fn headers(&self) -> &[(String, String)] {
         &self.headers
+    }
+
+    /// Attach an observation-only bytes-downloaded hook.
+    ///
+    /// See [`BytesDownloadedHook`]. The hook is fired from the remote
+    /// fetch path; attaching one never changes fetch behavior.
+    pub fn with_bytes_downloaded_hook(mut self, hook: BytesDownloadedHook) -> Self {
+        self.download_hook = Some(hook);
+        self
+    }
+
+    /// The registered bytes-downloaded hook, if any.
+    pub fn bytes_downloaded_hook(&self) -> Option<BytesDownloadedHook> {
+        self.download_hook.clone()
     }
 }
 
@@ -318,7 +355,12 @@ pub fn open_remote(
     opts: &RemoteOpts,
     mut diagnostics: Option<&mut Vec<crate::diagnostics::Diagnostic>>,
 ) -> io::Result<Box<dyn PdfSource>> {
-    let source = HttpRangeSource::with_headers(url, opts.headers().to_vec())?;
+    let download_hook = opts.bytes_downloaded_hook();
+    let source = HttpRangeSource::with_headers_and_hook(
+        url,
+        opts.headers().to_vec(),
+        download_hook.clone(),
+    )?;
 
     // Check if Range is supported; if not, trigger fallback
     if !source.supports_range() {
@@ -332,8 +374,12 @@ pub fn open_remote(
         }
 
         // Download to temp file and memory-map
-        let (temp_file, mmap_source) =
-            http_range::download_to_temp_and_mmap(source.url(), source.headers(), diagnostics)?;
+        let (temp_file, mmap_source) = http_range::download_to_temp_and_mmap_with_hook(
+            source.url(),
+            source.headers(),
+            download_hook,
+            diagnostics,
+        )?;
 
         // Wrap in TempMmapSource to keep temp file alive
         return Ok(Box::new(TempMmapSource::new(temp_file, mmap_source)));
@@ -450,3 +496,27 @@ impl Seek for TempMmapSource {
 unsafe impl Send for TempMmapSource {}
 #[cfg(feature = "remote")]
 unsafe impl Sync for TempMmapSource {}
+
+#[cfg(all(test, feature = "remote"))]
+mod remote_opts_hook_tests {
+    use super::*;
+
+    /// The builder round-trips the hook; the default has none. This is
+    /// the registration contract the cli's metrics module relies on.
+    #[test]
+    fn test_remote_opts_bytes_downloaded_hook_round_trip() {
+        assert!(RemoteOpts::default().bytes_downloaded_hook().is_none());
+
+        let opts = RemoteOpts::new()
+            .with_header("X-Probe", "1")
+            .with_bytes_downloaded_hook(std::sync::Arc::new(|_| {}));
+        let hook = opts
+            .bytes_downloaded_hook()
+            .expect("hook survives the builder round trip");
+
+        // The hook is invocable and observation-only: calling it is a
+        // no-op on the options.
+        hook(42);
+        assert_eq!(opts.headers(), &[("X-Probe".to_string(), "1".to_string())]);
+    }
+}
