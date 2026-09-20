@@ -120,8 +120,13 @@ default = []
 ocr = ["pdftract-core/ocr"]
 # Full rendering via PDFium (JBIG2, JPEG2000, CCITT decoding)
 full-render = ["dep:libloading", "pdftract-core/full-render"]
-# Remote HTTP source support
-remote = ["dep:ureq"]
+# Remote HTTP source support. Must enable the remote adapter in
+# pdftract-core as well — the cli's remote-gated code (URL extraction,
+# grep, hash) references pdftract_core::source::HttpRangeSource, which
+# does not exist unless the core feature is on. remote_metrics (the
+# pdftract_remote_bytes_downloaded_total seam) needs the pair too, under
+# metrics + remote.
+remote = ["dep:ureq", "pdftract-core/remote"]
 # Document profiles
 profiles = ["dep:serde_yaml", "pdftract-core/profiles", "dep:notify"]
 # Prometheus metrics registry and OpenMetrics v1.0 text exposition
