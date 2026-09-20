@@ -132,13 +132,24 @@ impl Writer {
             fs::create_dir_all(parent)?;
         }
 
-        // Step 3: Load HMAC key and compute signature
-        let key = integrity::load_cache_key(&self.cache_dir).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Cache not initialized: {}", e),
-            )
-        })?;
+        // Step 3: Load HMAC key and compute signature. A fresh cache
+        // directory is initialized lazily here: no production path calls
+        // init_cache_key up front, so without this every write failed
+        // with "Cache not initialized" and no entry was ever stored.
+        // init_cache_key refuses to overwrite an existing key, so a
+        // concurrent first-writer race is harmless.
+        let key = match integrity::load_cache_key(&self.cache_dir) {
+            Ok(key) => key,
+            Err(_) => {
+                let _ = integrity::init_cache_key(&self.cache_dir);
+                integrity::load_cache_key(&self.cache_dir).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::NotFound,
+                        format!("Cache not initialized: {}", e),
+                    )
+                })?
+            }
+        };
 
         let hmac = integrity::compute_hmac(&key, fingerprint, opts_hash, data);
 
