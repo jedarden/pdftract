@@ -34,6 +34,13 @@ use std::sync::Arc;
 
 #[cfg(feature = "remote")]
 use crate::source::RemoteOpts;
+// The remote-gated open_remote_url* helpers below return the source
+// trait; the parser-level alias above (ParserPdfSource) is a different
+// trait, so the source-level one is imported here under the same gate.
+// Without this import no remote-enabled core build compiles, which also
+// blocks the cli's remote-gated metrics seam (remote_metrics).
+#[cfg(feature = "remote")]
+use crate::source::PdfSource;
 
 /// Comprehensive error type for Document operations.
 ///
