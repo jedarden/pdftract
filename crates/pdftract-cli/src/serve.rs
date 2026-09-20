@@ -1816,6 +1816,21 @@ mod tests {
             .unwrap()
     }
 
+    /// A router ready for in-process `oneshot` requests. The audit
+    /// middleware extracts `ConnectInfo`, which a bare router has no
+    /// source for under `oneshot` (every extractor rejection surfaces as
+    /// a 500 before any handler runs), so the peer address the live
+    /// server would provide is mocked here. Test-only — production
+    /// routing is untouched.
+    #[cfg(feature = "metrics")]
+    fn oneshot_app(state: ServeState) -> Router {
+        use axum::extract::connect_info::MockConnectInfo;
+
+        build_router(state, 256 * 1024 * 1024).layer(MockConnectInfo(std::net::SocketAddr::from(
+            ([127, 0, 0, 1], 4242),
+        )))
+    }
+
     /// Metrics: one successful extraction through POST /extract increments
     /// the extraction counter (correct result/ocr labels), the pages
     /// counter, the duration histogram, and the HTTP counter, and settles
@@ -1827,7 +1842,7 @@ mod tests {
 
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let metrics = state.metrics.clone();
-        let app = build_router(state, 256 * 1024 * 1024);
+        let app = oneshot_app(state);
 
         let response = app
             .oneshot(multipart_file_request("/extract", &fixture_pdf_bytes()))
@@ -1886,7 +1901,7 @@ mod tests {
             false,
         );
         let metrics = state.metrics.clone();
-        let app = build_router(state, 256 * 1024 * 1024);
+        let app = oneshot_app(state);
         let pdf = fixture_pdf_bytes();
 
         // First extraction: cache miss, entry written.
@@ -1948,7 +1963,7 @@ mod tests {
 
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let metrics = state.metrics.clone();
-        let app = build_router(state, 256 * 1024 * 1024);
+        let app = oneshot_app(state);
 
         // Valid magic bytes, unparseable body.
         let not_a_pdf = b"%PDF-1.4\nthis is not a parseable PDF body".to_vec();
@@ -1988,7 +2003,7 @@ mod tests {
 
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let metrics = state.metrics.clone();
-        let app = build_router(state, 256 * 1024 * 1024);
+        let app = oneshot_app(state);
 
         let response = app
             .oneshot(multipart_file_request(
@@ -2041,7 +2056,7 @@ mod tests {
 
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
         let metrics = state.metrics.clone();
-        let app = build_router(state, 256 * 1024 * 1024);
+        let app = oneshot_app(state);
 
         let response = app
             .oneshot(

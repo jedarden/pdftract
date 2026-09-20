@@ -1089,7 +1089,14 @@ mod tests {
 
         let state = McpServerState::new(None, None, None, None);
         let metrics = state.metrics().clone();
-        let app = build_router(state);
+        // The audit middleware extracts ConnectInfo, which a bare router
+        // has no source for under `oneshot` (every extractor rejection
+        // surfaces as a 500 before any handler runs), so the peer
+        // address the live server would provide is mocked here.
+        // Test-only — production routing is untouched.
+        let app = build_router(state).layer(axum::extract::connect_info::MockConnectInfo(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 4242)),
+        ));
 
         let pdf_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
