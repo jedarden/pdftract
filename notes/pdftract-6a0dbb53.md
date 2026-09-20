@@ -129,3 +129,36 @@ servers, no orphan risk; extraction directory removed after the runs.
 | 3 | existing serve/mcp response behavior unchanged | serve tests + mcp http metrics tests green at HEAD (§4); this dispatch's wiring only reads responses |
 | 4 | `cargo check` with and without `metrics` | both exit 0 (§4) |
 | 5 | notes + bead-citing commit pushed | this note + `9f035d42` |
+
+## 6. Re-derivation at HEAD (2026-09-20, re-issue dispatch — evidence close, no re-split)
+
+A second auto-split order arrived on this umbrella after quarantine expiry,
+despite all four children of the first split (pdftract-a2eeb7ee,
+pdftract-841093b2, pdftract-8e39532f, pdftract-b60ae586) being closed and
+every criterion mapped to evidence above. The failure-count of 4 reflects
+infra outcomes (attempt 2: hard timeout; attempt 3: api_error 499) whose
+commits (`d5fd6d8d`, `db783e40` + `cc57f946`) are ancestors of HEAD, plus
+attempt 4 being the first decomposition itself — not four failed
+implementations. Attempt 2's stranded WIP patch was diffed against HEAD:
+its content is exactly `db783e40` + `cc57f946`, i.e. already landed.
+
+Splitting a satisfied umbrella would re-issue already-satisfied scope, so
+this dispatch re-derived at HEAD and closed instead. Fresh clean-extraction
+verification (git archive HEAD to /var/tmp, removed after; shared working
+tree deliberately unused — it carries other workers' stranded edits and does
+not compile as a union; HEAD == origin/main, 0 unpushed commits):
+
+| Command | Result |
+|---|---|
+| cargo check -p pdftract-cli | exit 0 |
+| cargo check -p pdftract-cli --features metrics | exit 0 |
+| cargo test -p pdftract-cli --lib --features metrics mcp::http::tests::test_metrics | 3 passed; 0 failed; exit 0 |
+| cargo test -p pdftract-cli --lib --features metrics serve::tests::test_metrics | 5 passed; 0 failed; exit 0 |
+| cargo test -p pdftract-cli --lib --features metrics metrics::registry::tests | 20 passed; 0 failed; exit 0 |
+
+Results are identical to §4. Documented caveat (not a metrics defect): the
+engine's diagnostics pipeline is in a degraded window at HEAD, so the
+live-path diagnostics-mirror test asserts the zero-mirror invariant today
+(§4). No in-scope work remains; the deferred items (stdio transport,
+mcp-side extraction counters, mcp scrape route) belong to the planned
+mcp --metrics PORT bead, which the parent's scope explicitly excludes.
