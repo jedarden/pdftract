@@ -102,7 +102,20 @@ pub fn worker_run(
             // Convert headers HashMap to Vec<(String, String)>
             let headers_vec: Vec<(String, String)> = config.headers.clone().into_iter().collect();
 
-            match HttpRangeSource::with_headers(&path_str, headers_vec) {
+            // Observation-only: feed pdftract_remote_bytes_downloaded_total
+            // for this file's remote fetches (see remote_metrics). The
+            // hook's Arc keeps the command-scoped registry alive for the
+            // source's lifetime; registering it never changes fetch
+            // behavior.
+            #[cfg(feature = "metrics")]
+            let download_hook = {
+                let registry = crate::metrics::Registry::new();
+                Some(crate::remote_metrics::bytes_downloaded_hook(&registry))
+            };
+            #[cfg(not(feature = "metrics"))]
+            let download_hook = None;
+
+            match HttpRangeSource::with_headers_and_hook(&path_str, headers_vec, download_hook) {
                 Ok(s) => Box::new(s),
                 Err(e) => {
                     progress_sink.send(ProgressEvent::FileSkipped {

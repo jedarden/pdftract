@@ -24,7 +24,8 @@ pub mod profiles_cmd;
 /// Feeds `pdftract_remote_bytes_downloaded_total` from the remote fetch
 /// path (`metrics` + `remote` features). The cli registers the
 /// registry-backed hook where it builds a remote source — `main.rs`'s
-/// URL-extract path and `hash::compute_fingerprint_from_url`.
+/// URL-extract path, `hash::compute_fingerprint_from_url`, and the remote
+/// branch of `grep::worker::worker_run`.
 #[cfg(all(feature = "metrics", feature = "remote"))]
 pub mod remote_metrics;
 pub mod serve;

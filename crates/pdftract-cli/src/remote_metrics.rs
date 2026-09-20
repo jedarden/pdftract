@@ -6,8 +6,9 @@
 //! source exposes an observation-only bytes-downloaded hook
 //! (`pdftract_core::source::BytesDownloadedHook`) and this module builds
 //! the registry-backed callback that the cli registers where it builds a
-//! remote source (`main.rs`'s URL-extract path and
-//! `hash::compute_fingerprint_from_url`). Observation only: the hook never
+//! remote source (`main.rs`'s URL-extract path,
+//! `hash::compute_fingerprint_from_url`, and the remote branch of
+//! `grep::worker::worker_run`). Observation only: the hook never
 //! influences range reads, retries, or error classification, and there
 //! is no endpoint, no CLI flag, and no listener here.
 
