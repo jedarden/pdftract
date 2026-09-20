@@ -1847,6 +1847,30 @@ mod tests {
         )))
     }
 
+    /// Read one plain (unlabeled) sample's integer value straight from a
+    /// registry snapshot by sample name — asserts the counter state
+    /// itself, not its rendered OpenMetrics text. Panics if the sample is
+    /// absent, carries labels, or is not an integer.
+    #[cfg(feature = "metrics")]
+    fn snapshot_int(families: &[crate::metrics::MetricFamily], name: &str) -> u64 {
+        for family in families {
+            for sample in &family.samples {
+                if sample.name == name {
+                    assert!(
+                        sample.labels.is_empty(),
+                        "{name} must be unlabeled, got {:?}",
+                        sample.labels
+                    );
+                    return match sample.value {
+                        crate::metrics::SampleValue::Int(value) => value,
+                        other => panic!("{name}: expected an integer sample, got {other:?}"),
+                    };
+                }
+            }
+        }
+        panic!("sample {name} absent from the registry snapshot");
+    }
+
     /// Metrics: one successful extraction through POST /extract increments
     /// the extraction counter (correct result/ocr labels), the pages
     /// counter, the duration histogram, and the HTTP counter, and settles
@@ -1901,7 +1925,9 @@ mod tests {
 
     /// Metrics: exercising the existing cache integration through
     /// POST /extract moves the hit, miss, and size counters (a miss writes
-    /// an entry; the identical second request hits it).
+    /// an entry; the identical second request hits it). The counters are
+    /// asserted at the registry state level (`snapshot()`), and the
+    /// rendered OpenMetrics text is additionally checked to agree.
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn test_metrics_cache_hit_miss_and_size_counters() {
@@ -1927,6 +1953,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        let families = metrics.snapshot();
+        assert_eq!(
+            snapshot_int(&families, "pdftract_cache_misses_total"),
+            1,
+            "first extraction must count exactly one cache miss"
+        );
+        assert_eq!(
+            snapshot_int(&families, "pdftract_cache_hits_total"),
+            0,
+            "hits should still be zero"
+        );
+        let size_after_miss = snapshot_int(&families, "pdftract_cache_size_bytes");
+        assert!(
+            size_after_miss > 0,
+            "cache size should reflect the written entry"
+        );
+
+        // The rendered document must agree with the registry state.
         let text = metrics.render();
         assert!(
             text.contains("pdftract_cache_misses_total 1\n"),
@@ -1947,6 +1991,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        let families = metrics.snapshot();
+        assert_eq!(
+            snapshot_int(&families, "pdftract_cache_hits_total"),
+            1,
+            "the identical second extraction must count exactly one hit"
+        );
+        assert_eq!(
+            snapshot_int(&families, "pdftract_cache_misses_total"),
+            1,
+            "misses must not double-count"
+        );
+        assert_eq!(
+            snapshot_int(&families, "pdftract_cache_size_bytes"),
+            size_after_miss,
+            "a hit serves the existing entry; on-disk size must not move"
+        );
+
+        // The rendered document must agree with the registry state.
         let text = metrics.render();
         assert!(
             text.contains("pdftract_cache_hits_total 1\n"),
