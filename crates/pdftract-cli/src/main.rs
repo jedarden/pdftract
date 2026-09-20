@@ -1309,7 +1309,7 @@ fn cmd_extract(
             // and run the normal local extraction on it.
             let temp_pdf = tempfile::NamedTempFile::new()
                 .context("Failed to create temporary file for remote PDF")?;
-            std::io::copy(&mut source, temp_pdf.as_file())
+            std::io::copy(&mut source, temp_pdf.as_file_mut())
                 .context("Failed to download remote PDF")?;
 
             let result = extract_pdf(temp_pdf.path(), &options)
