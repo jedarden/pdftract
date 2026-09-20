@@ -454,9 +454,16 @@ pub async fn run(
     eprintln!("Max upload size: {} MB", max_upload_mb);
     eprintln!("Max decompression size: {} GB", max_decompress_gb);
 
-    axum::serve(listener, app)
-        .await
-        .context("HTTP server error")?;
+    // The router stack (audit log + metrics middleware) extracts
+    // `ConnectInfo<SocketAddr>`, so the make service must supply it — a
+    // bare Router serve 500s every request with "Missing request
+    // extension".
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .context("HTTP server error")?;
 
     Ok(())
 }
@@ -1479,10 +1486,13 @@ mod tests {
 
     /// Helper to load a valid test PDF.
     fn load_test_pdf() -> Vec<u8> {
-        // Use the existing test fixture from pdftract-libpdftract
+        // The tracked repo fixture (same one `fixture_pdf_bytes` uses).
+        // The old path, crates/pdftract-libpdftract/tests/hello.pdf, was
+        // removed from the tree by 4039def0 and this loader has been
+        // failing on a missing file ever since.
         let pdf_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../pdftract-libpdftract/tests/hello.pdf"
+            "/../../tests/fixtures/test-minimal.pdf"
         );
         std::fs::read(pdf_path).expect("Failed to read test PDF")
     }
@@ -1502,12 +1512,13 @@ mod tests {
         use reqwest::multipart::{Form, Part};
         use tokio::time::Instant;
 
-        // Start the server in the background
+        // Start the server in the background. Build the same router
+        // production serves (its middleware inserts RequestMetadata and
+        // extracts ConnectInfo) and serve it through the ConnectInfo make
+        // service — a hand-rolled two-route Router 500s every /extract
+        // with "Missing request extension" before any handler runs.
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false); // No cache, 1 GB decompress limit
-        let app = Router::new()
-            .route("/extract", post(extract_handler))
-            .route("/health", get(health_handler))
-            .with_state(state);
+        let app = build_router(state, 256 * 1024 * 1024);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -1516,7 +1527,12 @@ mod tests {
         let port = addr.port();
 
         tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("Server error");
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .expect("Server error");
         });
 
         // Give the server a moment to start

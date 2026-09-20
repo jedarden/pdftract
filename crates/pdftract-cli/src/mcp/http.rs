@@ -208,8 +208,16 @@ pub async fn run_server(
     eprintln!("  GET  /health  - Health check");
     eprintln!();
 
-    // Run the server
-    axum::serve(listener, app).await.context("Server error")?;
+    // Run the server. The router stack (audit log + metrics middleware)
+    // extracts `ConnectInfo<SocketAddr>`, so the make service must supply
+    // it — a bare Router serve 500s every request with "Missing request
+    // extension".
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .context("Server error")?;
 
     Ok(())
 }
