@@ -332,7 +332,11 @@ mod tests {
             .with_bytes_downloaded_hook(bytes_downloaded_hook(&registry));
         let mut source = pdftract_core::source::open_remote(&server.url, &opts, None)
             .expect("open remote source against a no-range server");
-        assert!(!source.supports_range(), "server advertised Range support");
+        assert_eq!(
+            source.len(),
+            pdf.len() as u64,
+            "fallback source lost the HEAD-probed content length"
+        );
 
         let mut downloaded = Vec::new();
         source
