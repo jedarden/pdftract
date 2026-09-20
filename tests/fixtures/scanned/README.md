@@ -97,7 +97,18 @@ fixtures):
 ## Verification
 
 ```bash
-# Tesseract + poppler tools come from nix (the attribute is poppler-utils)
+# Full corpus gate: live-OCR every manifested fixture (pdfimages -png +
+# tesseract stdout -l eng per page) and gate clean 300 DPI fixtures at <= 3%.
+# Tesseract + poppler tools come from nix (the attribute is poppler-utils).
+nix-shell -p tesseract poppler-utils python3 --run 'scripts/measure-wer.sh'
+
+# Without the OCR tools installed: re-check the gate against the committed
+# reference OCR outputs (verifies the gate arithmetic, not live OCR), and
+# exercise the failure paths + fixture immutability:
+scripts/measure-wer.sh --recorded
+scripts/measure-wer.sh --self-test
+
+# Single fixture, measured exactly the way the reference outputs were made:
 nix-shell -p tesseract poppler-utils python3 --run '
   R=tests/fixtures/scanned
   O=$(mktemp -d)
@@ -107,8 +118,13 @@ nix-shell -p tesseract poppler-utils python3 --run '
 '
 ```
 
-Exit 0 = WER ≤ 3% (quality gate passed); exit 1 = WER > 3%. `VERBOSE=1`
-prints the substitution/insertion/deletion breakdown.
+Exit 0 = every clean fixture at WER ≤ 3% (quality gate passed); exit 1 = a
+clean fixture over threshold (the degraded 200 DPI fixture is always
+reported separately and never gates). `VERBOSE=1` prints the
+substitution/insertion/deletion breakdown. New fixture directories must be
+registered in the `FIXTURE_MANIFEST` table inside `scripts/measure-wer.sh`
+to join the gate — the script prints a NOTE for unregistered directories
+that host PDFs.
 
 To regenerate the scanned PDFs and reference OCR outputs, see
 [GEN_MANIFEST.md](GEN_MANIFEST.md) ("Regeneration") — the generator is

@@ -120,6 +120,9 @@ To re-verify:
 
 ```sh
 R=tests/fixtures/scanned
+# whole corpus, live OCR, clean gate at <= 3% (tesseract 5.x + poppler from nix):
+nix-shell -p tesseract poppler-utils python3 --run 'scripts/measure-wer.sh'
+# single recorded pair (no OCR tools needed):
 scripts/measure-wer.sh $R/invoice/invoice-300dpi-ocr.txt $R/invoice/invoice-300dpi-ground-truth.txt
 # ... same for receipt, letter, form, multi-page/report
 ```
