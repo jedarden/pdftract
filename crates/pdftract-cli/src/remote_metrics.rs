@@ -44,6 +44,7 @@ pub(crate) fn register_bytes_downloaded_hook(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pdftract_core::source::PdfSource;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -180,7 +181,7 @@ mod tests {
                 .find_map(|l| l.strip_prefix("Range: bytes="))
                 .map(str::trim)
                 .and_then(|v| v.split_once('-'))
-                .and_then(|(s, e)| Some(s.parse::<usize>().ok()?, e.parse::<usize>().ok()?));
+                .and_then(|(s, e)| Some((s.parse::<usize>().ok()?, e.parse::<usize>().ok()?)));
 
             let (start, end) = match range {
                 Some((start, end)) => (start, end.min(pdf_data.len() - 1)),
