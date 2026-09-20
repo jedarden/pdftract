@@ -133,7 +133,9 @@ pub fn extract_with_cache(
 
     match cache_result {
         Ok(Some((compressed_data, age_seconds))) => {
-            // Try to deserialize
+            // Try to deserialize. `Reader::read` has already verified the
+            // entry HMAC and decompressed it, so `compressed_data` is the
+            // plain JSON payload.
             match serde_json::from_slice::<ExtractionResult>(&compressed_data) {
                 Ok(result) => {
                     // Cache hit - increment counter and touch the entry

@@ -460,7 +460,7 @@ pub struct ExtractionMetadata {
     /// suffix (that richer shape is `Diagnostic`'s `Display`, which is not
     /// this surface). Produced by
     /// [`to_legacy_strings`](crate::diagnostics_compat::to_legacy_strings).
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Vec::is_empty"))]
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
     pub diagnostics: Vec<String>,
     /// The same diagnostics in structured form (code/severity/page_index/
     /// location/hint), as documented in
