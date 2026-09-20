@@ -303,6 +303,35 @@ fn tool_call_name(request: &Request) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Count the diagnostics an mcp tool result reports (`metrics` feature).
+///
+/// Extraction tools embed the document's structured diagnostics in their
+/// result at `metadata.diagnostics_detailed`; each entry feeds
+/// `pdftract_diagnostic_emitted_total` with the same code/severity
+/// labels the serve path's `record_extraction` uses. Observation only:
+/// error responses, results without the array, and unparseable entries
+/// count nothing, and the response is never modified.
+#[cfg(feature = "metrics")]
+fn record_response_diagnostics(metrics: &crate::metrics::Registry, response: &Response) {
+    let Some(result) = response.get_result() else {
+        return;
+    };
+    let Some(entries) = result
+        .get("metadata")
+        .and_then(|metadata| metadata.get("diagnostics_detailed"))
+    else {
+        return;
+    };
+    let Ok(diagnostics) =
+        serde_json::from_value::<Vec<pdftract_core::schema::DiagnosticJson>>(entries.clone())
+    else {
+        return;
+    };
+    for diagnostic in &diagnostics {
+        metrics.inc_diagnostic(&diagnostic.code, &diagnostic.severity);
+    }
+}
+
 /// POST / handler - process JSON-RPC requests.
 ///
 /// Accepts both single requests and batch arrays.
@@ -356,6 +385,9 @@ async fn handle_post_request(
             state.metrics.inc_mcp_request(&tool_name);
         }
         let response = handle_request(request, registry, root);
+        // Count diagnostics the tool reported (`metrics` feature).
+        #[cfg(feature = "metrics")]
+        record_response_diagnostics(&state.metrics, &response);
         responses.push(response);
     }
 
@@ -1141,5 +1173,158 @@ mod tests {
             text.contains("pdftract_build_info{version=\""),
             "build_info missing:\n{text}"
         );
+    }
+
+    /// Metrics: the diagnostics an mcp tool result reports at
+    /// `metadata.diagnostics_detailed` feed
+    /// `pdftract_diagnostic_emitted_total` with code/severity labels;
+    /// error responses and results without the array count nothing.
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_record_response_diagnostics_counts_tool_result() {
+        let registry = crate::metrics::Registry::new();
+
+        // A successful extract-shaped result with two diagnostics.
+        let success = Response::success(
+            Id::Number(1),
+            json!({
+                "metadata": {
+                    "diagnostics_detailed": [
+                        {"code": "STREAM_BOMB", "message": "m", "severity": "error"},
+                        {"code": "STRUCT_MISSING_KEY", "message": "m", "severity": "warn"}
+                    ]
+                }
+            }),
+        );
+        record_response_diagnostics(&registry, &success);
+
+        // An error response and a result without the array: no counts.
+        record_response_diagnostics(
+            &registry,
+            &Response::error(Id::Number(2), ErrorObject::invalid_params()),
+        );
+        record_response_diagnostics(
+            &registry,
+            &Response::success(Id::Number(3), json!({"text": "no diagnostics here"})),
+        );
+
+        let text = registry.render();
+        assert!(
+            text.contains(
+                "pdftract_diagnostic_emitted_total{code=\"STREAM_BOMB\",severity=\"error\"} 1\n"
+            ),
+            "missing STREAM_BOMB counter:\n{text}"
+        );
+        assert!(
+            text.contains(
+                "pdftract_diagnostic_emitted_total{code=\"STRUCT_MISSING_KEY\",severity=\"warn\"} 1\n"
+            ),
+            "missing STRUCT_MISSING_KEY counter:\n{text}"
+        );
+    }
+
+    /// Metrics: a `tools/call` to `extract` driven through the HTTP
+    /// router feeds `pdftract_diagnostic_emitted_total` on the live
+    /// path — the rendered counters must mirror exactly what the
+    /// response body reports.
+    ///
+    /// At the current HEAD no fixture emits `diagnostics_detailed`
+    /// through extraction (the engine's diagnostics pipeline is in a
+    /// known degraded window; every probed fixture either errors or
+    /// extracts with zero diagnostics), so the mirrored count is zero
+    /// today. The unit test above pins the non-zero label rendering;
+    /// this test pins that the real `handle_post_request` loop feeds
+    /// the helper with the real response: the loop runs (tool counter),
+    /// nothing phantom is counted (no non-zero diagnostic lines), and
+    /// the rendered total agrees with the body.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_tool_call_diagnostics_counted_from_extract_result() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+
+        let state = McpServerState::new(None, None, None, None);
+        let metrics = state.metrics().clone();
+        let app = build_router(state).layer(axum::extract::connect_info::MockConnectInfo(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 4242)),
+        ));
+
+        // Extracts successfully at HEAD (see the serve-path metrics
+        // tests, which assert pages from this same fixture).
+        let pdf_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/test-minimal.pdf"
+        );
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "extract",
+                "arguments": {"path": pdf_path}
+            }
+        });
+        let request = AxumRequest::builder()
+            .method("POST")
+            .uri("/")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        // What the client received, as (code, severity) -> count.
+        let mut reported: std::collections::BTreeMap<(String, String), usize> =
+            std::collections::BTreeMap::new();
+        if let Some(entries) = response["result"]["metadata"]["diagnostics_detailed"].as_array() {
+            for diagnostic in entries {
+                let key = (
+                    diagnostic["code"].as_str().unwrap().to_string(),
+                    diagnostic["severity"].as_str().unwrap().to_string(),
+                );
+                *reported.entry(key).or_insert(0) += 1;
+            }
+        }
+
+        let text = metrics.render();
+
+        // The tool loop ran and the invocation is counted.
+        assert!(
+            text.contains("pdftract_mcp_requests_total{tool=\"extract\"} 1\n"),
+            "extract tool call not counted:\n{text}"
+        );
+
+        // Every (code, severity) the response reported is rendered with
+        // exactly the reported count, and nothing else was counted.
+        let rendered_nonzero = text
+            .lines()
+            .filter(|l| l.starts_with("pdftract_diagnostic_emitted_total{"))
+            .filter(|l| !l.ends_with(" 0"))
+            .collect::<Vec<_>>();
+        if reported.is_empty() {
+            assert!(
+                rendered_nonzero.is_empty(),
+                "diagnostics counted that the response did not report: {rendered_nonzero:?}"
+            );
+        } else {
+            for ((code, severity), count) in &reported {
+                let line = format!(
+                    "pdftract_diagnostic_emitted_total{{code=\"{code}\",severity=\"{severity}\"}} {count}\n"
+                );
+                assert!(
+                    text.contains(&line),
+                    "missing or mismatched counter line {line}; rendered:\n{text}"
+                );
+            }
+            assert_eq!(
+                rendered_nonzero.len(),
+                reported.len(),
+                "phantom diagnostic counters; rendered:\n{text}"
+            );
+        }
     }
 }
