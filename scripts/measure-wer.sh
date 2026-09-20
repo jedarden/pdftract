@@ -99,7 +99,7 @@ invoice-300dpi|clean|invoice/invoice-300dpi.pdf|invoice/invoice-300dpi-ground-tr
 letter-300dpi|clean|letter/letter-300dpi.pdf|letter/letter-300dpi-ground-truth.txt|letter/letter-300dpi-ocr.txt
 form-300dpi|clean|form/form-300dpi.pdf|form/form-300dpi-ground-truth.txt|form/form-300dpi-ocr.txt
 report-300dpi|clean|multi-page/report-300dpi.pdf|multi-page/report-300dpi-ground-truth.txt|multi-page/report-300dpi-ocr.txt
-degraded-200dpi|degraded|low-quality/degraded-200dpi.pdf|low-quality/degraded-200dpi-ground-truth.txt|low-quality/degraded-200dpi-ocr.txt
+degraded-200dpi|degraded|low-quality/degraded-200dpi.pdf|low-quality/degraded-200dpi.txt|low-quality/degraded-200dpi-ocr.txt
 EOF
 
 # ---------------------------------------------------------------------------

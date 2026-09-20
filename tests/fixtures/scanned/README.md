@@ -35,7 +35,11 @@ scanned/
 │   └── form-300dpi.txt                # Ground truth for the scanned page
 ├── multi-page/                   # report-300dpi (11 pages, canonical)
 │   └── doc-10page-300dpi*           # legacy 10-page fixture
-├── low-quality/                  # degraded-200dpi (intentionally degraded)
+├── low-quality/                  # degraded-200dpi (intentionally degraded, 200 DPI)
+│   ├── degraded-200dpi.pdf            # 200 DPI degraded scan (public-domain source)
+│   ├── degraded-200dpi.txt            # Ground truth (canonical name)
+│   ├── degraded-200dpi-ground-truth.txt  # Ground truth (long-name duplicate)
+│   └── degraded-200dpi-ocr.txt        # Reference OCR output
 └── documents/                    # legacy invoice/form copies (compatibility)
 ```
 
@@ -50,10 +54,12 @@ the page ground truth. This is the concise provenance for the clean corpus.
 
 ## Fixtures and WER Status
 
-Receipt/report/degraded measured 2026-09-14; invoice/letter re-verified and form
-re-measured 2026-09-18 after its redesign to a single page (fresh OCR, tesseract
-5.5.2, via `scripts/measure-wer.sh`; gate is exit 0, WER ≤ 3%, on clean 300 DPI
-fixtures):
+Receipt/report/degraded measured 2026-09-14 and re-verified live 2026-09-20
+(unchanged); invoice/letter re-verified and form re-measured 2026-09-18 after
+its redesign to a single page (fresh OCR, tesseract 5.5.2, via
+`scripts/measure-wer.sh`; gate is exit 0, WER ≤ 3%, on clean 300 DPI fixtures;
+the degraded row is the live-OCR figure — the committed reference OCR measures
+8.10% against the same ground truth):
 
 | Fixture | Pages | Ground truth words | WER | Gate |
 |---------|-------|--------------------|-----|------|
@@ -82,6 +88,11 @@ fixtures):
   third-party source: Abraham Lincoln's 1860 Cooper Union address, accessed via
   Project Gutenberg and public domain in the USA (attribution and legal notes in
   [`low-quality/source-document-abraham-lincoln-public-domain.txt`](low-quality/source-document-abraham-lincoln-public-domain.txt)).
+  The source is preserved at 200 DPI: the page embeds a single 1700×2200 px
+  image on a 612×792 pt (8.5×11 in) US Letter page, i.e. exactly 200×200 PPI.
+  Its WER is expected to be well above the clean 3% gate (soft target < 10%)
+  while the recognized text stays usable for OCR regression coverage; the
+  fixture is manifest class `degraded` and never gates.
 
 ### Expected OCR role of each document
 
@@ -92,7 +103,7 @@ fixtures):
 | `letter/letter-300dpi` | Tier 1 clean scan — long prose lines, the hardest line-length case in the trio |
 | `form/form-300dpi` | Tier 1 clean scan — single-page fill-field form: dotted fill lines, checkboxes, section headings |
 | `multi-page/report-300dpi` | Multi-page throughput/perf fixture (10+ pages < 30 s), mixed content |
-| `low-quality/degraded-200dpi` | Degraded-scan robustness; WER is expected to exceed the 3% clean gate |
+| `low-quality/degraded-200dpi` | Degraded-scan robustness at 200 DPI — WER is expected to exceed the 3% clean gate (soft target < 10%) yet remain usable for OCR regression coverage; reported, never gates |
 
 ## Verification
 

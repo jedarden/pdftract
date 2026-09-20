@@ -147,13 +147,26 @@ stdout -l eng` per page, concatenated in page order.
 The `low-quality/` subdirectory contains intentionally degraded OCR fixtures for testing robustness against poor scan quality.
 
 ### degraded-200dpi
-- **Purpose**: Test OCR quality on degraded 200 DPI scans
-- **Ground Truth**: `low-quality/degraded-200dpi-ground-truth.txt`
+- **Purpose**: Test OCR quality on degraded 200 DPI scans. This fixture is
+  expected to measure higher WER than the clean corpus (soft target < 10%,
+  far above the clean 3% gate) while the recognized text remains usable for
+  OCR regression coverage; it is manifest class `degraded` in
+  `scripts/measure-wer.sh` and never contributes to the clean gate.
+- **Ground Truth**: `low-quality/degraded-200dpi.txt` (canonical name;
+  `low-quality/degraded-200dpi-ground-truth.txt` is a byte-identical
+  duplicate kept for older references)
 - **Target PDF**: `low-quality/degraded-200dpi.pdf`
+- **Resolution**: 200×200 PPI — the page embeds one 1700×2200 px JPEG
+  (/DCTDecode) on a 612×792 pt (8.5×11 in) US Letter page;
+  1700/8.5 = 2200/11 = 200
 - **Generation**: `python tools/create_degraded_200dpi.py`
+- **Source**: Abraham Lincoln's 1860 Cooper Union address via Project
+  Gutenberg, public domain in the USA — attribution and legal notes in
+  `low-quality/source-document-abraham-lincoln-public-domain.txt`
 - **Degradation Effects**: Gaussian blur (0.3px radius), noise (±12), reduced contrast (90%), reduced sharpness (85%), JPEG compression (85%)
 - **WER Target**: < 10% (degraded fixtures have higher acceptable WER)
-- **Status**: Generated, OCR output available (degraded-200dpi-ocr.txt, 8.10%)
+- **Status**: Generated, OCR output available (degraded-200dpi-ocr.txt;
+  8.10% recorded, 9.97% live with tesseract 5.5.2 — re-verified 2026-09-20)
 
 ## Dependencies
 
