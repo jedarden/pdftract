@@ -4,6 +4,7 @@
 //! and outputs it to stdout with appropriate exit codes.
 
 use anyhow::{anyhow, Context, Result};
+use pdftract_core::document::resolve_root_ref;
 use pdftract_core::fingerprint::{
     compute_fingerprint, CatalogFlags, ContentStreamData, FingerprintInput, PageFingerprintData,
 };
@@ -89,12 +90,7 @@ fn compute_fingerprint_from_file(path: &Path, _password: Option<&str>) -> Result
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(
@@ -158,12 +154,7 @@ fn compute_fingerprint_from_url(url: &str, headers: &[(String, String)]) -> Resu
     let resolver = XrefResolver::from_section(xref_section.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(&resolver, root_ref, Some(&source as &dyn PdfSource)).map_err(

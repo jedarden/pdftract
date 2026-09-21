@@ -307,7 +307,9 @@ pub fn get_metadata(pdf_path: &Path) -> Result<PdfMetadata> {
     let (_fingerprint, catalog, pages, _resolver, trailer) = crate::document::parse_pdf_file(pdf_path)?;
 
     // Check if document is encrypted by looking for /Encrypt in trailer
-    let is_encrypted = trailer.get("/Encrypt").is_some();
+    // (dict keys are stored slash-less, e.g. ["Size", "Root", "Info", "ID"],
+    // so a "/Encrypt" lookup never matches)
+    let is_encrypted = trailer.get("Encrypt").is_some();
 
     Ok(PdfMetadata {
         page_count: pages.len(),

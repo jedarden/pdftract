@@ -19,7 +19,7 @@ use crate::attachment::filespec::extract_one;
 use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::diagnostics_compat::to_legacy_strings;
-use crate::document::compute_fingerprint_lazy;
+use crate::document::{compute_fingerprint_lazy, resolve_root_ref};
 use crate::forms::{acro_field_to_value, combine, walk_acroform_fields, FormFieldValue};
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::page_extraction_error::PageExtractionError;
@@ -651,12 +651,7 @@ pub fn extract_pdf(
     // downstream consumes one.
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(
@@ -1754,12 +1749,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(
@@ -2123,12 +2113,7 @@ where
         XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(

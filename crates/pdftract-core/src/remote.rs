@@ -19,7 +19,7 @@
 //! let (catalog, resolver, source, fingerprint) = open_remote("https://example.com/doc.pdf", &opts)?;
 //! ```
 
-use crate::document::compute_fingerprint_lazy;
+use crate::document::{compute_fingerprint_lazy, resolve_root_ref};
 use crate::parser::catalog::{parse_catalog, Catalog};
 use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
 use crate::source::{open_remote as open_remote_source, RemoteOpts};
@@ -94,12 +94,7 @@ pub fn open_remote(
     let resolver = XrefResolver::from_section_with_source(xref_section.clone(), parser_source.clone());
 
     // Get the root reference from trailer
-    let root_ref = xref_section
-        .trailer
-        .as_ref()
-        .and_then(|trailer| trailer.get("Root"))
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(

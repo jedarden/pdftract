@@ -15,12 +15,12 @@ use crate::fingerprint::{
 };
 use crate::page_extraction_error::{PageExtractionError, PageResult};
 use crate::parser::catalog::{catalog_dict_missing_essential_keys, is_catalog_dict_empty, is_catalog_dict_none, parse_catalog, Catalog};
-use crate::parser::object::PdfDict;
+use crate::parser::object::{ObjRef, PdfDict};
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
 use crate::parser::xref::{
-    detect_linearization, load_xref_linearized, load_xref_with_prev_chain,
-    XrefResolver,
+    detect_linearization, load_xref_linearized, load_xref_with_prev_chain, XrefResolver,
+    XrefSection,
 };
 use crate::receipts::verifier::SpanData;
 use crate::source::FileSource;
@@ -381,6 +381,25 @@ impl std::error::Error for DocumentError {}
 /// Result type for Document operations that use DocumentError.
 pub type DocumentResult<T> = std::result::Result<T, DocumentError>;
 
+/// Resolve the catalog root reference from a parsed xref section's trailer.
+///
+/// The two failure modes are kept distinct: a section whose trailer never
+/// parsed reports "No trailer in xref section", while a present trailer
+/// lacking a `/Root` entry (or carrying a non-reference value there) reports
+/// "No /Root reference in trailer". The extract/remote/hash entry points
+/// previously collapsed both cases into the /Root message, mislabeling
+/// trailer loss as a trailer-content defect.
+pub fn resolve_root_ref(xref_section: &XrefSection) -> Result<ObjRef> {
+    let trailer = xref_section
+        .trailer
+        .as_ref()
+        .ok_or_else(|| anyhow!("No trailer in xref section"))?;
+    trailer
+        .get("Root")
+        .and_then(|obj| obj.as_ref())
+        .ok_or_else(|| anyhow!("No /Root reference in trailer"))
+}
+
 /// Parse a PDF file and return the document components needed for verification.
 ///
 /// This is a high-level function that:
@@ -427,10 +446,7 @@ pub fn parse_pdf_file(
 
     // Get the root reference from trailer
     let trailer = xref_section.trailer.as_ref().ok_or_else(|| anyhow!("No trailer in xref section"))?;
-    let root_ref = trailer
-        .get("Root")
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(
@@ -522,10 +538,7 @@ pub fn parse_pdf_source(
         .ok_or_else(|| anyhow!("No trailer in xref section"))?;
 
     // Get the root reference from trailer
-    let root_ref = trailer
-        .get("Root")
-        .and_then(|obj| obj.as_ref())
-        .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
+    let root_ref = resolve_root_ref(&xref_section)?;
 
     // Parse the catalog
     let catalog = parse_catalog(
@@ -1093,12 +1106,7 @@ impl PdfExtractor {
             XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
         // Get the root reference from trailer
-        let root_ref = xref_section
-            .trailer
-            .as_ref()
-            .and_then(|trailer| trailer.get("Root"))
-            .and_then(|obj| obj.as_ref())
-            .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
+        let root_ref = resolve_root_ref(&xref_section)?;
 
         // Parse the catalog
         let catalog = parse_catalog(
@@ -1587,12 +1595,7 @@ impl Document {
         let resolver = XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
         // Get the root reference from trailer
-        let root_ref = xref_section
-            .trailer
-            .as_ref()
-            .and_then(|trailer| trailer.get("Root"))
-            .and_then(|obj| obj.as_ref())
-            .ok_or_else(|| anyhow!("No /Root reference in trailer"))?;
+        let root_ref = resolve_root_ref(&xref_section)?;
 
         // Parse the catalog
         let catalog =
