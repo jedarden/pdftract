@@ -268,6 +268,8 @@ pub enum Commands {
     /// - `POST /extract/text` - Extract PDF and return plain text
     /// - `POST /extract/stream` - Extract PDF and return streaming NDJSON
     /// - `GET /health` - Health check (responds within 100ms even during concurrent extractions)
+    /// - `GET /metrics` - OpenMetrics v1.0 exposition, served ONLY on the
+    ///   separate `--metrics PORT` listener (never on the main port)
     ///
     /// ## Cache
     ///
@@ -277,6 +279,16 @@ pub enum Commands {
         /// Bind address (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
         #[arg(short, long, default_value = "127.0.0.1:8080")]
         bind: String,
+
+        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0)
+        ///
+        /// The metrics listener shares --bind's interface (its host part) so
+        /// scraping reachability can differ from production traffic. PORT 0
+        /// lets the OS choose; the chosen port is printed to stderr. Requires
+        /// a build with the `metrics` cargo feature (the `serve` feature
+        /// implies it); any other build rejects the flag at startup.
+        #[arg(long, value_name = "PORT")]
+        metrics: Option<u16>,
 
         /// Enable cache at this directory
         #[arg(long, value_name = "DIR")]
@@ -334,6 +346,18 @@ pub enum Commands {
         /// Enables HTTP+SSE transport mode. Mutually exclusive with --stdio.
         #[arg(short, long, value_name = "ADDR", conflicts_with = "stdio")]
         bind: Option<String>,
+
+        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0)
+        ///
+        /// Same semantics as `serve --metrics`: the listener shares --bind's
+        /// interface (its host part) so scraping reachability can differ from
+        /// production traffic; /metrics is never served on the main --bind
+        /// port. PORT 0 lets the OS choose; the chosen port is printed to
+        /// stderr. HTTP transport only — combining --metrics with --stdio is
+        /// a usage error. Requires a build with the `metrics` cargo feature;
+        /// any other build rejects the flag at startup.
+        #[arg(long, value_name = "PORT")]
+        metrics: Option<u16>,
 
         /// Path to a file containing the bearer token (RECOMMENDED)
         #[arg(long, conflicts_with = "auth_token")]

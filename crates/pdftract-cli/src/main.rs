@@ -300,6 +300,8 @@ enum Commands {
     /// - `POST /extract/text` - Extract PDF and return plain text
     /// - `POST /extract/stream` - Extract PDF and return streaming NDJSON
     /// - `GET /health` - Health check (responds within 100ms even during concurrent extractions)
+    /// - `GET /metrics` - OpenMetrics v1.0 exposition, served ONLY on the
+    ///   separate `--metrics PORT` listener (never on the main port)
     ///
     /// ## Cache
     ///
@@ -309,6 +311,16 @@ enum Commands {
         /// Bind address (e.g., "127.0.0.1:8080", "[::1]:9000", "0.0.0.0:3000")
         #[arg(short, long, default_value = "127.0.0.1:8080")]
         bind: String,
+
+        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0)
+        ///
+        /// The metrics listener shares --bind's interface (its host part) so
+        /// scraping reachability can differ from production traffic. PORT 0
+        /// lets the OS choose; the chosen port is printed to stderr. Requires
+        /// a build with the `metrics` cargo feature (the `serve` feature
+        /// implies it); any other build rejects the flag at startup.
+        #[arg(long, value_name = "PORT")]
+        metrics: Option<u16>,
 
         /// Enable cache at this directory
         #[arg(long, value_name = "DIR")]
@@ -366,6 +378,18 @@ enum Commands {
         /// Enables HTTP+SSE transport mode. Mutually exclusive with --stdio.
         #[arg(short, long, value_name = "ADDR", conflicts_with = "stdio")]
         bind: Option<String>,
+
+        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0)
+        ///
+        /// Same semantics as `serve --metrics`: the listener shares --bind's
+        /// interface (its host part) so scraping reachability can differ from
+        /// production traffic; /metrics is never served on the main --bind
+        /// port. PORT 0 lets the OS choose; the chosen port is printed to
+        /// stderr. HTTP transport only — combining --metrics with --stdio is
+        /// a usage error. Requires a build with the `metrics` cargo feature;
+        /// any other build rejects the flag at startup.
+        #[arg(long, value_name = "PORT")]
+        metrics: Option<u16>,
 
         /// Path to a file containing the bearer token (RECOMMENDED)
         #[arg(long, conflicts_with = "auth_token")]
@@ -742,6 +766,7 @@ fn main() -> Result<()> {
         }
         Commands::Serve {
             bind,
+            metrics,
             cache_dir,
             cache_size,
             no_cache,
@@ -754,6 +779,7 @@ fn main() -> Result<()> {
         } => {
             if let Err(e) = cmd_serve(
                 bind,
+                metrics,
                 cache_dir,
                 &cache_size,
                 no_cache,
@@ -814,6 +840,7 @@ fn main() -> Result<()> {
         Commands::Mcp {
             stdio,
             bind,
+            metrics,
             auth_token_file,
             auth_token,
             max_upload_mb,
@@ -823,6 +850,17 @@ fn main() -> Result<()> {
             // Per ADR-006: exactly one transport must be selected.
             // If neither --stdio nor --bind is specified, default to stdio mode.
             let use_stdio = stdio || bind.is_none();
+
+            // The metrics exposition listener is an HTTP-transport feature:
+            // in stdio mode the protocol owns stdout, and a second listener
+            // was never in scope for it (plan "Monitoring and Alerting"
+            // specifies `mcp --bind ... --metrics PORT`).
+            if metrics.is_some() && use_stdio {
+                eprintln!(
+                    "Error: --metrics requires HTTP transport (--bind); it is not available in stdio mode"
+                );
+                std::process::exit(2);
+            }
 
             // Validate and canonicalize the root directory if provided
             let root_path = match root {
@@ -857,6 +895,7 @@ fn main() -> Result<()> {
                 let bind_addr = bind.expect("--bind is Some when use_stdio is false");
                 if let Err(e) = mcp::run(
                     bind_addr,
+                    metrics,
                     auth_token_file,
                     auth_token,
                     Some(max_upload_mb),
@@ -2146,6 +2185,7 @@ fn cmd_profiles(command: ProfilesCommands) -> Result<()> {
 
 fn cmd_serve(
     bind: String,
+    metrics_port: Option<u16>,
     cache_dir: Option<PathBuf>,
     cache_size: &str,
     no_cache: bool,
@@ -2194,6 +2234,7 @@ fn cmd_serve(
         .context("Failed to create tokio runtime")?
         .block_on(serve::run(
             bind,
+            metrics_port,
             cache_dir,
             cache_size_bytes,
             no_cache,

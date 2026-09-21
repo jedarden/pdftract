@@ -34,6 +34,16 @@
 //! - `POST /extract/stream` — Extract and return streaming NDJSON with X-Pdftract-Cache header
 //! - `GET /health` — Health check (always returns 200 OK)
 //!
+//! With `--metrics PORT` (plan "Monitoring and Alerting") a SECOND listener
+//! is opened on the same interface and serves exactly one route:
+//!
+//! - `GET /metrics` (metrics port only) — the registry rendered as
+//!   OpenMetrics v1.0 text (`application/openmetrics-text;
+//!   version=1.0.0; charset=utf-8`, `# EOF`-terminated). Never routed on
+//!   the main port, so scraping reachability can differ from production
+//!   traffic. Without the flag this listener does not exist and this
+//!   module's router gains no metrics route.
+//!
 //! # Cache headers
 //!
 //! All endpoints return `X-Pdftract-Cache: hit | miss | skipped` header:
@@ -381,6 +391,7 @@ mod form_helpers {
 /// * `trust_forwarded_for` — Whether to trust X-Forwarded-For for client IP
 pub async fn run(
     bind_addr: String,
+    metrics_port: Option<u16>,
     cache_dir: Option<PathBuf>,
     cache_size_bytes: u64,
     cache_disabled: bool,
@@ -428,6 +439,26 @@ pub async fn run(
                     .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
             }
         });
+    }
+
+    // Bind the `--metrics PORT` exposition listener BEFORE the main
+    // listener (`metrics` feature): a port that cannot be bound must fail
+    // startup cleanly here — with the flag's clean error and a nonzero
+    // exit — before anything is served. `/metrics` exists only on this
+    // listener; the main router below gains no metrics route (plan
+    // "Monitoring and Alerting" endpoint policy).
+    #[cfg(feature = "metrics")]
+    if let Some(port) = metrics_port {
+        let metrics_addr = crate::metrics::listener_addr(&bind_addr, port)?;
+        let registry = state.metrics.clone();
+        crate::metrics::bind_and_spawn(&metrics_addr, registry).await?;
+    }
+    #[cfg(not(feature = "metrics"))]
+    if metrics_port.is_some() {
+        anyhow::bail!(
+            "--metrics requires a build with the `metrics` cargo feature \
+             (rebuild with --features serve, which implies it)"
+        );
     }
 
     let app = build_router(state, max_body_bytes);

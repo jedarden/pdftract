@@ -142,6 +142,10 @@ impl McpServerState {
 ///
 /// # Arguments
 /// * `bind_addr` - The bind address (e.g., "127.0.0.1:8080")
+/// * `metrics_port` - Optional port for a SECOND listener serving
+///   `GET /metrics` (OpenMetrics v1.0) on --bind's interface; never on
+///   the main port. Bound before the main listener, so a port that is
+///   already in use fails startup cleanly.
 /// * `auth_token` - Optional bearer token for authentication
 /// * `max_upload_mb` - Optional max upload size in MB (default 256)
 /// * `root` - Optional root directory for path-traversal protection
@@ -151,6 +155,7 @@ impl McpServerState {
 /// * Err if the server fails to start or crashes
 pub async fn run_server(
     bind_addr: String,
+    metrics_port: Option<u16>,
     auth_token: Option<SecretString>,
     max_upload_mb: Option<usize>,
     root: Option<&std::path::Path>,
@@ -187,6 +192,26 @@ pub async fn run_server(
                     .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
             }
         });
+    }
+
+    // Bind the `--metrics PORT` exposition listener BEFORE the main
+    // listener (`metrics` feature): a port that cannot be bound must fail
+    // startup cleanly here — with a clean error and a nonzero exit —
+    // before anything is served. `/metrics` exists only on that second
+    // listener; the main router below gains no metrics route (plan
+    // "Monitoring and Alerting" endpoint policy).
+    #[cfg(feature = "metrics")]
+    if let Some(port) = metrics_port {
+        let metrics_addr = crate::metrics::listener_addr(&bind_addr, port)?;
+        let registry = state.metrics().clone();
+        crate::metrics::bind_and_spawn(&metrics_addr, registry).await?;
+    }
+    #[cfg(not(feature = "metrics"))]
+    if metrics_port.is_some() {
+        anyhow::bail!(
+            "--metrics requires a build with the `metrics` cargo feature \
+             (rebuild with --features metrics)"
+        );
     }
 
     let app = build_router(state);

@@ -24,6 +24,7 @@ use std::env;
 /// * Err if there was an error (exit code 78 for config errors, 64 for usage errors)
 pub fn run(
     bind_addr: String,
+    metrics_port: Option<u16>,
     auth_token_file: Option<std::path::PathBuf>,
     auth_token: Option<String>,
     max_upload_mb: Option<usize>,
@@ -75,6 +76,7 @@ pub fn run(
 
     runtime.block_on(http::run_server(
         bind_addr,
+        metrics_port,
         token,
         max_upload_mb,
         root.as_deref(),

@@ -15,15 +15,20 @@
 //! - [`openmetrics`] — the text format: escaping, value formatting, and
 //!   the [`render`](openmetrics::render) function behind
 //!   [`Registry::render`](registry::Registry::render), plus the
-//!   [`CONTENT_TYPE`](openmetrics::CONTENT_TYPE) the future `/metrics`
-//!   endpoint must serve.
+//!   [`CONTENT_TYPE`](openmetrics::CONTENT_TYPE) the `/metrics`
+//!   endpoint serves.
+//! - [`endpoint`] — the `--metrics PORT` listener serving `GET /metrics`
+//!   from a `Registry` on its own port (shared by `pdftract serve` and
+//!   `pdftract mcp --bind`).
 //! - [`sampler`] — the rayon busy-task tracking behind
 //!   `pdftract_rayon_pool_utilization`.
 
+pub mod endpoint;
 pub mod openmetrics;
 pub mod registry;
 pub mod sampler;
 
+pub use endpoint::{bind_and_spawn, listener_addr};
 pub use openmetrics::{
     escape_help_text, escape_label_value, format_float, render, MetricFamily, MetricKind, Sample,
     SampleValue, CONTENT_TYPE,
