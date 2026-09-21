@@ -16,7 +16,7 @@ groups:
           description: >
             The 99th percentile extraction duration is {{ $value }}s, exceeding 300ms
             (2× the 150ms target) for 5 minutes. This indicates degraded performance.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
 
       - alert: PdftractErrorRateHigh
         expr: |
@@ -31,7 +31,7 @@ groups:
           description: >
             Error rate is {{ $value | humanizePercentage }}, exceeding 1% threshold
             for 5 minutes. This indicates a significant service degradation or failure.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
 
       - alert: PdftractCacheHitRateLow
         expr: |
@@ -49,7 +49,7 @@ groups:
             Cache hit rate is {{ $value | humanizePercentage }}, below 50% threshold
             for 10 minutes. This may indicate cache configuration issues or
             insufficient cache capacity.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
 
       - alert: PdftractWorkerSaturated
         expr: |
@@ -64,24 +64,15 @@ groups:
             Rayon worker pool utilization is {{ $value | humanizePercentage }},
             above 80% threshold for 5 minutes. The service is at risk of becoming
             unresponsive under load.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
 
-      - alert: PdftractMemoryHigh
-        expr: |
-          (
-            process_resident_memory_bytes{job="pdftract-serve"} /
-            (pdftract_max_decompress_bytes * 0.8)
-          ) > 1
-        for: 5m
-        labels:
-          severity: warning
-          service: pdftract
-        annotations:
-          summary: "Memory usage above 80% of max_decompress_bytes ceiling"
-          description: >
-            RSS memory is {{ $value | humanize }}, exceeding 80% of the configured
-            max_decompress_bytes ceiling. This may lead to OOM under load.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+      # NOTE: no memory/RSS alert. An earlier revision of this file alerted on
+      # `process_resident_memory_bytes` and `pdftract_max_decompress_bytes`;
+      # neither is part of pdftract's shipped metric surface (the 13 families
+      # in docs/plan/plan.md "Monitoring and Alerting" — the hand-rolled
+      # OpenMetrics formatter emits no process collector and no
+      # decompression-ceiling gauge), so that rule could never fire. Re-add a
+      # memory alert only together with a metric that is actually emitted.
 
       # Additional alert from plan recommendations
       - alert: PdftractCacheSizeGrowingUnchecked
@@ -97,7 +88,7 @@ groups:
             Cache size is changing by more than 1 GB/hour (current rate:
             {{ $value | humanize }}B/h) for 6 hours. This may indicate a
             cache eviction or configuration problem.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
 
       - alert: PdftractDiagnosticFlood
         expr: |
@@ -111,4 +102,4 @@ groups:
           description: >
             Error diagnostics are being emitted at {{ $value }}/sec, indicating
             a potential software bug or infrastructure issue.
-          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#L3832"
+          runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
