@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::font::type3_rasterizer::rasterize_type3_glyph;
+use crate::font::type3_rasterizer::{calculate_bitmap_dimensions, rasterize_type3_glyph};
 use crate::font::type3::Type3Font;
 use crate::parser::object::types::{intern, ObjRef, PdfDict, PdfObject};
 
@@ -95,7 +95,10 @@ fn test_charproc_simple_rectangle() {
 
     // For a 20x20 font bbox with 2 pixels padding, we get 24x24 bitmap
     // 24 * 24 = 576 bytes
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 }
 
 /// Test that a charproc stream with moveto and lineto commands works.
@@ -125,7 +128,10 @@ fn test_charproc_move_line_close() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 }
 
 /// Test that a charproc stream with multiple separate shapes works.
@@ -154,7 +160,10 @@ fn test_charproc_multiple_shapes() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 }
 
 /// Test that a charproc stream with stroke (S) operator works.
@@ -183,7 +192,10 @@ fn test_charproc_stroke_rectangle() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 }
 
 /// Test that a charproc stream with close-and-stroke (s) operator works.
@@ -212,7 +224,10 @@ fn test_charproc_close_stroke_triangle() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 }
 
 /// Test that empty charproc streams are handled gracefully.
@@ -240,7 +255,10 @@ fn test_charproc_empty_stream() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 
     // All pixels should be white (255) for an empty stream
     assert!(bitmap.iter().all(|&pixel| pixel == 255), "All pixels should be white for empty stream");
@@ -271,7 +289,10 @@ fn test_charproc_whitespace_only() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 }
 
 /// Test that charproc streams with no-op commands work.
@@ -299,7 +320,10 @@ fn test_charproc_noop_path() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
 
     // All pixels should be white (255) since n doesn't draw
     assert!(bitmap.iter().all(|&pixel| pixel == 255), "All pixels should be white for no-op path");
@@ -331,7 +355,122 @@ fn test_charproc_complex_polygon() {
 
     let bitmap = result.unwrap();
     assert!(!bitmap.is_empty(), "Bitmap should not be empty");
-    assert_eq!(bitmap.len(), 576, "Bitmap should be 24x24 = 576 bytes");
+    // Dimensions derive from the FontBBox (+1px padding per side, per
+    // calculate_bitmap_dimensions) — compute, don't hardcode.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap.len(), width * height, "Bitmap should be width*height for the font bbox");
+}
+
+/// Focused proof that two different simple CharProcs produce distinguishable
+/// bitmap geometry.
+///
+/// Both glyphs in one font draw the same shape — a full-height 8-wide filled
+/// rectangle — in different horizontal positions (left edge vs right edge of
+/// the glyph cell). The test asserts the two bitmaps differ AND that the ink
+/// sits exactly where each stream drew it, pinning the whole pipeline
+/// (glyph name → ObjRef → stream resolution → path execution → scanline fill)
+/// to the CharProc contents: if rasterization ever regressed to a fixed
+/// placeholder, both glyphs would render identically and every positional
+/// assertion below would fail.
+///
+/// Bitmap layout note: with the identity FontMatrix the CTM is the identity,
+/// so glyph x maps directly to the bitmap column and glyph y to the row;
+/// pixel data is row-major (`pixel (x, y)` = `bytes[y * width + x]`). The
+/// scanline fill is boundary-inclusive: a rect spanning glyph x=0..=8 inks
+/// columns 0..=8 (verified against `5 5 10 10 re f` inking exactly 11x11).
+#[test]
+fn test_charproc_distinct_charprocs_produce_distinguishable_geometry() {
+    let left_ref = ObjRef::new(21, 0);
+    let right_ref = ObjRef::new(22, 0);
+
+    // One font, two CharProcs: dispatch must be per-glyph through /CharProcs.
+    let mut char_procs = HashMap::new();
+    char_procs.insert(Arc::from("left"), left_ref);
+    char_procs.insert(Arc::from("right"), right_ref);
+
+    let mut font_dict = PdfDict::new();
+    let char_procs_dict = PdfObject::Dict(Box::new(
+        char_procs.into_iter().map(|(k, v)| (k, PdfObject::Ref(v))).collect()
+    ));
+    font_dict.insert(intern("/CharProcs"), char_procs_dict);
+
+    // Same font geometry as create_test_font_with_glyph: identity FontMatrix,
+    // 20x20 FontBBox — both bitmaps come out the same size, so the byte-wise
+    // comparison below is meaningful.
+    font_dict.insert(intern("/FontMatrix"), PdfObject::Array(Box::new(vec![
+        PdfObject::Integer(1),
+        PdfObject::Integer(0),
+        PdfObject::Integer(0),
+        PdfObject::Integer(1),
+        PdfObject::Integer(0),
+        PdfObject::Integer(0),
+    ])));
+    font_dict.insert(intern("/FontBBox"), PdfObject::Array(Box::new(vec![
+        PdfObject::Integer(0),
+        PdfObject::Integer(0),
+        PdfObject::Integer(20),
+        PdfObject::Integer(20),
+    ])));
+    font_dict.insert(intern("/FirstChar"), PdfObject::Integer(0));
+    font_dict.insert(intern("/LastChar"), PdfObject::Integer(0));
+    font_dict.insert(intern("/Widths"), PdfObject::Array(Box::new(vec![
+        PdfObject::Real(600.0),
+    ])));
+
+    let font = Type3Font::load(&font_dict);
+
+    // Each CharProc is a simple filled rectangle: same shape, different x.
+    let streams: HashMap<u32, Vec<u8>> = [
+        (left_ref.object, b"0 0 8 20 re f".to_vec()),
+        (right_ref.object, b"12 0 8 20 re f".to_vec()),
+    ]
+    .into_iter()
+    .collect();
+
+    let resolve = move |obj_ref: ObjRef| -> Option<Vec<u8>> {
+        streams.get(&obj_ref.object).cloned()
+    };
+
+    let left = rasterize_type3_glyph(&font, "left", None, Some(&resolve))
+        .expect("left CharProc should rasterize successfully");
+    let right = rasterize_type3_glyph(&font, "right", None, Some(&resolve))
+        .expect("right CharProc should rasterize successfully");
+
+    // Both bitmaps must have the dimensions derived from the shared FontBBox.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(left.len(), width * height, "left bitmap must be width*height");
+    assert_eq!(right.len(), width * height, "right bitmap must be width*height");
+
+    // Headline criterion: two different CharProcs must not collapse to the
+    // same placeholder bitmap.
+    assert_ne!(left, right, "different CharProcs must produce distinguishable bitmaps");
+
+    // And the difference must be exactly where the streams drew it.
+    let px = |bitmap: &[u8], x: usize, y: usize| bitmap[y * width + x];
+    let row = 10; // crosses both rectangles (rect y-range is 0..=20)
+
+    // Left glyph: rect x=0..=8 inks columns 0..=8; the rest of the row is ink-free.
+    for x in 0..=8 {
+        assert_eq!(px(&left, x, row), 0, "left glyph: column {x} must be inked");
+    }
+    for x in 9..width {
+        assert_eq!(px(&left, x, row), 255, "left glyph: column {x} must stay white");
+    }
+
+    // Right glyph: rect x=12..=20 inks columns 12..=20; the rest is ink-free.
+    for x in 12..=20 {
+        assert_eq!(px(&right, x, row), 0, "right glyph: column {x} must be inked");
+    }
+    for x in 0..12 {
+        assert_eq!(px(&right, x, row), 255, "right glyph: column {x} must stay white");
+    }
+    assert_eq!(px(&right, 21, row), 255, "right glyph: last column must stay white");
+
+    // Vertical placement, same identity mapping on y: ink at the rect's first
+    // row, white one row past its last (row 21 is the bottom padding row).
+    assert_eq!(px(&left, 4, 0), 0, "left glyph: first row must be inked");
+    assert_eq!(px(&left, 4, 20), 0, "left glyph: last rect row must be inked");
+    assert_eq!(px(&left, 4, 21), 255, "left glyph: below the rect must stay white");
 }
 
 /// Test that charproc streams produce consistent output across multiple executions.

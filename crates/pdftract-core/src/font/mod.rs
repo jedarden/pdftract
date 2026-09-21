@@ -21,6 +21,8 @@ pub mod type3_rasterizer;
 pub mod unmapped;
 
 #[cfg(test)]
+mod type3_charproc_test;
+#[cfg(test)]
 mod type3_rasterizer_test;
 
 pub mod test_fixtures;
