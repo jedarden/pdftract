@@ -3120,6 +3120,109 @@ trailer\n<< /Size 3 >>\n";
                 // assert!(merged.is_hybrid);
             }
         }
+
+        // Property coverage for the chunked path of forward_scan_xref
+        // (sources above SMALL_FILE_THRESHOLD). The properties above only
+        // generate small inputs, so the chunked branch had zero property
+        // coverage — exactly how the infinite loop shipped (bead
+        // pdftract-a70b9dbf, parent pdftract-c7c43f45). Cases are 1–2.5 MiB,
+        // so the case count is deliberately low to keep the suite fast.
+        mod proptest_large_file_tests {
+            use super::*;
+            use proptest::prelude::*;
+
+            // These must match the constants in forward_scan_xref.
+            const SMALL_FILE_THRESHOLD: u64 = 1024 * 1024;
+            const CHUNK: u64 = 256 * 1024;
+            // Threshold plus a couple of CHUNK multiples plus slack (~2.5 MiB).
+            const MAX_LEN: u64 = SMALL_FILE_THRESHOLD + 6 * CHUNK;
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(8))]
+
+                #[test]
+                fn proptest_forward_scan_chunked_path_terminates(
+                    total_len in (SMALL_FILE_THRESHOLD + 1)..=MAX_LEN,
+                    obj_num in 1u32..=99_999u32,
+                    gen_num in 0u16..=65_535u16,
+                    // Which of the last 3 bytes of the straddled chunk holds
+                    // the space of " obj"; consecutive boundaries cycle
+                    // through all three positions of the overlap window.
+                    space_slack in 1u64..=3,
+                    with_trailer in any::<bool>(),
+                ) {
+                    // Every generated case exceeds SMALL_FILE_THRESHOLD, so
+                    // the chunked path (not the read-it-all memory path) runs.
+                    prop_assert!(total_len > SMALL_FILE_THRESHOLD);
+
+                    let mut pdf_data = vec![b'\n'; total_len as usize];
+                    pdf_data[..8].copy_from_slice(b"%PDF-1.4");
+
+                    // One "N G obj" header straddling every chunk boundary:
+                    // its space lands at `boundary - slack` (within the last
+                    // 3 bytes of the chunk ending at the boundary) and "obj"
+                    // completes inside the next chunk, mirroring the placement
+                    // in test_forward_scan_large_file_terminates. The 32-byte
+                    // guard keeps these headers clear of the tail region
+                    // written below.
+                    let mut obj_nr = obj_num;
+                    let mut slack = space_slack;
+                    let mut boundary = CHUNK;
+                    while boundary + 32 <= total_len {
+                        let header = format!("{} {} obj\n", obj_nr, gen_num);
+                        let header = header.as_bytes();
+                        // Bytes of "N G " preceding the " obj" space.
+                        let prefix_len = header.len() - 5;
+                        let start = (boundary - slack) as usize - prefix_len;
+                        pdf_data[start..start + header.len()].copy_from_slice(header);
+                        obj_nr += 1;
+                        slack = (slack % 3) + 1;
+                        boundary += CHUNK;
+                    }
+
+                    // A header fully inside the final partial chunk — the
+                    // exact placement where the pre-fix loop cycled forever.
+                    let tail = format!("{} {} obj\n", obj_nr, gen_num);
+                    let tail = tail.as_bytes();
+                    pdf_data[total_len as usize - tail.len()..].copy_from_slice(tail);
+
+                    // Optionally give the trailer scan something to find so
+                    // its success path runs on large sources too.
+                    if with_trailer {
+                        let trailer_start = total_len as usize - tail.len() - 11;
+                        pdf_data[trailer_start..trailer_start + 11]
+                            .copy_from_slice(b"\ntrailer<<\n");
+                    }
+
+                    // Termination bound: a regression must fail the property
+                    // instead of hanging the suite.
+                    let source = MemorySource::new(pdf_data);
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(forward_scan_xref(&source, false));
+                    });
+                    let result = rx
+                        .recv_timeout(std::time::Duration::from_secs(30))
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "forward_scan_xref failed to terminate within 30s on a \
+                                 {}-byte source (chunked-path regression)",
+                                total_len
+                            )
+                        });
+
+                    // XrefRepaired is emitted only after the entry loop and
+                    // the trailer scan have both run to completion.
+                    prop_assert!(
+                        result
+                            .diagnostics
+                            .iter()
+                            .any(|d| d.code == DiagCode::XrefRepaired),
+                        "expected XrefRepaired diagnostic after a completed forward scan"
+                    );
+                }
+            }
+        }
     }
 
     // Forward scan tests
