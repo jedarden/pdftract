@@ -444,6 +444,15 @@ impl Registry {
         self.rayon_pool_utilization.store(clamped);
     }
 
+    /// Read the sampled `pdftract_rayon_pool_utilization` gauge (0..1).
+    ///
+    /// This is the readiness input for `GET /ready`: the sampler task
+    /// publishes a fresh sample every few seconds, so the gauge is the
+    /// same signal `/metrics` renders.
+    pub fn rayon_pool_utilization(&self) -> f64 {
+        self.rayon_pool_utilization.load()
+    }
+
     /// Snapshot all 13 metric families in plan-table order.
     pub fn snapshot(&self) -> Vec<MetricFamily> {
         vec![

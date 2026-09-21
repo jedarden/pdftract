@@ -302,6 +302,10 @@ enum Commands {
     /// - `GET /health` - Health check (responds within 100ms even during concurrent extractions)
     /// - `GET /metrics` - OpenMetrics v1.0 exposition, served ONLY on the
     ///   separate `--metrics PORT` listener (never on the main port)
+    /// - `GET /ready` - Readiness probe, served ONLY on the `--metrics PORT`
+    ///   listener: 200 while accepting work, 503 naming the failed
+    ///   condition(s) when pool utilization exceeds 0.90 or the cache
+    ///   location is unwritable (`GET /health` stays 200 in both states)
     ///
     /// ## Cache
     ///
@@ -312,7 +316,7 @@ enum Commands {
         #[arg(short, long, default_value = "127.0.0.1:8080")]
         bind: String,
 
-        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0)
+        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0) and GET /ready
         ///
         /// The metrics listener shares --bind's interface (its host part) so
         /// scraping reachability can differ from production traffic. PORT 0
@@ -379,11 +383,11 @@ enum Commands {
         #[arg(short, long, value_name = "ADDR", conflicts_with = "stdio")]
         bind: Option<String>,
 
-        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0)
+        /// Port for a SECOND listener serving GET /metrics (OpenMetrics v1.0) and GET /ready
         ///
         /// Same semantics as `serve --metrics`: the listener shares --bind's
         /// interface (its host part) so scraping reachability can differ from
-        /// production traffic; /metrics is never served on the main --bind
+        /// production traffic; /metrics and /ready are never served on the main --bind
         /// port. PORT 0 lets the OS choose; the chosen port is printed to
         /// stderr. HTTP transport only — combining --metrics with --stdio is
         /// a usage error. Requires a build with the `metrics` cargo feature;

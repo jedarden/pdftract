@@ -18,8 +18,8 @@
 //!   [`CONTENT_TYPE`](openmetrics::CONTENT_TYPE) the `/metrics`
 //!   endpoint serves.
 //! - [`endpoint`] — the `--metrics PORT` listener serving `GET /metrics`
-//!   from a `Registry` on its own port (shared by `pdftract serve` and
-//!   `pdftract mcp --bind`).
+//!   and the `GET /ready` readiness probe from a `Registry` on its own
+//!   port (shared by `pdftract serve` and `pdftract mcp --bind`).
 //! - [`sampler`] — the rayon busy-task tracking behind
 //!   `pdftract_rayon_pool_utilization`.
 
@@ -28,7 +28,9 @@ pub mod openmetrics;
 pub mod registry;
 pub mod sampler;
 
-pub use endpoint::{bind_and_spawn, listener_addr};
+pub use endpoint::{
+    bind_and_spawn, listener_addr, Readiness, ReadinessReport, SATURATION_THRESHOLD,
+};
 pub use openmetrics::{
     escape_help_text, escape_label_value, format_float, render, MetricFamily, MetricKind, Sample,
     SampleValue, CONTENT_TYPE,

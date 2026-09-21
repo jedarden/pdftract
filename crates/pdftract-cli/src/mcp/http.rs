@@ -9,6 +9,10 @@
 //! - GET /sse: server → client notifications via Server-Sent Events
 //! - GET /health: health check endpoint (always returns 200 OK)
 //!
+//! With `--metrics PORT` a SECOND listener on --bind's interface serves
+//! `GET /metrics` (OpenMetrics v1.0) and the `GET /ready` readiness
+//! probe; neither is routed on the main port.
+//!
 //! # Concurrency model
 //!
 //! - Each SSE connection gets its own broadcast channel
@@ -143,9 +147,10 @@ impl McpServerState {
 /// # Arguments
 /// * `bind_addr` - The bind address (e.g., "127.0.0.1:8080")
 /// * `metrics_port` - Optional port for a SECOND listener serving
-///   `GET /metrics` (OpenMetrics v1.0) on --bind's interface; never on
-///   the main port. Bound before the main listener, so a port that is
-///   already in use fails startup cleanly.
+///   `GET /metrics` (OpenMetrics v1.0) and the `GET /ready` readiness
+///   probe on --bind's interface; never on the main port. Bound before
+///   the main listener, so a port that is already in use fails startup
+///   cleanly.
 /// * `auth_token` - Optional bearer token for authentication
 /// * `max_upload_mb` - Optional max upload size in MB (default 256)
 /// * `root` - Optional root directory for path-traversal protection
@@ -194,17 +199,20 @@ pub async fn run_server(
         });
     }
 
-    // Bind the `--metrics PORT` exposition listener BEFORE the main
+    // Bind the `--metrics PORT` listener BEFORE the main
     // listener (`metrics` feature): a port that cannot be bound must fail
     // startup cleanly here — with a clean error and a nonzero exit —
-    // before anything is served. `/metrics` exists only on that second
-    // listener; the main router below gains no metrics route (plan
-    // "Monitoring and Alerting" endpoint policy).
+    // before anything is served. `/metrics` and `/ready` exist only on
+    // that second listener; the main router below gains neither route
+    // (plan "Monitoring and Alerting" endpoint policy). MCP mode has no
+    // extraction cache, so readiness is the pool-utilization condition
+    // alone (`Readiness::production`'s `None` cache).
     #[cfg(feature = "metrics")]
     if let Some(port) = metrics_port {
         let metrics_addr = crate::metrics::listener_addr(&bind_addr, port)?;
         let registry = state.metrics().clone();
-        crate::metrics::bind_and_spawn(&metrics_addr, registry).await?;
+        let readiness = crate::metrics::Readiness::production(registry.clone(), None);
+        crate::metrics::bind_and_spawn(&metrics_addr, registry, readiness).await?;
     }
     #[cfg(not(feature = "metrics"))]
     if metrics_port.is_some() {

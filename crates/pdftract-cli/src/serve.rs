@@ -32,10 +32,12 @@
 //! - `POST /extract` — Extract and return JSON with cache status in response body
 //! - `POST /extract/text` — Extract and return plain text with X-Pdftract-Cache header
 //! - `POST /extract/stream` — Extract and return streaming NDJSON with X-Pdftract-Cache header
-//! - `GET /health` — Health check (always returns 200 OK)
+//! - `GET /health` — Health check (always returns 200 OK — this is the
+//!   LIVENESS probe: it stays 200 even with a saturated pool or an
+//!   unwritable cache, because a busy server should not be restarted)
 //!
 //! With `--metrics PORT` (plan "Monitoring and Alerting") a SECOND listener
-//! is opened on the same interface and serves exactly one route:
+//! is opened on the same interface and serves exactly two routes:
 //!
 //! - `GET /metrics` (metrics port only) — the registry rendered as
 //!   OpenMetrics v1.0 text (`application/openmetrics-text;
@@ -43,6 +45,12 @@
 //!   the main port, so scraping reachability can differ from production
 //!   traffic. Without the flag this listener does not exist and this
 //!   module's router gains no metrics route.
+//! - `GET /ready` (metrics port only) — the READINESS probe: 200 while
+//!   the server is accepting work, 503 (body naming every failed
+//!   condition) when `pdftract_rayon_pool_utilization` exceeds 0.90 or
+//!   the enabled cache location is not writable. Also never routed on
+//!   the main port; that port's `/health` deliberately stays always-200
+//!   in both failure states.
 //!
 //! # Cache headers
 //!
@@ -123,6 +131,13 @@ pub struct ServeState {
     /// is populated for the process's whole lifetime.
     #[cfg(feature = "metrics")]
     pub metrics: crate::metrics::Registry,
+    /// Readiness inputs behind `GET /ready` on the metrics listener
+    /// (`metrics` feature): the registry's utilization gauge and a
+    /// writability probe of the enabled cache location. Tests replace
+    /// them via [`ServeState::with_readiness`] to force each failure
+    /// condition.
+    #[cfg(feature = "metrics")]
+    pub readiness: crate::metrics::Readiness,
 }
 
 impl ServeState {
@@ -136,7 +151,7 @@ impl ServeState {
         trust_forwarded_for: bool,
     ) -> Self {
         let cache = CacheState {
-            cache_dir,
+            cache_dir: cache_dir.clone(),
             cache_size_bytes,
             cache_disabled,
         };
@@ -145,13 +160,35 @@ impl ServeState {
         } else {
             AuditState::new(audit_writer)
         };
+        #[cfg(feature = "metrics")]
+        let metrics = crate::metrics::Registry::new();
+        // The cache location is fixed at startup, so the readiness probe
+        // can capture it; a disabled or absent cache makes the condition
+        // trivially pass (plan: the check applies "if enabled").
+        #[cfg(feature = "metrics")]
+        let readiness = crate::metrics::Readiness::production(
+            metrics.clone(),
+            if cache_disabled { None } else { cache_dir },
+        );
         Self {
             cache: Arc::new(Mutex::new(cache)),
             audit,
             max_decompress_bytes,
             #[cfg(feature = "metrics")]
-            metrics: crate::metrics::Registry::new(),
+            metrics,
+            #[cfg(feature = "metrics")]
+            readiness,
         }
+    }
+
+    /// Replace the readiness inputs (`metrics` feature). Production
+    /// state keeps the inputs [`ServeState::new`] built from its cache
+    /// configuration; tests call this to force a failure condition
+    /// without real load or read-only mounts.
+    #[cfg(feature = "metrics")]
+    pub fn with_readiness(mut self, readiness: crate::metrics::Readiness) -> Self {
+        self.readiness = readiness;
+        self
     }
 }
 
@@ -441,17 +478,18 @@ pub async fn run(
         });
     }
 
-    // Bind the `--metrics PORT` exposition listener BEFORE the main
+    // Bind the `--metrics PORT` listener BEFORE the main
     // listener (`metrics` feature): a port that cannot be bound must fail
     // startup cleanly here — with the flag's clean error and a nonzero
-    // exit — before anything is served. `/metrics` exists only on this
-    // listener; the main router below gains no metrics route (plan
-    // "Monitoring and Alerting" endpoint policy).
+    // exit — before anything is served. `/metrics` and `/ready` exist
+    // only on this listener; the main router below gains neither route
+    // (plan "Monitoring and Alerting" endpoint policy).
     #[cfg(feature = "metrics")]
     if let Some(port) = metrics_port {
         let metrics_addr = crate::metrics::listener_addr(&bind_addr, port)?;
         let registry = state.metrics.clone();
-        crate::metrics::bind_and_spawn(&metrics_addr, registry).await?;
+        let readiness = state.readiness.clone();
+        crate::metrics::bind_and_spawn(&metrics_addr, registry, readiness).await?;
     }
     #[cfg(not(feature = "metrics"))]
     if metrics_port.is_some() {
@@ -2185,5 +2223,148 @@ mod tests {
             ),
             "raw path leaked into the endpoint label:\n{text}"
         );
+    }
+
+    /// Readiness vs liveness, saturation state: with the readiness input
+    /// forced saturated, `GET /health` on the main port must STILL be
+    /// 200 — a busy server is alive and must not be restarted. The
+    /// readiness verdict is the metrics listener's `GET /ready` job.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_health_returns_200_when_pool_is_saturated() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false)
+            .with_readiness(crate::metrics::Readiness::with_inputs(|| 0.95, || true));
+
+        let response = oneshot_app(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Readiness vs liveness, cache state: with the cache forced
+    /// unwritable, `GET /health` must STILL be 200.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_health_returns_200_when_cache_is_unwritable() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false)
+            .with_readiness(crate::metrics::Readiness::with_inputs(|| 0.0, || false));
+
+        let response = oneshot_app(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// The readiness probe is a metrics-listener route: the main port
+    /// answers 404, so readiness reachability stays separate from
+    /// production traffic (plan endpoint policy, same as /metrics).
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_ready_is_not_routed_on_the_main_port() {
+        use tower::ServiceExt;
+
+        let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false);
+        let response = oneshot_app(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/ready")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Criterion 1, production wiring end to end: a healthy server (cache
+    /// enabled at a writable location) returns 200 from GET /ready on the
+    /// metrics listener.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_ready_is_200_when_cache_location_is_writable() {
+        let cache = tempfile::tempdir().expect("tempdir");
+        let state = ServeState::new(
+            Some(cache.path().to_path_buf()),
+            1024 * 1024 * 1024,
+            false,
+            None,
+            1 << 30,
+            false,
+        );
+        let bound = crate::metrics::bind_and_spawn(
+            "127.0.0.1:0",
+            state.metrics.clone(),
+            state.readiness.clone(),
+        )
+        .await
+        .expect("metrics listener binds on :0");
+
+        let response = reqwest::Client::new()
+            .get(format!("http://{bound}/ready"))
+            .send()
+            .await
+            .expect("ready request");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let body: serde_json::Value = response.json().await.expect("ready body");
+        assert_eq!(body["status"], "ready", "got: {body}");
+        assert_eq!(body["unready"], serde_json::json!([]), "got: {body}");
+        assert_eq!(body["cache_writable"], true, "got: {body}");
+    }
+
+    /// Criterion 3, production wiring end to end: the cache pointed at
+    /// an unwritable path (existing parent, missing directory) drives
+    /// the DEFAULT prober — no injection — to 503 with the body naming
+    /// the cache.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_ready_is_503_when_cache_points_at_an_unwritable_path() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let missing = parent.path().join("cache-dir-does-not-exist");
+        let state = ServeState::new(
+            Some(missing),
+            1024 * 1024 * 1024,
+            false, // cache "enabled", but its location cannot be written
+            None,
+            1 << 30,
+            false,
+        );
+        let bound = crate::metrics::bind_and_spawn(
+            "127.0.0.1:0",
+            state.metrics.clone(),
+            state.readiness.clone(),
+        )
+        .await
+        .expect("metrics listener binds on :0");
+
+        let response = reqwest::Client::new()
+            .get(format!("http://{bound}/ready"))
+            .send()
+            .await
+            .expect("ready request");
+        assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        let body: serde_json::Value = response.json().await.expect("ready body");
+        assert_eq!(body["status"], "unready", "got: {body}");
+        assert_eq!(
+            body["unready"],
+            serde_json::json!(["cache_unwritable"]),
+            "body must name the cache and nothing else: {body}"
+        );
+        assert_eq!(body["cache_writable"], false, "got: {body}");
     }
 }
