@@ -174,3 +174,9 @@ box tables). The full measured rationale is in
   `cargo test -p pdftract-core --test ocr`
   (`crates/pdftract-core/tests/ocr.rs`), which runs without the `ocr` feature
   and without tesseract installed
+- The same target also walks this directory tree itself and pins the
+  acceptance criterion's on-disk shape: at least five PDF fixtures across at
+  least four document-type directories. A PDF-hosting directory with no
+  `FIXTURE_MANIFEST` row fails the target unless it is the known legacy
+  compatibility directory (`documents/`), so a new document type cannot sit
+  outside the gate unnoticed

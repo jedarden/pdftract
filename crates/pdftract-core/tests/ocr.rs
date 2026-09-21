@@ -15,11 +15,15 @@
 //! cargo test -p pdftract-core --test ocr
 //! ```
 //!
-//! These tests are feature-independent and always run. The feature-gated
+//! These tests are feature-independent and always run. Two of them work from
+//! the disk side: they walk the corpus tree itself and pin the acceptance
+//! criterion's on-disk shape (at least five PDF fixtures across at least four
+//! document-type directories, with nothing PDF-hosting sitting outside the
+//! gate except the known legacy compatibility directory). The feature-gated
 //! in-Rust OCR pipeline tests live in `ocr_integration.rs`; that feature's
 //! compile state is tracked separately (bead `pdftract-ecad3b80`).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -191,6 +195,101 @@ fn clean_fixtures_span_at_least_four_document_types() {
         "clean fixtures must span at least 4 document-type directories \
          (receipt, invoice, letter, form, multi-page), found {}: {dirs:?}",
         dirs.len()
+    );
+}
+
+/// Walk the corpus tree on disk and count PDF fixtures per document-type
+/// directory. Returns the corpus-root-relative directory names as keys. This
+/// is the disk-side counterpart to the manifest-driven tests above: the
+/// Phase 5 acceptance criterion is stated about `tests/fixtures/scanned/`'s
+/// on-disk contents, not about what the manifest claims about them.
+fn disk_scan_counts() -> (BTreeMap<String, usize>, usize) {
+    let root = corpus_root();
+    let mut per_dir: BTreeMap<String, usize> = BTreeMap::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        let entries = fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("corpus directory {} unreadable: {e}", dir.display()));
+        for entry in entries {
+            let path = entry
+                .unwrap_or_else(|e| panic!("corpus entry under {} unreadable: {e}", dir.display()))
+                .path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("pdf") {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(&root)
+                .expect("walked paths live under the corpus root");
+            let doc_type = rel
+                .parent()
+                .unwrap_or(Path::new("."))
+                .to_string_lossy()
+                .into_owned();
+            *per_dir.entry(doc_type).or_insert(0) += 1;
+        }
+    }
+    let total = per_dir.values().sum();
+    (per_dir, total)
+}
+
+/// The acceptance criterion is about the corpus *on disk*: at least five PDF
+/// fixtures across at least four document-type directories under
+/// `tests/fixtures/scanned/`. Walking the tree directly means a shrunken or
+/// emptied corpus fails `cargo test` even if the manifest were thinned to
+/// match it, rather than only surfacing inside a shell gate run.
+#[test]
+fn corpus_disk_contains_five_scans_across_four_document_types() {
+    let (per_dir, total) = disk_scan_counts();
+    assert!(
+        total >= 5,
+        "corpus tree holds only {total} PDF fixture(s); the Phase 5 gate \
+         needs at least five scan fixtures on disk"
+    );
+    assert!(
+        per_dir.len() >= 4,
+        "corpus tree spans only {} document-type directories hosting PDFs, \
+         at least four are required: {per_dir:?}",
+        per_dir.len()
+    );
+}
+
+/// A directory hosting PDFs but no manifested fixture row sits outside the
+/// gate — `measure-wer.sh` only NOTEs it in a shell run, so nothing stops a
+/// new document type from silently never being exercised by the acceptance
+/// coverage. `documents/` is the one sanctioned exception (legacy
+/// invoice/form compatibility copies kept unmanifested on purpose); any other
+/// PDF-hosting directory must join `FIXTURE_MANIFEST` in
+/// `scripts/measure-wer.sh` or this allowlist.
+#[test]
+fn pdf_directories_outside_the_gate_are_known_legacy_dirs() {
+    const LEGACY_UNMANIFESTED: [&str; 1] = ["documents"];
+    let manifested: HashSet<String> = manifest_rows()
+        .iter()
+        .map(|r| {
+            Path::new(&r.scan)
+                .parent()
+                .unwrap_or(Path::new("."))
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let (per_dir, _) = disk_scan_counts();
+    let outside: Vec<&String> = per_dir
+        .keys()
+        .filter(|dir| {
+            !manifested.contains(dir.as_str()) && !LEGACY_UNMANIFESTED.contains(&dir.as_str())
+        })
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "corpus directories {outside:?} host PDF fixtures but no manifested \
+         gate row — add them to FIXTURE_MANIFEST in scripts/measure-wer.sh so \
+         their document types are measured and gated (or to \
+         LEGACY_UNMANIFESTED here if they are compatibility copies)"
     );
 }
 
