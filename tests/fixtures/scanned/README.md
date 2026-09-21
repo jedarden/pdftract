@@ -168,3 +168,9 @@ box tables). The full measured rationale is in
   `cargo test --test ocr_integration --features ocr`) is tracked separately:
   its compile status does not affect these fixtures; see bead
   `pdftract-ecad3b80` for the tesseract 0.15 API migration
+- The gate's fixture contract (manifest rows ↔ files on disk, non-trivial
+  ground truths, executable script, clean/degraded class split, Phase 5
+  threshold) is pinned feature-independently by
+  `cargo test -p pdftract-core --test ocr`
+  (`crates/pdftract-core/tests/ocr.rs`), which runs without the `ocr` feature
+  and without tesseract installed
