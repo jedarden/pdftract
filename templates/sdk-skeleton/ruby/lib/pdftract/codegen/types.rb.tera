@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'tempfile'
+
 module Pdftract
   module Codegen
     #
@@ -38,8 +40,11 @@ module Pdftract
       end
 
       def to_args
-        # Write to temp file - implementation omitted for brevity
-        raise NotImplementedError, "BytesSource requires temp file handling"
+        @tempfile = Tempfile.new(['pdftract-', '.pdf'])
+        @tempfile.binmode
+        @tempfile.write(@bytes)
+        @tempfile.flush
+        [@tempfile.path]
       end
     end
   end
