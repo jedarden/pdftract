@@ -456,6 +456,18 @@ impl Default for XrefResolver {
     }
 }
 
+/// Bounded recovery window (bytes) scanned on each side of a startxref offset
+/// that does not land on the `xref` keyword.
+///
+/// Producers write wrong startxref values in both directions. Some point
+/// inside the table past its keyword (the backward-scan case); others land a
+/// few bytes SHORT of the keyword — e.g. inside the preceding object's
+/// `endobj` — which is the dominant corpus trailer-loss class as of
+/// 2026-09-21 (recovered by scanning the already-read forward chunk). Both
+/// scans stay within this window around the recorded offset; a whole-file
+/// scan is deliberately out of scope here.
+const XREF_KEYWORD_RECOVERY_WINDOW: u64 = 1024;
+
 /// Parse a traditional PDF xref table starting from the given offset.
 ///
 /// # Parameters
@@ -490,8 +502,9 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
     let mut result = XrefSection::new();
     let mut pos = start_offset;
 
-    // Read initial chunk to look for xref keyword.
-    let header_bytes = match source.read_at(pos, 1024) {
+    // Read initial chunk to look for xref keyword. This chunk doubles as the
+    // forward recovery window when the offset lands short of the keyword.
+    let header_bytes = match source.read_at(pos, XREF_KEYWORD_RECOVERY_WINDOW as usize) {
         Ok(bytes) if !bytes.is_empty() => bytes,
         _ => {
             result.diagnostics.push(Diag::with_static(
@@ -504,10 +517,12 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
     };
 
     // Look for xref keyword (case-sensitive per PDF spec), accounting for
-    // leading whitespace. A few producers write a startxref value that lands
-    // inside the table rather than at its xref keyword. In that case, recover
-    // the nearest line-aligned xref keyword before the requested offset while
-    // retaining a diagnostic for the bad offset.
+    // leading whitespace. Some producers write a startxref value that does not
+    // land on its xref keyword — either inside the table past the keyword, or
+    // a few bytes short of it (e.g. inside the preceding `endobj`). In that
+    // case recover the nearest boundary-delimited xref keyword AROUND the
+    // requested offset (both scans bounded by XREF_KEYWORD_RECOVERY_WINDOW)
+    // while retaining a diagnostic for the bad offset.
     let xref_keyword_pos = match std::str::from_utf8(&header_bytes) {
         Ok(header_str) => {
             let trimmed = header_str.trim_start();
@@ -515,35 +530,67 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
             if trimmed.starts_with("xref") {
                 ws_offset
             } else {
-                let lookback_start = start_offset.saturating_sub(1024);
+                // Nearest keyword at or before the recorded offset.
+                let lookback_start = start_offset.saturating_sub(XREF_KEYWORD_RECOVERY_WINDOW);
                 let lookback_len = (start_offset - lookback_start) as usize;
-                let recovered =
-                    source
-                        .read_at(lookback_start, lookback_len)
-                        .ok()
-                        .and_then(|bytes| {
-                            bytes
-                                .windows(4)
-                                .enumerate()
-                                .filter(|(_, window)| *window == b"xref")
-                                .filter(|(index, _)| {
-                                    let before_is_boundary = *index == 0
-                                        || matches!(
-                                            bytes[*index - 1],
-                                            b' ' | b'\t' | b'\r' | b'\n'
-                                        );
-                                    let after = *index + 4;
-                                    let after_is_boundary = after == bytes.len()
-                                        || matches!(bytes[after], b' ' | b'\t' | b'\r' | b'\n');
-                                    before_is_boundary && after_is_boundary
-                                })
-                                .map(|(index, _)| lookback_start + index as u64)
-                                .last()
-                        });
+                let backward = source
+                    .read_at(lookback_start, lookback_len)
+                    .ok()
+                    .and_then(|bytes| {
+                        bytes
+                            .windows(4)
+                            .enumerate()
+                            .filter(|(_, window)| *window == b"xref")
+                            .filter(|(index, _)| {
+                                let before_is_boundary = *index == 0
+                                    || matches!(
+                                        bytes[*index - 1],
+                                        b' ' | b'\t' | b'\r' | b'\n'
+                                    );
+                                let after = *index + 4;
+                                let after_is_boundary = after == bytes.len()
+                                    || matches!(bytes[after], b' ' | b'\t' | b'\r' | b'\n');
+                                before_is_boundary && after_is_boundary
+                            })
+                            .map(|(index, _)| lookback_start + index as u64)
+                            .last()
+                    });
 
-                let recovered_offset = match recovered {
-                    Some(offset) => offset,
-                    None => {
+                // Nearest keyword at or after the recorded offset, found in
+                // the already-read header chunk. The `xref` tail of a
+                // `startxref` keyword fails the boundary check (preceded by
+                // `t`), so EOF-marker keywords are never mistaken for a table
+                // start. An occurrence at index 0 is impossible here (it
+                // would have matched the trimmed check above) but is treated
+                // as boundary-valid to mirror the lookback scan's window edge.
+                let forward = header_bytes
+                    .windows(4)
+                    .enumerate()
+                    .filter(|(_, window)| *window == b"xref")
+                    .filter(|(index, _)| {
+                        let before_is_boundary = *index == 0
+                            || matches!(header_bytes[*index - 1], b' ' | b'\t' | b'\r' | b'\n');
+                        let after = *index + 4;
+                        let after_is_boundary = after == header_bytes.len()
+                            || matches!(header_bytes[after], b' ' | b'\t' | b'\r' | b'\n');
+                        before_is_boundary && after_is_boundary
+                    })
+                    .map(|(index, _)| start_offset + index as u64)
+                    .next();
+
+                // The recorded value is approximately right, so the intended
+                // keyword is whichever candidate sits closest to it.
+                let recovered_offset = match (forward, backward) {
+                    (Some(fwd), Some(bwd)) => {
+                        if fwd - start_offset <= start_offset - bwd {
+                            fwd
+                        } else {
+                            bwd
+                        }
+                    }
+                    (Some(fwd), None) => fwd,
+                    (None, Some(bwd)) => bwd,
+                    (None, None) => {
                         result.diagnostics.push(Diag::with_static(
                             DiagCode::XrefInvalidHeader,
                             pos,
@@ -5784,5 +5831,125 @@ mod trailer_loss_probe {
                 None => "empty stream".to_string(),
             }),
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // startxref value lands SHORT of the keyword (forward recovery,
+    // bead pdftract-0df07688)
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal classic-xref doc whose `startxref` value is `short_by`
+    /// bytes less than the true xref-keyword offset, mirroring the realworld
+    /// `tests/fixtures/realworld/startxref-offset-edge.pdf` fixture (the value
+    /// lands inside the preceding object's `endobj`). Returns
+    /// `(bytes, true_xref_offset, recorded_offset)`.
+    fn short_offset_doc(short_by: u64) -> (Vec<u8>, u64, u64) {
+        fn push(body: &mut Vec<u8>, s: &str) {
+            body.extend_from_slice(s.as_bytes());
+        }
+        let mut body = Vec::new();
+        push(&mut body, "%PDF-1.4\n");
+        let obj1 = body.len() as u64;
+        push(&mut body, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let obj2 = body.len() as u64;
+        push(&mut body, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        let obj3 = body.len() as u64;
+        push(&mut body, "3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n");
+        let xref_off = body.len() as u64;
+        push(&mut body, "xref\n0 4\n");
+        push(&mut body, "0000000000 65535 f \n");
+        push(&mut body, &format!("{obj1:010} 00000 n \n"));
+        push(&mut body, &format!("{obj2:010} 00000 n \n"));
+        push(&mut body, &format!("{obj3:010} 00000 n \n"));
+        push(&mut body, "trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        let recorded = xref_off - short_by;
+        push(&mut body, &format!("startxref\n{recorded}\n%%EOF\n"));
+        (body, xref_off, recorded)
+    }
+
+    /// The dominant corpus trailer-loss class (54 files, 2026-09-21): the
+    /// recorded startxref value is a few bytes SHORT, landing inside the
+    /// preceding `endobj`, so the keyword sits FORWARD of the recorded offset
+    /// and the backward-only scan never sees it. The parser must recover the
+    /// keyword from the forward window, parse the table and trailer, and
+    /// retain the diagnostic naming the true offset.
+    #[test]
+    fn recovers_startxref_value_short_of_keyword() {
+        let (data, xref_off, recorded) = short_offset_doc(6);
+        let src = MemorySource::new(data.clone());
+        assert_eq!(
+            &data[recorded as usize..xref_off as usize],
+            b"ndobj\n",
+            "recorded offset must land inside the preceding endobj (fixture class)"
+        );
+
+        let trad = parse_traditional_xref(&src, recorded);
+        dump_layer("short-offset-doc", "LAYER 2 [short startxref value]", &trad);
+        assert!(
+            !trad.entries.is_empty(),
+            "forward recovery should parse the table despite the short startxref"
+        );
+        let trailer = trad
+            .trailer
+            .as_ref()
+            .expect("forward recovery must carry the trailer");
+        assert!(
+            trailer.get("Root").is_some(),
+            "recovered trailer must carry /Root; keys={:?}",
+            trailer.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            trad.diagnostics
+                .iter()
+                .any(|d| d.message.contains(&format!("recovered xref at {xref_off}"))),
+            "expected a recovery diagnostic naming the true offset {xref_off}; got {:?}",
+            trad.diagnostics
+        );
+
+        // The wrappers document.rs/extract.rs actually call preserve it.
+        assert!(load_single_xref(&src, recorded).trailer.is_some());
+        let chained = load_xref_with_prev_chain(&src, recorded);
+        assert!(
+            chained
+                .trailer
+                .as_ref()
+                .and_then(|t| t.get("Root"))
+                .is_some(),
+            "prev-chain merge should preserve the forward-recovered trailer"
+        );
+    }
+
+    /// When no boundary-delimited keyword exists anywhere in the recovery
+    /// window, the section must stay trailer-less with the specific
+    /// `xref keyword not found` diagnostic — the distinct trailer-loss
+    /// failure that surfaces as "No trailer in xref section" upstream, never
+    /// folded into a /Root error (taxonomy from ea0ed51c).
+    #[test]
+    fn unrecoverable_keyword_keeps_distinct_trailer_loss() {
+        let (mut data, _, recorded) = short_offset_doc(6);
+        // Corrupt the table keyword so no boundary-delimited "xref" remains
+        // anywhere ("startxref" survives but its `xref` tail fails the
+        // boundary check because a `t` precedes it).
+        let kw = data
+            .windows(5)
+            .position(|w| w == b"xref\n")
+            .expect("doc contains an xref keyword");
+        data[kw..kw + 4].copy_from_slice(b"xrfx");
+
+        let src = MemorySource::new(data);
+        let trad = parse_traditional_xref(&src, recorded);
+        assert!(
+            trad.trailer.is_none(),
+            "unrecoverable keyword must leave the section trailer-less"
+        );
+        assert!(
+            trad.diagnostics
+                .iter()
+                .any(|d| d.message == "xref keyword not found"),
+            "expected the specific no-keyword diagnostic; got {:?}",
+            trad.diagnostics
+        );
+        let err = crate::document::resolve_root_ref(&trad).unwrap_err();
+        assert_eq!(err.root_cause().to_string(), "No trailer in xref section");
     }
 }

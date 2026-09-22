@@ -10,7 +10,9 @@
 //! * startxref offset does not land on the xref keyword ("No trailer in xref
 //!   section", 54 corpus files as of 2026-09-21)
 //!       -> tests/fixtures/realworld/startxref-offset-edge.pdf
-//!       -> pdftract-0df07688
+//!       -> pdftract-0df07688 (FIXED: bounded keyword recovery around the
+//!          recorded offset; the pin below asserts resolution. Residual empty
+//!          text layer is the escaped-paren class, pdftract-5b4c3d0e)
 //! * multi-section xref resolution: /Prev incremental-update chains and
 //!   cross-reference streams ("Failed to resolve /Root: object N 0 R not
 //!   found")
@@ -159,23 +161,24 @@ fn pin_xref_stream_only_report_current_behavior() {
 // ---------------------------------------------------------------------------
 
 /// Valid classic-xref doc whose startxref VALUE is 6 bytes short, landing
-/// inside the last object's "endobj". PyMuPDF recovers it (2 pp / 2,050
-/// chars); pdftract fails at the pinning commit. Mirrors the 54-file corpus
-/// class "No trailer in xref section" (2026-09-21 re-check, unowned before
-/// pdftract-0df07688).
+/// inside the last object's "endobj". Mirrors the 54-file corpus class
+/// "No trailer in xref section" (2026-09-21 re-check, unowned before
+/// pdftract-0df07688). FIXED by pdftract-0df07688: the bounded keyword
+/// recovery around the recorded offset (XREF_KEYWORD_RECOVERY_WINDOW in
+/// parser/xref.rs) finds the keyword 6 bytes forward, so the document now
+/// resolves like PyMuPDF (2 pp). The text layer is still empty here --
+/// the fixture's literals carry escaped parentheses, which is the separate
+/// zeroed-text-layer class owned by pdftract-5b4c3d0e.
 #[test]
 fn pin_startxref_offset_edge_current_behavior() {
     let path = repo_fixture("realworld/startxref-offset-edge.pdf");
-    let err = extract_failure(&path);
-    assert!(
-        err.contains("No trailer in xref section"),
-        "expected the trailer-loss class error, got: {err}"
-    );
+    assert_eq!(extract_pages(&path), 2);
 }
 
 #[test]
-#[ignore = "desired behavior -- flip when pdftract-0df07688 (startxref/trailer \
-           detection so off-keyword startxref offsets resolve) lands"]
+#[ignore = "full PyMuPDF parity (2,050 chars) is blocked by pdftract-5b4c3d0e \
+           (escaped parentheses in literals zero the text layer); the \
+           trailer-loss half was fixed and flipped by pdftract-0df07688"]
 fn desired_startxref_offset_edge_extracts_like_pymupdf() {
     let path = repo_fixture("realworld/startxref-offset-edge.pdf");
     assert_eq!(extract_pages(&path), 2);
