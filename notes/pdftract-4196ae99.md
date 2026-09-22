@@ -170,3 +170,16 @@ deliberately out of scope per the existing window-constant contracts.
 Provenance: `tests/fixtures/profiles/PROVENANCE.md` untouched — no fixture
 files were added or modified; both probe fixtures are the already-committed
 ones. `scripts/check-provenance.sh` scope therefore unchanged by this bead.
+
+## Post-push checklist run (step 2–4 of the dispatch checklist)
+
+Re-verified from a FRESH `git archive HEAD` extraction of the pushed tip
+`d1d47c6b` (`/var/tmp/bead-4196ae99-verify`, private target dir):
+
+- `cargo test -p pdftract-core --test realworld_extraction_baseline` →
+  12 passed / 0 failed / 2 ignored, exit 0
+- `cargo test -p pdftract-core --lib parser::xref` → 102 passed / 9 failed,
+  identical pre-existing set, exit 101 (not fenced)
+- `cargo build -p pdftract-cli` → exit 0
+- CLI extracts of both fixtures → exit 0 (150 B / 715,553 B)
+- `git rev-list origin/main..HEAD` → empty (both commits pushed)
