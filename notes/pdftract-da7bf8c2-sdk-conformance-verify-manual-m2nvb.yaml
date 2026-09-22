@@ -1,0 +1,493 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  annotations:
+    workflows.argoproj.io/pod-name-format: v2
+  creationTimestamp: "2026-09-22T13:55:21Z"
+  generateName: sdk-conformance-verify-manual-
+  generation: 8
+  labels:
+    workflows.argoproj.io/completed: "true"
+    workflows.argoproj.io/phase: Failed
+  name: sdk-conformance-verify-manual-m2nvb
+  namespace: argo-workflows
+  resourceVersion: "86186652"
+  uid: 5935adbf-fc43-40ff-a148-9ca3bb684c09
+spec:
+  arguments:
+    parameters:
+    - name: runtime-image
+      value: alpine:3.19
+    - name: sdk-repo
+      value: https://github.com/octocat/Hello-World.git
+    - name: sdk-ref
+      value: master
+    - name: conformance-command
+      value: echo CONFORMANCE-DELIBERATE-FAIL-pdftract-da7bf8c2; exit 3
+    - name: working-dir
+      value: .
+  workflowTemplateRef:
+    name: sdk-conformance-verify
+status:
+  artifactGCStatus:
+    notSpecified: true
+  artifactRepositoryRef:
+    artifactRepository: {}
+    default: true
+  conditions:
+  - status: "False"
+    type: PodRunning
+  - status: "True"
+    type: Completed
+  finishedAt: "2026-09-22T14:03:12Z"
+  message: child 'sdk-conformance-verify-manual-m2nvb-2154854314' failed
+  nodes:
+    sdk-conformance-verify-manual-m2nvb:
+      children:
+      - sdk-conformance-verify-manual-m2nvb-999261260
+      displayName: sdk-conformance-verify-manual-m2nvb
+      finishedAt: "2026-09-22T14:03:12Z"
+      id: sdk-conformance-verify-manual-m2nvb
+      inputs:
+        parameters:
+        - name: runtime-image
+          value: alpine:3.19
+        - name: sdk-repo
+          value: https://github.com/octocat/Hello-World.git
+        - default: main
+          name: sdk-ref
+          value: master
+        - name: conformance-command
+          value: echo CONFORMANCE-DELIBERATE-FAIL-pdftract-da7bf8c2; exit 3
+        - default: .
+          name: working-dir
+          value: .
+      message: child 'sdk-conformance-verify-manual-m2nvb-2154854314' failed
+      name: sdk-conformance-verify-manual-m2nvb
+      outboundNodes:
+      - sdk-conformance-verify-manual-m2nvb-2154854314
+      phase: Failed
+      progress: 1/2
+      resourcesDuration:
+        cpu: 1
+        memory: 38
+      startedAt: "2026-09-22T14:01:00Z"
+      templateName: sdk-conformance-verify
+      templateScope: local/
+      type: Steps
+    sdk-conformance-verify-manual-m2nvb-999261260:
+      boundaryID: sdk-conformance-verify-manual-m2nvb
+      children:
+      - sdk-conformance-verify-manual-m2nvb-1918951762
+      displayName: '[0]'
+      finishedAt: "2026-09-22T14:02:40Z"
+      id: sdk-conformance-verify-manual-m2nvb-999261260
+      name: sdk-conformance-verify-manual-m2nvb[0]
+      nodeFlag: {}
+      phase: Succeeded
+      progress: 1/2
+      resourcesDuration:
+        cpu: 1
+        memory: 38
+      startedAt: "2026-09-22T14:01:00Z"
+      templateScope: local/
+      type: StepGroup
+    sdk-conformance-verify-manual-m2nvb-1066224641:
+      boundaryID: sdk-conformance-verify-manual-m2nvb
+      children:
+      - sdk-conformance-verify-manual-m2nvb-2154854314
+      displayName: '[1]'
+      finishedAt: "2026-09-22T14:03:12Z"
+      id: sdk-conformance-verify-manual-m2nvb-1066224641
+      message: child 'sdk-conformance-verify-manual-m2nvb-2154854314' failed
+      name: sdk-conformance-verify-manual-m2nvb[1]
+      nodeFlag: {}
+      phase: Failed
+      progress: 0/1
+      resourcesDuration:
+        cpu: 1
+        memory: 23
+      startedAt: "2026-09-22T14:02:40Z"
+      templateScope: local/
+      type: StepGroup
+    sdk-conformance-verify-manual-m2nvb-1918951762:
+      boundaryID: sdk-conformance-verify-manual-m2nvb
+      children:
+      - sdk-conformance-verify-manual-m2nvb-1066224641
+      displayName: clone-sdk
+      finishedAt: "2026-09-22T14:02:30Z"
+      hostNodeName: prod-instance-17899476634160849
+      id: sdk-conformance-verify-manual-m2nvb-1918951762
+      inputs:
+        parameters:
+        - name: sdk-repo
+          value: https://github.com/octocat/Hello-World.git
+        - name: sdk-ref
+          value: master
+        - name: runtime-image
+          value: alpine:3.19
+        - name: conformance-command
+          value: echo CONFORMANCE-DELIBERATE-FAIL-pdftract-da7bf8c2; exit 3
+      name: sdk-conformance-verify-manual-m2nvb[0].clone-sdk
+      outputs:
+        exitCode: "0"
+      phase: Succeeded
+      progress: 1/1
+      resourcesDuration:
+        cpu: 0
+        memory: 15
+      startedAt: "2026-09-22T14:01:00Z"
+      taskResultSynced: true
+      templateName: clone-sdk
+      templateScope: local/
+      type: Pod
+    sdk-conformance-verify-manual-m2nvb-2154854314:
+      boundaryID: sdk-conformance-verify-manual-m2nvb
+      displayName: run-conformance
+      finishedAt: "2026-09-22T14:03:01Z"
+      hostNodeName: prod-instance-17899476634160849
+      id: sdk-conformance-verify-manual-m2nvb-2154854314
+      inputs:
+        parameters:
+        - name: runtime-image
+          value: alpine:3.19
+        - name: conformance-command
+          value: echo CONFORMANCE-DELIBERATE-FAIL-pdftract-da7bf8c2; exit 3
+        - name: working-dir
+          value: .
+      message: 'main: Error (exit code 3)'
+      name: sdk-conformance-verify-manual-m2nvb[1].run-conformance
+      outputs:
+        exitCode: "3"
+      phase: Failed
+      progress: 0/1
+      resourcesDuration:
+        cpu: 1
+        memory: 23
+      startedAt: "2026-09-22T14:02:40Z"
+      taskResultSynced: true
+      templateName: run-conformance
+      templateScope: local/
+      type: Pod
+  persistentVolumeClaims:
+  - name: workspace
+    persistentVolumeClaim:
+      claimName: sdk-conformance-verify-manual-m2nvb-workspace
+  phase: Failed
+  progress: 1/2
+  resourcesDuration:
+    cpu: 1
+    memory: 38
+  startedAt: "2026-09-22T14:01:00Z"
+  storedTemplates:
+    namespaced/sdk-conformance-verify/clone-sdk:
+      activeDeadlineSeconds: 300
+      container:
+        args:
+        - |
+          apk add --no-cache git ca-certificates >/dev/null
+
+          SDK_REPO="{{inputs.parameters.sdk-repo}}"
+          SDK_REF="{{inputs.parameters.sdk-ref}}"
+          RUNTIME_IMAGE="{{inputs.parameters.runtime-image}}"
+          CONFORMANCE_COMMAND="{{inputs.parameters.conformance-command}}"
+
+          fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+          [ -n "$SDK_REPO" ] || fatal "sdk-repo parameter is required"
+          [ -n "$SDK_REF" ] || fatal "sdk-ref parameter is required"
+          [ -n "$CONFORMANCE_COMMAND" ] || fatal "conformance-command parameter is required"
+
+          case "$RUNTIME_IMAGE" in
+            *:*) IMG_TAG="${RUNTIME_IMAGE##*:}";;
+            *)   IMG_TAG="";;
+          esac
+          [ -n "$IMG_TAG" ] || fatal "runtime-image must carry an explicit tag (got '$RUNTIME_IMAGE')"
+          [ "$IMG_TAG" != "latest" ] || fatal "runtime-image :latest is banned org-wide; pin a version tag"
+
+          echo "Cloning $SDK_REPO at ref $SDK_REF ..."
+          if git clone --depth 1 --branch "$SDK_REF" "$SDK_REPO" /workspace/sdk 2>/dev/null; then
+            echo "Shallow clone OK"
+          else
+            echo "Shallow clone at $SDK_REF failed; falling back to full clone + checkout"
+            git clone "$SDK_REPO" /workspace/sdk
+            git -C /workspace/sdk checkout --detach "$SDK_REF"
+          fi
+
+          cd /workspace/sdk
+          echo "Checked out HEAD: $(git rev-parse HEAD)"
+          echo "--- top-level contents ---"
+          ls -1
+        command:
+        - sh
+        - -ec
+        image: alpine:3.19
+        name: ""
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /workspace
+          name: workspace
+      inputs:
+        parameters:
+        - name: sdk-repo
+        - name: sdk-ref
+        - name: runtime-image
+        - name: conformance-command
+      metadata: {}
+      name: clone-sdk
+      outputs: {}
+    namespaced/sdk-conformance-verify/run-conformance:
+      activeDeadlineSeconds: 3600
+      container:
+        args:
+        - |
+          cd "/workspace/sdk/{{inputs.parameters.working-dir}}" || {
+            echo "FATAL: working-dir '{{inputs.parameters.working-dir}}' not found under /workspace/sdk" >&2
+            exit 1
+          }
+
+          echo "============================================="
+          echo "sdk-conformance-verify"
+          echo "runtime: $(uname -sr)   working-dir: $(pwd)"
+          echo "============================================="
+
+          {{inputs.parameters.conformance-command}}
+        command:
+        - sh
+        - -ec
+        image: '{{inputs.parameters.runtime-image}}'
+        name: ""
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: "1"
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /workspace
+          name: workspace
+      inputs:
+        parameters:
+        - name: runtime-image
+        - name: conformance-command
+        - name: working-dir
+      metadata: {}
+      name: run-conformance
+      outputs: {}
+    namespaced/sdk-conformance-verify/sdk-conformance-verify:
+      inputs:
+        parameters:
+        - name: runtime-image
+        - name: sdk-repo
+        - default: main
+          name: sdk-ref
+        - name: conformance-command
+        - default: .
+          name: working-dir
+      metadata: {}
+      name: sdk-conformance-verify
+      outputs: {}
+      steps:
+      - - arguments:
+            parameters:
+            - name: sdk-repo
+              value: '{{inputs.parameters.sdk-repo}}'
+            - name: sdk-ref
+              value: '{{inputs.parameters.sdk-ref}}'
+            - name: runtime-image
+              value: '{{inputs.parameters.runtime-image}}'
+            - name: conformance-command
+              value: '{{inputs.parameters.conformance-command}}'
+          name: clone-sdk
+          template: clone-sdk
+      - - arguments:
+            parameters:
+            - name: runtime-image
+              value: '{{inputs.parameters.runtime-image}}'
+            - name: conformance-command
+              value: '{{inputs.parameters.conformance-command}}'
+            - name: working-dir
+              value: '{{inputs.parameters.working-dir}}'
+          name: run-conformance
+          template: run-conformance
+  storedWorkflowTemplateSpec:
+    activeDeadlineSeconds: 7200
+    arguments:
+      parameters:
+      - name: runtime-image
+        value: alpine:3.19
+      - name: sdk-repo
+        value: https://github.com/octocat/Hello-World.git
+      - name: sdk-ref
+        value: master
+      - name: conformance-command
+        value: echo CONFORMANCE-DELIBERATE-FAIL-pdftract-da7bf8c2; exit 3
+      - name: working-dir
+        value: .
+    artifactGC:
+      forceFinalizerRemoval: true
+      serviceAccountName: argo-artifact-gc
+    entrypoint: sdk-conformance-verify
+    podGC:
+      strategy: OnPodCompletion
+    serviceAccountName: argo-workflow
+    templates:
+    - inputs:
+        parameters:
+        - name: runtime-image
+        - name: sdk-repo
+        - default: main
+          name: sdk-ref
+        - name: conformance-command
+        - default: .
+          name: working-dir
+      metadata: {}
+      name: sdk-conformance-verify
+      outputs: {}
+      steps:
+      - - arguments:
+            parameters:
+            - name: sdk-repo
+              value: '{{inputs.parameters.sdk-repo}}'
+            - name: sdk-ref
+              value: '{{inputs.parameters.sdk-ref}}'
+            - name: runtime-image
+              value: '{{inputs.parameters.runtime-image}}'
+            - name: conformance-command
+              value: '{{inputs.parameters.conformance-command}}'
+          name: clone-sdk
+          template: clone-sdk
+      - - arguments:
+            parameters:
+            - name: runtime-image
+              value: '{{inputs.parameters.runtime-image}}'
+            - name: conformance-command
+              value: '{{inputs.parameters.conformance-command}}'
+            - name: working-dir
+              value: '{{inputs.parameters.working-dir}}'
+          name: run-conformance
+          template: run-conformance
+    - activeDeadlineSeconds: 300
+      container:
+        args:
+        - |
+          apk add --no-cache git ca-certificates >/dev/null
+
+          SDK_REPO="{{inputs.parameters.sdk-repo}}"
+          SDK_REF="{{inputs.parameters.sdk-ref}}"
+          RUNTIME_IMAGE="{{inputs.parameters.runtime-image}}"
+          CONFORMANCE_COMMAND="{{inputs.parameters.conformance-command}}"
+
+          fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+          [ -n "$SDK_REPO" ] || fatal "sdk-repo parameter is required"
+          [ -n "$SDK_REF" ] || fatal "sdk-ref parameter is required"
+          [ -n "$CONFORMANCE_COMMAND" ] || fatal "conformance-command parameter is required"
+
+          case "$RUNTIME_IMAGE" in
+            *:*) IMG_TAG="${RUNTIME_IMAGE##*:}";;
+            *)   IMG_TAG="";;
+          esac
+          [ -n "$IMG_TAG" ] || fatal "runtime-image must carry an explicit tag (got '$RUNTIME_IMAGE')"
+          [ "$IMG_TAG" != "latest" ] || fatal "runtime-image :latest is banned org-wide; pin a version tag"
+
+          echo "Cloning $SDK_REPO at ref $SDK_REF ..."
+          if git clone --depth 1 --branch "$SDK_REF" "$SDK_REPO" /workspace/sdk 2>/dev/null; then
+            echo "Shallow clone OK"
+          else
+            echo "Shallow clone at $SDK_REF failed; falling back to full clone + checkout"
+            git clone "$SDK_REPO" /workspace/sdk
+            git -C /workspace/sdk checkout --detach "$SDK_REF"
+          fi
+
+          cd /workspace/sdk
+          echo "Checked out HEAD: $(git rev-parse HEAD)"
+          echo "--- top-level contents ---"
+          ls -1
+        command:
+        - sh
+        - -ec
+        image: alpine:3.19
+        name: ""
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /workspace
+          name: workspace
+      inputs:
+        parameters:
+        - name: sdk-repo
+        - name: sdk-ref
+        - name: runtime-image
+        - name: conformance-command
+      metadata: {}
+      name: clone-sdk
+      outputs: {}
+    - activeDeadlineSeconds: 3600
+      container:
+        args:
+        - |
+          cd "/workspace/sdk/{{inputs.parameters.working-dir}}" || {
+            echo "FATAL: working-dir '{{inputs.parameters.working-dir}}' not found under /workspace/sdk" >&2
+            exit 1
+          }
+
+          echo "============================================="
+          echo "sdk-conformance-verify"
+          echo "runtime: $(uname -sr)   working-dir: $(pwd)"
+          echo "============================================="
+
+          {{inputs.parameters.conformance-command}}
+        command:
+        - sh
+        - -ec
+        image: '{{inputs.parameters.runtime-image}}'
+        name: ""
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: "1"
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /workspace
+          name: workspace
+      inputs:
+        parameters:
+        - name: runtime-image
+        - name: conformance-command
+        - name: working-dir
+      metadata: {}
+      name: run-conformance
+      outputs: {}
+    ttlStrategy:
+      secondsAfterCompletion: 3600
+      secondsAfterFailure: 7200
+      secondsAfterSuccess: 1800
+    volumeClaimTemplates:
+    - metadata:
+        creationTimestamp: null
+        name: workspace
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 75Gi
+        storageClassName: sata-large
+      status: {}
+    workflowTemplateRef:
+      name: sdk-conformance-verify
