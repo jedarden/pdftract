@@ -34,7 +34,9 @@
 //!   page's text layer while the document still "extracts"
 //!       -> repo-root tests/fixtures/valid-minimal.pdf (obj 4 recorded at
 //!          298, actually at 290; 1 page, 0 chars)
-//!       -> pdftract-4683109d
+//!       -> pdftract-4683109d (FIXED: bounded object-boundary rescan around
+//!          a failed entry offset, OBJECT_OFFSET_RECOVERY_WINDOW in
+//!          parser/xref.rs; the pins below assert resolution + text)
 //!
 //! Each currently-failing class also carries an `#[ignore]`d desired-behavior
 //! pin whose ignore reason names the owning child bead; the child removes the
@@ -265,22 +267,29 @@ fn desired_core_multipage_100_resolves_root() {
     let _ = extract_pages(&path); // resolves without the /Root error
 }
 
-/// Minimal PDF whose page tree fails to flatten at the pinning commit
+/// Minimal PDF whose page tree failed to flatten at the pinning commit
 /// ("Document contains no pages") while PyMuPDF sees 1 pp / 12 chars.
 /// Real-world class: the dogfood pilot's legal agreement and resume.
+/// FLIPPED by pdftract-4683109d, not pdftract-bcf935ec: this fixture carries
+/// the same drifted-xref-entry class as the repo-root W3C dummy (obj 3
+/// recorded at 115, actually at 117 -- the page-tree walk killer behind the
+/// old "Document contains no pages"; obj 4 at 268 vs 243; obj 5 at 345 vs
+/// 313; startxref 439 vs 406), so the bounded object-boundary rescan
+/// recovers the page tree and the content stream too. PyMuPDF parity note:
+/// fitz sees 12 chars ("Hello World"); the pin asserts the word itself.
 #[test]
 fn pin_core_valid_minimal_current_behavior() {
     let path = core_fixture("valid-minimal.pdf");
-    let err = extract_failure(&path);
+    assert_eq!(extract_pages(&path), 1);
+    let text = extract_text(&path);
     assert!(
-        err.contains("Document contains no pages"),
-        "expected the no-pages class error, got: {err}"
+        text.contains("Hello World"),
+        "expected the core-suite text layer, got {} chars",
+        text.len()
     );
 }
 
 #[test]
-#[ignore = "desired behavior -- flip when pdftract-bcf935ec (page-tree \
-           resolution behind 'Document contains no pages') lands"]
 fn desired_core_valid_minimal_page_tree_resolves() {
     let path = core_fixture("valid-minimal.pdf");
     assert_eq!(extract_pages(&path), 1); // PyMuPDF: 1 pp
@@ -291,30 +300,29 @@ fn desired_core_valid_minimal_page_tree_resolves() {
 // ---------------------------------------------------------------------------
 
 /// Repo-root W3C dummy PDF. Distinct file from the core-suite valid-minimal
-/// above (PyMuPDF: 1 pp / 5 chars). CURRENT behavior at the pinning commit:
-/// extraction returns Ok with 1 page but the text layer is EMPTY. The file's
-/// xref entry for the content-stream object records offset 298 while the
-/// object actually sits at 290; the shifted strict read truncates the stream
-/// mid-literal and the page's spans are silently dropped. Isolation: fixing
-/// only that entry (298 -> 290, everything else still nonconforming) makes
-/// "Test" extract; fixing only the mis-pointed startxref does not (probes in
-/// notes/pdftract-7ec0f722.md).
+/// above (PyMuPDF: 1 pp / 5 chars). The file's xref entry for the
+/// content-stream object records offset 298 while the object actually sits
+/// at 290; at the original pinning commit the shifted strict read failed the
+/// object resolve and the page's text layer came out EMPTY while extraction
+/// still returned Ok. FIXED by pdftract-4683109d: the bounded object-boundary
+/// rescan around a failed entry offset (OBJECT_OFFSET_RECOVERY_WINDOW in
+/// parser/xref.rs) finds the real "4 0 obj" header and the text extracts.
+/// Isolation: fixing only that entry (298 -> 290, everything else still
+/// nonconforming) made "Test" extract; fixing only the mis-pointed startxref
+/// did not (probes in notes/pdftract-7ec0f722.md).
 #[test]
 fn pin_repo_root_valid_minimal_control_current_behavior() {
     let path = repo_fixture("valid-minimal.pdf");
     assert_eq!(extract_pages(&path), 1);
     let text = extract_text(&path);
     assert!(
-        text.is_empty(),
-        "text layer no longer empty ({} chars) -- the xref-offset-drift fix \
-         landed; flip this pin to assert the text",
+        text.contains("Test"),
+        "expected the W3C-dummy text layer, got {} chars",
         text.len()
     );
 }
 
 #[test]
-#[ignore = "desired behavior -- flip when pdftract-4683109d (text layer \
-           survives wrong xref entry offsets) lands"]
 fn desired_repo_root_valid_minimal_extracts_text() {
     let path = repo_fixture("valid-minimal.pdf");
     assert_eq!(extract_pages(&path), 1);

@@ -334,9 +334,6 @@ impl XrefResolver {
         obj_ref: ObjRef,
         source: &dyn PdfSource,
     ) -> ResolveResult<PdfObject> {
-        use crate::parser::object::ObjectParser;
-        use std::sync::Arc;
-
         // Check for circular reference and depth limit via ObjectCache
         // The ResolutionGuard automatically cleans up on drop (thread-local cycle detection)
         let _guard = self.cache.begin_resolution(obj_ref).map_err(|diag| {
@@ -373,50 +370,45 @@ impl XrefResolver {
                     ResolveError::Io(format!("Failed to read object at offset {}: {}", offset, e))
                 })?;
 
-                // Parse the indirect object
-                let mut parser = ObjectParser::new(&bytes);
-
-                // The object should start with "obj_num gen obj"
-                // We need to verify that the parsed object number matches
-                if let Some(indirect) = parser.parse_indirect_object() {
-                    // Verify the object number and generation match
-                    if indirect.id.object != obj_ref.object
-                        || indirect.id.generation != obj_ref.generation
-                    {
-                        return Err(ResolveError::NotFound(obj_ref));
-                    }
-
-                    // ObjectParser positions streams relative to the byte
-                    // buffer supplied above. Convert that position to the
-                    // document's absolute offset before caching the object;
-                    // stream decoding reads from the original PdfSource.
-                    let mut obj = indirect.obj;
-                    if let PdfObject::Stream(stream) = &mut obj {
-                        stream.offset = stream.offset.saturating_add(*offset);
-                        if stream.len_hint.is_none() {
-                            let length_ref = stream
-                                .dict
-                                .get("Length")
-                                .or_else(|| stream.dict.get("/Length"))
-                                .and_then(PdfObject::as_ref);
-                            if let Some(length_ref) = length_ref {
-                                if let Ok(PdfObject::Integer(length)) = self.resolve(length_ref) {
-                                    if length >= 0 {
-                                        stream.len_hint = Some(length as u64);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Cache the result (ObjectCache handles LRU eviction and excludes PdfNull from cycles)
-                    self.cache.insert(obj_ref, Arc::new(obj.clone()));
-
-                    Ok(obj)
-                } else {
-                    // Failed to parse indirect object
-                    Err(ResolveError::NotFound(obj_ref))
+                // The object should start with "obj_num gen obj"; the parsed
+                // object number and generation are verified inside.
+                if let Some(obj) = self.parse_verified_object(obj_ref, &bytes, *offset) {
+                    return Ok(obj);
                 }
+
+                // The strict read at the recorded offset did not yield this
+                // object. Real-world writers emit xref entries whose byte
+                // offset has drifted (the W3C dummy tests/fixtures/
+                // valid-minimal.pdf records obj 4 at 298 while its header
+                // sits 8 bytes earlier), and an unresolved object here
+                // silently zeroes a page's text layer while extraction still
+                // returns Ok. Re-read a bounded window around the recorded
+                // offset and scan it for this object's real "N G obj" header
+                // (same bounded-recovery shape as XREF_KEYWORD_RECOVERY_WINDOW);
+                // a whole-file scan is deliberately out of scope.
+                let window_start = offset.saturating_sub(OBJECT_OFFSET_RECOVERY_WINDOW);
+                let window_len = (offset - window_start) as usize + 4096;
+                if let Ok(window) = source.read_at(window_start, window_len) {
+                    let needle = format!("{} {} obj", obj_ref.object, obj_ref.generation);
+                    let mut searched = 0usize;
+                    while let Some(rel) = window[searched..]
+                        .windows(needle.len())
+                        .position(|w| w == needle.as_bytes())
+                    {
+                        let hit = searched + rel;
+                        if let Some(obj) = self.parse_verified_object(
+                            obj_ref,
+                            &window[hit..],
+                            window_start + hit as u64,
+                        ) {
+                            return Ok(obj);
+                        }
+                        searched = hit + 1;
+                    }
+                }
+
+                // Failed to parse indirect object at (or near) the recorded offset
+                Err(ResolveError::NotFound(obj_ref))
             }
             XrefEntry::Free { .. } => {
                 // Free entry - object doesn't exist
@@ -428,6 +420,54 @@ impl XrefResolver {
                 Err(ResolveError::NotFound(obj_ref))
             }
         }
+    }
+
+    /// Parse the buffer `bytes` — which begins at absolute file offset `base`
+    /// — as the indirect object `obj_ref`, applying the same post-parse fixups
+    /// as the strict resolve path: stream offsets are converted from
+    /// buffer-relative to document-absolute, an absent `/Length` hint is
+    /// resolved, and the result is cached. Returns `None` when the buffer does
+    /// not parse as exactly this object (missing header, different object, or
+    /// unparseable body).
+    fn parse_verified_object(&self, obj_ref: ObjRef, bytes: &[u8], base: u64) -> Option<PdfObject> {
+        use crate::parser::object::ObjectParser;
+        use std::sync::Arc;
+
+        let mut parser = ObjectParser::new(bytes);
+        let indirect = parser.parse_indirect_object()?;
+
+        // Verify the object number and generation match
+        if indirect.id.object != obj_ref.object || indirect.id.generation != obj_ref.generation {
+            return None;
+        }
+
+        // ObjectParser positions streams relative to the byte
+        // buffer supplied above. Convert that position to the
+        // document's absolute offset before caching the object;
+        // stream decoding reads from the original PdfSource.
+        let mut obj = indirect.obj;
+        if let PdfObject::Stream(stream) = &mut obj {
+            stream.offset = stream.offset.saturating_add(base);
+            if stream.len_hint.is_none() {
+                let length_ref = stream
+                    .dict
+                    .get("Length")
+                    .or_else(|| stream.dict.get("/Length"))
+                    .and_then(PdfObject::as_ref);
+                if let Some(length_ref) = length_ref {
+                    if let Ok(PdfObject::Integer(length)) = self.resolve(length_ref) {
+                        if length >= 0 {
+                            stream.len_hint = Some(length as u64);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cache the result (ObjectCache handles LRU eviction and excludes PdfNull from cycles)
+        self.cache.insert(obj_ref, Arc::new(obj.clone()));
+
+        Some(obj)
     }
 
     /// Cache a resolved object.
@@ -467,6 +507,19 @@ impl Default for XrefResolver {
 /// scans stay within this window around the recorded offset; a whole-file
 /// scan is deliberately out of scope here.
 const XREF_KEYWORD_RECOVERY_WINDOW: u64 = 1024;
+
+/// Bounded recovery window (bytes) scanned around a recorded xref entry
+/// offset that did not yield the referenced object's header.
+///
+/// Real-world writers emit per-object entries whose byte offset has drifted
+/// from the object's true position (the W3C dummy tests/fixtures/
+/// valid-minimal.pdf records its content-stream object 8 bytes past the
+/// header, which used to fail the resolve and silently zero the page's text
+/// layer while extraction still returned Ok). The window covers
+/// `offset - OBJECT_OFFSET_RECOVERY_WINDOW` through `offset + 4KiB` and is
+/// scanned for the object's real "N G obj" header; a whole-file scan is
+/// deliberately out of scope, mirroring [`XREF_KEYWORD_RECOVERY_WINDOW`].
+const OBJECT_OFFSET_RECOVERY_WINDOW: u64 = 1024;
 
 /// Parse a traditional PDF xref table starting from the given offset.
 ///
@@ -5407,6 +5460,150 @@ trailer\n<< /Size 3 >>\n";
                 }
             }
         }
+    }
+
+    /// Build a tiny classic-xref document with a page content-stream object
+    /// (obj 4) whose xref entry can be drifted from the object's true offset.
+    /// Mirrors the real-world shape of tests/fixtures/valid-minimal.pdf (W3C
+    /// dummy): a content-stream object plus a wrong per-object entry. Returns
+    /// (bytes, true_obj4_offset, true_stream_data_offset).
+    fn drifted_offset_doc() -> (Vec<u8>, u64, u64) {
+        let mut body = Vec::new();
+        let mut push = |s: &str, body: &mut Vec<u8>| body.extend_from_slice(s.as_bytes());
+        push("%PDF-1.4\n", &mut body);
+        let obj1_off = body.len() as u64;
+        push(
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+            &mut body,
+        );
+        let obj2_off = body.len() as u64;
+        push(
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+            &mut body,
+        );
+        let obj3_off = body.len() as u64;
+        push(
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n",
+            &mut body,
+        );
+        let obj4_off = body.len() as u64;
+        push(
+            "4 0 obj\n<< /Length 11 >>\nstream\n(Hello) Tj\nendstream\nendobj\n",
+            &mut body,
+        );
+        let stream_data_off = obj4_off + "4 0 obj\n<< /Length 11 >>\nstream\n".len() as u64;
+        let xref_off = body.len() as u64;
+        push("xref\n0 5\n", &mut body);
+        push("0000000000 65535 f \n", &mut body);
+        for off in [obj1_off, obj2_off, obj3_off, obj4_off] {
+            push(&format!("{off:010} 00000 n \n"), &mut body);
+        }
+        push("trailer\n<< /Size 5 /Root 1 0 R >>\n", &mut body);
+        push("startxref\n", &mut body);
+        push(&format!("{xref_off}\n%%EOF\n"), &mut body);
+        (body, obj4_off, stream_data_off)
+    }
+
+    /// Build a source-backed resolver for `drifted_offset_doc` whose obj-4
+    /// entry records `recorded` instead of the object's true offset.
+    fn resolver_with_drifted_obj4(recorded: u64) -> (XrefResolver, u64, u64) {
+        let (data, obj4_off, stream_data_off) = drifted_offset_doc();
+        let mut section = XrefSection::new();
+        section.entries.insert(
+            4,
+            XrefEntry::InUse {
+                offset: recorded,
+                gen_nr: 0,
+            },
+        );
+        let resolver = XrefResolver::from_section_with_source(
+            section,
+            std::sync::Arc::new(MemorySource::new(data)),
+        );
+        (resolver, obj4_off, stream_data_off)
+    }
+
+    /// The W3C-dummy class (tests/fixtures/valid-minimal.pdf): the recorded
+    /// entry points PAST the object header, into the body. The strict read
+    /// fails to find "4 0 obj" there; the bounded boundary rescan must
+    /// recover the object at its true offset with a correct stream offset.
+    #[test]
+    fn recovers_object_recorded_past_its_header() {
+        let (_, obj4_off, _) = drifted_offset_doc();
+        let (resolver, _, stream_data_off) = resolver_with_drifted_obj4(obj4_off + 8);
+        let obj = resolver
+            .resolve(ObjRef::new(4, 0))
+            .expect("drifted entry must recover the object");
+        let stream = obj.as_stream().expect("obj 4 is a content stream");
+        assert_eq!(stream.offset, stream_data_off);
+    }
+
+    /// Mirror direction: the recorded entry lands a few bytes SHORT of the
+    /// header (inside the preceding object), so the true header sits forward
+    /// of the recorded offset. The rescan window covers both directions.
+    #[test]
+    fn recovers_object_recorded_short_of_its_header() {
+        let (_, obj4_off, _) = drifted_offset_doc();
+        let (resolver, _, stream_data_off) = resolver_with_drifted_obj4(obj4_off - 7);
+        let obj = resolver
+            .resolve(ObjRef::new(4, 0))
+            .expect("short entry must recover the object");
+        let stream = obj.as_stream().expect("obj 4 is a content stream");
+        assert_eq!(stream.offset, stream_data_off);
+    }
+
+    /// A shifted-entry-table writer records the offset of a DIFFERENT
+    /// object's header. The strict parse then succeeds but with a mismatched
+    /// id; the rescan must still find the right object elsewhere in the
+    /// window rather than returning NotFound.
+    #[test]
+    fn recovers_object_when_entry_points_at_another_object() {
+        let (_, obj2_off, stream_data_off) = drifted_offset_doc();
+        let (resolver, _, _) = resolver_with_drifted_obj4(obj2_off);
+        let obj = resolver
+            .resolve(ObjRef::new(4, 0))
+            .expect("entry pointing at another object must recover obj 4");
+        let stream = obj.as_stream().expect("obj 4 is a content stream");
+        assert_eq!(stream.offset, stream_data_off);
+    }
+
+    /// A correct entry keeps taking the strict path (well-formed documents
+    /// must be unaffected by the recovery machinery).
+    #[test]
+    fn correct_offset_still_resolves_strictly() {
+        let (_, obj4_off, stream_data_off) = drifted_offset_doc();
+        let (resolver, _, _) = resolver_with_drifted_obj4(obj4_off);
+        let obj = resolver
+            .resolve(ObjRef::new(4, 0))
+            .expect("correct entry resolves");
+        let stream = obj.as_stream().expect("obj 4 is a content stream");
+        assert_eq!(stream.offset, stream_data_off);
+    }
+
+    /// When the object genuinely is not present near the recorded offset
+    /// (here: the header bytes themselves are destroyed), the resolve must
+    /// still fail with NotFound rather than fabricate an object.
+    #[test]
+    fn destroyed_object_header_still_not_found() {
+        let (mut data, obj4_off, _) = drifted_offset_doc();
+        let kw = obj4_off as usize;
+        data[kw..kw + 7].copy_from_slice(b"4 0 xbj");
+        let mut section = XrefSection::new();
+        section.entries.insert(
+            4,
+            XrefEntry::InUse {
+                offset: obj4_off,
+                gen_nr: 0,
+            },
+        );
+        let resolver = XrefResolver::from_section_with_source(
+            section,
+            std::sync::Arc::new(MemorySource::new(data)),
+        );
+        assert!(matches!(
+            resolver.resolve(ObjRef::new(4, 0)),
+            Err(ResolveError::NotFound(_))
+        ));
     }
 }
 /// Characterization probe for bead pdftract-d0b22a6e (test-only; no production changes).
