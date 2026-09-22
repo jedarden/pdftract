@@ -18,7 +18,7 @@ The baseline harness pinning current behavior per class is
 | `incremental-updates-offer-letter.pdf` | /Prev incremental-update chain (Docusign offer letter) | 4 pp / 2,460 chars | extracts ok (regression pin) | pdftract-4196ae99 |
 | `xref-stream-only-report.pdf` | cross-reference streams only (business report) | 6 pp / 1,218 chars | extracts ok (regression pin) | pdftract-4196ae99 |
 | `startxref-offset-edge.pdf` | startxref offset misses the keyword → "No trailer in xref section" | 2 pp / 2,050 chars (recovers) | **FAIL** (pinned) | pdftract-0df07688 |
-| `dense-one-page-agreement.pdf` | valid dense single page (resume / legal agreement control) | 1 pp / 2,050 chars | extracts ok | pdftract-bcf935ec (no-pages class) |
+| `dense-one-page-agreement.pdf` | valid dense single page (resume / legal agreement control) whose literals contain escaped parentheses | 1 pp / 2,050 chars | page tree ok, text layer **empty** (escaped-paren class, pinned) | pdftract-5b4c3d0e (text layer); pdftract-bcf935ec owns the no-pages class |
 
 All four are valid PDFs per PyMuPDF 1.27.2; `startxref-offset-edge.pdf` is
 valid *content* with a deliberately mis-offset `startxref` value (the

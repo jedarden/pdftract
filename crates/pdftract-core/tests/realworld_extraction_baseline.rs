@@ -21,10 +21,18 @@
 //!          crates/pdftract-core/tests/fixtures/multipage-100.pdf (both fail)
 //!       -> pdftract-4196ae99
 //! * page-tree resolution behind "Document contains no pages"
-//!       -> crates/pdftract-core/tests/fixtures/valid-minimal.pdf (fails;
-//!          the DIFFERENT repo-root tests/fixtures/valid-minimal.pdf extracts
-//!          fine and is pinned as a control)
+//!       -> crates/pdftract-core/tests/fixtures/valid-minimal.pdf (fails)
 //!       -> pdftract-bcf935ec
+//! * content-stream literals containing escaped parentheses ("\(..\)")
+//!       silently zero the page's text layer
+//!       -> tests/fixtures/realworld/dense-one-page-agreement.pdf
+//!          (page tree resolves, 0 chars)
+//!       -> pdftract-5b4c3d0e
+//! * xref entry pointing at the wrong object offset silently zeroes the
+//!   page's text layer while the document still "extracts"
+//!       -> repo-root tests/fixtures/valid-minimal.pdf (obj 4 recorded at
+//!          298, actually at 290; 1 page, 0 chars)
+//!       -> pdftract-4683109d
 //!
 //! Each currently-failing class also carries an `#[ignore]`d desired-behavior
 //! pin whose ignore reason names the owning child bead; the child removes the
@@ -49,7 +57,9 @@
 //!
 //! fitz opens ALL of the synthetic fixtures -- including the deliberately
 //! mis-offset one -- which is exactly the real-world shape: the independent
-//! baseline extracts, pdftract does not.
+//! baseline extracts text where pdftract yields errors or silently empty
+//! output (re-validated 2026-09-22 with PyMuPDF 1.27.2.2; the numbers in the
+//! table above reproduce byte-for-byte).
 
 use std::path::{Path, PathBuf};
 
@@ -173,13 +183,34 @@ fn desired_startxref_offset_edge_extracts_like_pymupdf() {
 }
 
 // ---------------------------------------------------------------------------
-// Class: dense single page, valid page tree (resume / legal agreement class)
+// Class: escaped parentheses in content-stream literals zero the text layer
+// (dense single page with a valid page tree; resume / legal agreement class)
 // ---------------------------------------------------------------------------
 
-/// Plain valid single-page document. Control: this class must simply extract.
-/// PyMuPDF: 1 pp / 2,050 chars. Extracts at the pinning commit.
+/// Plain valid single-page document whose literals contain escaped
+/// parentheses ("(MUTUAL NON-DISCLOSURE AGREEMENT \(startxref offset edge
+/// fixture\))"). PyMuPDF: 1 pp / 2,050 chars. CURRENT behavior at the
+/// pinning commit: the page tree resolves and extraction returns Ok, but the
+/// text layer is EMPTY -- one escaped paren zeroes every span on the page.
+/// Isolation: the byte-identical document with the parens replaced by a dash
+/// extracts 2,014 chars (probes in notes/pdftract-7ec0f722.md).
 #[test]
 fn pin_dense_one_page_agreement_current_behavior() {
+    let path = repo_fixture("realworld/dense-one-page-agreement.pdf");
+    assert_eq!(extract_pages(&path), 1);
+    let text = extract_text(&path);
+    assert!(
+        text.is_empty(),
+        "text layer no longer empty ({} chars) -- the escaped-paren fix \
+         landed; flip this pin to assert the text",
+        text.len()
+    );
+}
+
+#[test]
+#[ignore = "desired behavior -- flip when pdftract-5b4c3d0e (text layer \
+           survives escaped parentheses in literals) lands"]
+fn desired_dense_one_page_agreement_extracts_text() {
     let path = repo_fixture("realworld/dense-one-page-agreement.pdf");
     assert_eq!(extract_pages(&path), 1);
     assert!(extract_text(&path).contains("MUTUAL NON-DISCLOSURE"));
@@ -257,10 +288,32 @@ fn desired_core_valid_minimal_page_tree_resolves() {
 // ---------------------------------------------------------------------------
 
 /// Repo-root W3C dummy PDF. Distinct file from the core-suite valid-minimal
-/// above; extracts at the pinning commit (PyMuPDF: 1 pp / 5 chars).
+/// above (PyMuPDF: 1 pp / 5 chars). CURRENT behavior at the pinning commit:
+/// extraction returns Ok with 1 page but the text layer is EMPTY. The file's
+/// xref entry for the content-stream object records offset 298 while the
+/// object actually sits at 290; the shifted strict read truncates the stream
+/// mid-literal and the page's spans are silently dropped. Isolation: fixing
+/// only that entry (298 -> 290, everything else still nonconforming) makes
+/// "Test" extract; fixing only the mis-pointed startxref does not (probes in
+/// notes/pdftract-7ec0f722.md).
 #[test]
-fn pin_repo_root_valid_minimal_control_extracts() {
+fn pin_repo_root_valid_minimal_control_current_behavior() {
     let path = repo_fixture("valid-minimal.pdf");
     assert_eq!(extract_pages(&path), 1);
-    assert!(extract_text(&path).contains("Dummy"));
+    let text = extract_text(&path);
+    assert!(
+        text.is_empty(),
+        "text layer no longer empty ({} chars) -- the xref-offset-drift fix \
+         landed; flip this pin to assert the text",
+        text.len()
+    );
+}
+
+#[test]
+#[ignore = "desired behavior -- flip when pdftract-4683109d (text layer \
+           survives wrong xref entry offsets) lands"]
+fn desired_repo_root_valid_minimal_extracts_text() {
+    let path = repo_fixture("valid-minimal.pdf");
+    assert_eq!(extract_pages(&path), 1);
+    assert!(extract_text(&path).contains("Test"));
 }
