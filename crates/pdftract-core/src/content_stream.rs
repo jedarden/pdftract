@@ -2607,6 +2607,30 @@ mod tests {
     }
 
     #[test]
+    fn test_process_with_mode_escaped_parens_keep_text_and_trailing_ops() {
+        // "(a \(b\) c) Tj" -- escaped parens are literal content (PDF
+        // 32000-1:2008 7.3.4.2). The old depth-increment bug made the string
+        // swallow " Tj (end) Tj ET" whole (unterminated at EOF), so every
+        // text-showing operator after it vanished and the page's text layer
+        // silently came out empty (pdftract-5b4c3d0e).
+        let content = b"BT (a \\(b\\) c) Tj (end) Tj ET";
+        let resources = ResourceDict::new();
+
+        let glyphs = process_with_mode(
+            content,
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let text: String = glyphs.iter().map(|g| g.unicode).collect();
+        assert_eq!(text, "a (b) cend");
+    }
+
+    #[test]
     fn test_process_with_mode_bbox_identical() {
         let content = b"BT (Test) Tj ET";
         let resources = ResourceDict::new();

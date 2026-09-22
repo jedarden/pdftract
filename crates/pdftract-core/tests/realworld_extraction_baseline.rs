@@ -11,8 +11,9 @@
 //!   section", 54 corpus files as of 2026-09-21)
 //!       -> tests/fixtures/realworld/startxref-offset-edge.pdf
 //!       -> pdftract-0df07688 (FIXED: bounded keyword recovery around the
-//!          recorded offset; the pin below asserts resolution. Residual empty
-//!          text layer is the escaped-paren class, pdftract-5b4c3d0e)
+//!          recorded offset; the pin below asserts resolution. Its residual
+//!          empty text layer was the escaped-paren class, FIXED by
+//!          pdftract-5b4c3d0e)
 //! * multi-section xref resolution: /Prev incremental-update chains and
 //!   cross-reference streams ("Failed to resolve /Root: object N 0 R not
 //!   found")
@@ -31,8 +32,11 @@
 //! * content-stream literals containing escaped parentheses ("\(..\)")
 //!       silently zero the page's text layer
 //!       -> tests/fixtures/realworld/dense-one-page-agreement.pdf
-//!          (page tree resolves, 0 chars)
-//!       -> pdftract-5b4c3d0e
+//!          (page tree resolves, 0 chars at the pinning commit)
+//!       -> pdftract-5b4c3d0e (FIXED: an escaped \( no longer counts toward
+//!          paren balancing in the literal-string lexer, so the string
+//!          terminates at its own ) and trailing operators survive; the pins
+//!          below now assert the text)
 //! * xref entry pointing at the wrong object offset silently zeroes the
 //!   page's text layer while the document still "extracts"
 //!       -> repo-root tests/fixtures/valid-minimal.pdf (obj 4 recorded at
@@ -171,9 +175,10 @@ fn pin_xref_stream_only_report_current_behavior() {
 /// pdftract-0df07688). FIXED by pdftract-0df07688: the bounded keyword
 /// recovery around the recorded offset (XREF_KEYWORD_RECOVERY_WINDOW in
 /// parser/xref.rs) finds the keyword 6 bytes forward, so the document now
-/// resolves like PyMuPDF (2 pp). The text layer is still empty here --
-/// the fixture's literals carry escaped parentheses, which is the separate
-/// zeroed-text-layer class owned by pdftract-5b4c3d0e.
+/// resolves like PyMuPDF (2 pp). The empty text layer that remained after
+/// that fix was the escaped-paren class, FIXED by pdftract-5b4c3d0e -- the
+/// fixture's literals carry escaped parentheses, and the desired pin below
+/// now passes.
 #[test]
 fn pin_startxref_offset_edge_current_behavior() {
     let path = repo_fixture("realworld/startxref-offset-edge.pdf");
@@ -181,9 +186,6 @@ fn pin_startxref_offset_edge_current_behavior() {
 }
 
 #[test]
-#[ignore = "full PyMuPDF parity (2,050 chars) is blocked by pdftract-5b4c3d0e \
-           (escaped parentheses in literals zero the text layer); the \
-           trailer-loss half was fixed and flipped by pdftract-0df07688"]
 fn desired_startxref_offset_edge_extracts_like_pymupdf() {
     let path = repo_fixture("realworld/startxref-offset-edge.pdf");
     assert_eq!(extract_pages(&path), 2);
@@ -197,27 +199,27 @@ fn desired_startxref_offset_edge_extracts_like_pymupdf() {
 
 /// Plain valid single-page document whose literals contain escaped
 /// parentheses ("(MUTUAL NON-DISCLOSURE AGREEMENT \(startxref offset edge
-/// fixture\))"). PyMuPDF: 1 pp / 2,050 chars. CURRENT behavior at the
-/// pinning commit: the page tree resolves and extraction returns Ok, but the
-/// text layer is EMPTY -- one escaped paren zeroes every span on the page.
-/// Isolation: the byte-identical document with the parens replaced by a dash
-/// extracts 2,014 chars (probes in notes/pdftract-7ec0f722.md).
+/// fixture\))"). PyMuPDF: 1 pp / 2,050 chars. At the pinning commit the page
+/// tree resolved and extraction returned Ok, but the text layer was EMPTY --
+/// one escaped paren zeroed every span on the page (isolation: the
+/// byte-identical document with the parens replaced by a dash extracted
+/// 2,014 chars; probes in notes/pdftract-7ec0f722.md). FIXED by
+/// pdftract-5b4c3d0e: escaped parens no longer count toward paren balancing
+/// in the literal-string lexer, so this pin is now a regression pin on the
+/// text layer itself.
 #[test]
 fn pin_dense_one_page_agreement_current_behavior() {
     let path = repo_fixture("realworld/dense-one-page-agreement.pdf");
     assert_eq!(extract_pages(&path), 1);
     let text = extract_text(&path);
     assert!(
-        text.is_empty(),
-        "text layer no longer empty ({} chars) -- the escaped-paren fix \
-         landed; flip this pin to assert the text",
+        text.contains("MUTUAL NON-DISCLOSURE"),
+        "expected agreement text, got {} chars",
         text.len()
     );
 }
 
 #[test]
-#[ignore = "desired behavior -- flip when pdftract-5b4c3d0e (text layer \
-           survives escaped parentheses in literals) lands"]
 fn desired_dense_one_page_agreement_extracts_text() {
     let path = repo_fixture("realworld/dense-one-page-agreement.pdf");
     assert_eq!(extract_pages(&path), 1);

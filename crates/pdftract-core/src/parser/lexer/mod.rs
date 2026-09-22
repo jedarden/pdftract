@@ -696,7 +696,13 @@ impl<'a> Lexer<'a> {
                         }
                         Some(&b'(') => {
                             self.advance(1);
-                            depth += 1;
+                            // Escaped \( is literal content and does NOT open a
+                            // nesting level (PDF 32000-1:2008 7.3.4.2). Counting
+                            // it as depth made the string's real closing paren
+                            // look like content, swallowing every operator after
+                            // it and silently zeroing the page's text layer
+                            // (pdftract-5b4c3d0e). \( mirrors \) below: push and
+                            // leave depth alone.
                             result.push(b'(');
                         }
                         Some(&b')') => {
@@ -1363,10 +1369,26 @@ mod tests {
 
     #[test]
     fn string_literal_escape_left_paren() {
+        // \( is literal content and does not open a nesting level, so the
+        // first unescaped ) terminates the string; the trailing ) is a stray
+        // delimiter outside the string (PDF 32000-1:2008 7.3.4.2). The old
+        // depth-increment behavior consumed it and returned the pair as one
+        // balanced string, which is what this test used to assert.
         let mut lexer = Lexer::new(b"(\\(nested))");
+        assert_eq!(lexer.next_token(), Some(Token::String(b"(nested".to_vec())));
+        // Stray ) outside string context: diagnostic + Token::Null placeholder
+        assert_eq!(lexer.next_token(), Some(Token::Null));
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn string_literal_escaped_parens_both_stay_literal() {
+        // The minimal escaped-paren repro shape (pdftract-5b4c3d0e): both
+        // escapes are content and the string still terminates at its own ) .
+        let mut lexer = Lexer::new(b"(a \\(b\\) c)");
         assert_eq!(
             lexer.next_token(),
-            Some(Token::String(b"(nested)".to_vec()))
+            Some(Token::String(b"a (b) c".to_vec()))
         );
         assert_eq!(lexer.next_token(), Some(Token::Eof));
     }
