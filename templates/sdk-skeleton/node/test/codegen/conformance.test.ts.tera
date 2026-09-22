@@ -3,32 +3,70 @@
  * Auto-generated - do not edit manually
  */
 
-import { describe, it, before, after } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import net from 'node:net';
 import { Client, path } from '../../src/index.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const client = new Client();
+const suitePath = process.env.CONFORMANCE_SUITE || 'tests/sdk-conformance/cases.json';
+
+// The suite is loaded here, at module scope, because the per-case it()
+// registrations below run while this module loads — before the runner executes
+// any hook. Loading the suite inside before() would always register zero
+// tests, so the load must happen before the describe body runs.
+let suite: { cases: any[] };
+try {
+  suite = JSON.parse(readFileSync(suitePath, 'utf-8'));
+} catch {
+  console.warn(`Warning: Could not load conformance suite from ${suitePath}`);
+  suite = { cases: [] };
+}
+
+// Memoized TCP reachability probe so URL-fixture cases (fetched by the
+// pdftract binary itself) can degrade to a skip when the environment has no
+// network egress.
+const reachability = new Map<string, Promise<boolean>>();
+function remoteReachable(fixtureUrl: string): Promise<boolean> {
+  const parsed = new URL(fixtureUrl);
+  const host = parsed.hostname;
+  const port = Number(parsed.port) || 443;
+  let probe = reachability.get(host);
+  if (!probe) {
+    probe = new Promise<boolean>((resolve) => {
+      const socket = net.connect({ host, port });
+      socket.setTimeout(3000);
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.once('error', () => resolve(false));
+    });
+    reachability.set(host, probe);
+  }
+  return probe;
+}
+
+function isRemoteFixture(fixture: string): boolean {
+  return fixture.startsWith('http://') || fixture.startsWith('https://');
+}
 
 describe('SDK Conformance', () => {
-  const suitePath = process.env.CONFORMANCE_SUITE || 'tests/sdk-conformance/cases.json';
-
-  let suite: any;
-
-  before(() => {
-    try {
-      const content = readFileSync(suitePath, 'utf-8');
-      suite = JSON.parse(content);
-    } catch (error) {
-      console.warn(`Warning: Could not load conformance suite from ${suitePath}`);
-      suite = { cases: [] };
-    }
-  });
-
-  for (const tc of (suite?.cases || [])) {
-    it(`${tc.id}: ${tc.method}`, { timeout: 30000 }, async () => {
-      const fixturePath = join('fixtures', tc.fixture);
+  for (const tc of suite.cases) {
+    // URL fixtures are fetched by the pdftract binary itself; local fixtures
+    // resolve relative to the fixtures/ directory.
+    const fixturePath = isRemoteFixture(tc.fixture) ? tc.fixture : join('fixtures', tc.fixture);
+    it(`${tc.id}: ${tc.method}`, { timeout: 30000 }, async (t) => {
+      if (isRemoteFixture(tc.fixture) && !(await remoteReachable(tc.fixture))) {
+        t.skip(`Offline: ${tc.fixture} unreachable, skipping remote conformance case`);
+        return;
+      }
       await runTestCase(tc, fixturePath);
     });
   }

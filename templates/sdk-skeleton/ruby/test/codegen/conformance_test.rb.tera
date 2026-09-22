@@ -2,6 +2,8 @@
 
 require "minitest/autorun"
 require "json"
+require "socket"
+require "uri"
 require_relative "../../lib/pdftract"
 
 module Pdftract
@@ -12,24 +14,62 @@ module Pdftract
     #
 
     class ConformanceTest < Minitest::Test
-      def setup
-        @client = Client.new
-        @suite_path = ENV["CONFORMANCE_SUITE"] || "tests/sdk-conformance/cases.json"
+      SUITE_PATH = ENV["CONFORMANCE_SUITE"] || "tests/sdk-conformance/cases.json"
 
-        return unless File.exist?(@suite_path)
-
-        @suite = JSON.parse(File.read(@suite_path))
+      # The suite is loaded here, in the class body, because the per-case test
+      # methods below are registered with define_method at load time: Minitest
+      # collects runnable methods when the class is loaded, so a suite loaded
+      # later (in setup or a test method) would always register zero tests.
+      # define_method is also a private Module method - calling it on a test
+      # instance raises NoMethodError, so registration must stay class-level.
+      suite = if File.exist?(SUITE_PATH)
+        JSON.parse(File.read(SUITE_PATH))
+      else
+        warn "Warning: Could not load conformance suite from #{SUITE_PATH}"
+        nil
       end
 
-      def test_conformance
-        return unless @suite
+      if suite
+        suite["cases"].each do |tc|
+          fixture = tc["fixture"]
+          # URL fixtures are fetched by the pdftract binary itself; local
+          # fixtures resolve relative to the fixtures/ directory.
+          fixture_path = fixture.start_with?("http://", "https://") ? fixture : "fixtures/#{fixture}"
 
-        @suite["cases"].each do |tc|
           define_method("test_#{tc['id']}_#{tc['method']}") do
-            fixture_path = "fixtures/#{tc['fixture']}"
+            if fixture_path.start_with?("http://", "https://") && !self.class.remote_reachable?(fixture_path)
+              skip "Offline: #{fixture_path} unreachable, skipping remote conformance case"
+            end
+
             run_test_case(tc, fixture_path)
           end
         end
+      else
+        # No suite present: one explicit skip so the run is visibly degraded
+        # rather than silently vacuous.
+        def test_conformance_suite
+          skip "Conformance suite not found at #{SUITE_PATH}"
+        end
+      end
+
+      # Cheap memoized DNS/TCP probe so URL-fixture cases can degrade to a
+      # skip when the environment has no network egress.
+      def self.remote_reachable?(url)
+        uri = URI.parse(url)
+        host = uri.host
+        return false if host.nil? || host.empty?
+
+        @remote_reachable ||= {}
+        @remote_reachable[host] ||= begin
+          # Block form closes the socket on exit.
+          Socket.tcp(host, uri.port || 443, connect_timeout: 3) { |_socket| true }
+        rescue SystemCallError, SocketError, IOError
+          false
+        end
+      end
+
+      def setup
+        @client = Client.new
       end
 
       private
