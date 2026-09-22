@@ -21,8 +21,9 @@ and rasterize glyphs through a real document context (`FileSource` +
   rejects an indirect `/CharProcs` ref ("not supported, treating as
   zero-glyph font"). Individual glyph entries ARE indirect refs — that is the
   supported shape.
-- The xref table carries real byte offsets, so both the forward-scan path used
-  by the test and any conventional startxref-based reader resolve every object.
+- The xref table carries real byte offsets, so the test (which loads it via
+  `startxref` → `parse_traditional_xref`, the conventional primary path) and
+  any conventional reader resolve every object.
 
 ## Object layout
 
@@ -35,5 +36,5 @@ and rasterize glyphs through a real document context (`FileSource` +
 | 5 | Type3 font: /FontBBox [0 0 20 20], /FontMatrix [1 0 0 1 0 0], direct /CharProcs `{/Box 7 0 R /Tri 8 0 R /Broken 9 0 R}`, /Encoding → 6, /FirstChar 65 /LastChar 66, /Widths [20 20] |
 | 6 | /Encoding /Differences [65 /Box 66 /Tri] |
 | 7 | "Box" CharProc: `0 0 10 10 re f` → ink exactly (0,0)..=(10,10), endpoint-inclusive |
-| 8 | "Tri" CharProc: `0 0 m 20 0 l 10 20 l h f` → full-width base, apex at top-center |
+| 8 | "Tri" CharProc: `0 0 m 20 0 l 0 20 l h f` → right triangle, legs on the axes; renders as row y filling x ≤ 19−y for y ≤ 19 plus the apex pixel (0,20) |
 | 9 | "Broken" target: a plain dictionary, deliberately **not** a stream — the malformed-CharProc failure path (`rasterize_type3_glyph` must return None, not panic) |
