@@ -132,3 +132,49 @@ via CWD-relative fixtures — pre-existing, documented in the harness header).
   both are removed by this dispatch after the work lands.
 - Commit: `fix(pdftract-0df07688): recover startxref offsets that miss the xref
   keyword` pushed to `origin/main` (hash in the bead close reason).
+
+## Dispatch 3 (2026-09-22, this dispatch) — independent re-verification at HEAD `ee08f6dc`
+
+No code change was needed: the fix from the commit above is already an ancestor of
+`origin/main` and nothing has touched `parser/xref.rs`,
+`tests/realworld_extraction_baseline.rs`, or `tests/fixtures/realworld/` since
+(`git log 3d7a94b0..HEAD` on those paths is empty). This dispatch re-derived every
+number at the current HEAD to satisfy the re-close contract.
+
+Tree named: all runs executed in a fresh clean `git archive HEAD | tar -x` extraction
+at `/var/tmp/pdftract-0df07688/head` (93 MB, removed after), built against the shared
+`/build/target-workers` target dir. The shared checkout was used for no test run and
+carries foreign in-flight edits. Pre-fix tree: second extraction of `eac1e1a2`
+(`XREF_KEYWORD_RECOVERY_WINDOW` grep count = 0 there, confirming the fix is exactly
+the `3d7a94b0` delta) at `/var/tmp/pdftract-0df07688/prev`.
+
+Live before/after, re-recorded at this dispatch (CLI, clean extractions):
+
+- BEFORE (`eac1e1a2` binary): `pdftract extract
+  tests/fixtures/realworld/startxref-offset-edge.pdf` → **exit 1**, error text
+  contains exactly `No trailer in xref section`. Same binary on repo-root
+  `valid-minimal.pdf` → exit 0 (failure is specific to the mis-pointed startxref).
+- AFTER (`ee08f6dc` binary): same fixture → **exit 0**, `page_count: 2`;
+  repo-root `tests/fixtures/valid-minimal.pdf` → exit 0, 1 page; `sample.pdf` →
+  exit 0, 1 page (byte-identical output to valid-minimal — the two files are the
+  same document; the CLI JSON `fingerprint` is the documented lazy-mode coarse
+  hash and collides across all three fixtures — pre-existing, out of scope).
+
+Test targets at HEAD `ee08f6dc` (each wrapped in `timeout --kill-after=30s 590s`,
+run from the clean extraction):
+
+| target                                              | result    | exit |
+|-----------------------------------------------------|-----------|------|
+| `--test trailer_root_contract`                      | 7p/0f     | 0    |
+| `--test realworld_extraction_baseline`              | 8p/0f/6i  | 0    |
+| `--lib recovers_startxref_value_short_of_keyword`   | 1p/0f     | 0    |
+| `--lib unrecoverable_keyword_keeps_distinct_trailer_loss` | 1p/0f | 0  |
+| `--test test_xref_debug`                            | 1p/0f     | 0    |
+| `--lib parser::xref` (informational)                | 91p/9f    | 101  |
+| `--test hint_stream_integration` (informational)    | 4p/9f     | 101  |
+
+The 9 `--lib` failures are the same set named in the table above
+(`test_forward_scan_*` + `test_parse_multi_subsection_xref`) — unchanged vs dispatch
+2's count; the 9 `hint_stream_integration` failures likewise match. No growth.
+All acceptance criteria re-PASS (1, 2, 3); criterion 4 satisfied by this note plus
+the bead close reason. No spawned servers; orphan check clean at dispatch end.
