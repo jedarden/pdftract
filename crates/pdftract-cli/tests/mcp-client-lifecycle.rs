@@ -38,6 +38,7 @@
 
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -860,4 +861,73 @@ fn invalid_params_rejected_with_32602_data_reason() {
         Some(0),
         "server must still exit 0 on stdin EOF after invalid params"
     );
+}
+
+/// Umbrella acceptance pin (pdftract-bcf935ec, parent pdftract-257d92c3):
+/// `extract_text` over the stdio wire returns REAL CONTENT for both checked-in
+/// `valid-minimal.pdf` fixtures — not the `-32002` extraction-failed relay the
+/// MCP dogfood pilot recorded while xref/page-tree resolution was broken
+/// (docs/notes/mcp-dogfood-pilot.md). The repo-root W3C dummy carries "Test";
+/// the core-suite minimal — the "Document contains no pages" repro, fixed by
+/// the xref-drift recovery of pdftract-4683109d plus the free-list/mixed-chain
+/// recovery of pdftract-4196ae99 — carries "Hello World". Every other call in
+/// this file tolerates an extraction error arm (the wire contract is the
+/// concern there); this pin is where extraction success itself is asserted,
+/// matching `realworld_extraction_baseline.rs`.
+#[test]
+fn extract_text_returns_content_for_checked_in_valid_minimal_fixtures() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let fixtures = [
+        (
+            "repo-root valid-minimal (W3C dummy)",
+            repo_root.join("tests/fixtures/valid-minimal.pdf"),
+            "Test",
+        ),
+        (
+            "core valid-minimal (page-tree repro)",
+            repo_root.join("crates/pdftract-core/tests/fixtures/valid-minimal.pdf"),
+            "Hello World",
+        ),
+    ];
+
+    let mut server = McpServer::spawn(&[]);
+    let init = server.request(
+        "initialize",
+        json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "pdftract-conformance-test", "version": "0.1.0"}
+        }),
+    );
+    assert_success(&init, "initialize");
+
+    for (what, path, expected) in fixtures {
+        let call = server.request(
+            "tools/call",
+            json!({
+                "name": "extract_text",
+                "arguments": {"path": path.to_str().expect("utf-8 fixture path")}
+            }),
+        );
+        // Content must come back: no JSON-RPC error arm at all, so -32002
+        // ("Extraction failed") is excluded by construction.
+        let call_result = assert_success(&call, &format!("extract_text on {what}"));
+        let text = call_result["text"].as_str().unwrap_or_else(|| {
+            panic!("extract_text on {what} must carry a string 'text': {call}")
+        });
+        assert!(
+            !text.trim().is_empty(),
+            "extract_text on {what} returned an empty text layer: {call}"
+        );
+        assert!(
+            text.contains(expected),
+            "extract_text on {what} must contain {expected:?}, got {} chars: {text:?}",
+            text.len()
+        );
+    }
+
+    // Documented terminate step still holds on the success path.
+    server.close_stdin();
+    let code = server.wait_for_exit();
+    assert_eq!(code, Some(0), "server must exit 0 on stdin EOF");
 }
