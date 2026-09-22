@@ -20,8 +20,11 @@
 //!          tests/fixtures/realworld/xref-stream-only-report.pdf (both extract
 //!          ok at the pinning commit -- kept as regression pins),
 //!          crates/pdftract-core/tests/fixtures/linearized-10.pdf,
-//!          crates/pdftract-core/tests/fixtures/multipage-100.pdf (both fail)
-//!       -> pdftract-4196ae99
+//!          crates/pdftract-core/tests/fixtures/multipage-100.pdf (both
+//!          failed on mislabelled-free xref entries)
+//!       -> pdftract-4196ae99 (FIXED: free-list coherence gate + verified
+//!          recovery of mislabelled-free entries, and stream-object-first
+//!          load in load_single_xref; the pins below assert resolution)
 //! * page-tree resolution behind "Document contains no pages"
 //!       -> crates/pdftract-core/tests/fixtures/valid-minimal.pdf (fails)
 //!       -> pdftract-bcf935ec
@@ -225,46 +228,48 @@ fn desired_dense_one_page_agreement_extracts_text() {
 // Existing in-repo reproductions (committed fixtures probed 2026-09-21/22)
 // ---------------------------------------------------------------------------
 
-/// Linearized doc: first-page xref section + main section; /Root unresolved
-/// at the pinning commit ("object 3 0 R not found"). PyMuPDF opens the file
-/// but also reports 0 pages -- the fixture is a linearized-format stub, so
-/// the desired pin asserts resolution, not a page count.
+/// Linearized-format stub whose single classic xref section types EVERY
+/// in-use entry `f` (mislabelled free) and mis-points several offsets
+/// (obj 3's entry says 390, which holds `5 0 obj`; the catalog actually sits
+/// at 222). At the pinning commit /Root was unresolved ("object 3 0 R not
+/// found"): the resolver treated a Free entry as dead without ever
+/// consulting its first field, so a document whose free-type fields are
+/// producer garbage could not resolve anything. FLIPPED by pdftract-4196ae99:
+/// when a section's free entries do not form the coherent free list the
+/// spec requires, a Free entry with a nonzero first field is recovered
+/// through the same verified parse as an in-use entry. PyMuPDF opens the
+/// file but reports 0 pages -- the fixture is a stub; the pin asserts
+/// resolution, not a page count.
 #[test]
-fn pin_core_linearized_10_current_behavior() {
+fn core_linearized_10_resolves_root() {
     let path = core_fixture("linearized-10.pdf");
-    let err = extract_failure(&path);
-    assert!(
-        err.contains("Failed to resolve /Root: object 3 0 R not found"),
-        "expected the /Root-resolution class error, got: {err}"
-    );
+    let pages = extract_pages(&path);
+    assert_eq!(pages, 10, "10 page objects in the /Pages kids array");
 }
 
 #[test]
-#[ignore = "desired behavior -- flip when pdftract-4196ae99 (multi-section xref \
-           resolution so /Root resolves) lands"]
 fn desired_core_linearized_10_resolves_root() {
     let path = core_fixture("linearized-10.pdf");
-    let _ = extract_pages(&path); // resolves without the /Root error
+    assert_eq!(extract_pages(&path), 10);
 }
 
-/// 100-page doc: /Root unresolved at the pinning commit ("object 1 0 R not
-/// found"). PyMuPDF also reports 0 pages; desired pin asserts resolution only.
+/// 100-page doc with the same all-entries-mislabeled-free malformation:
+/// entries 1, 2 and 3 all record 887 (which holds `3 0 obj`); the catalog
+/// (obj 1) actually sits at 36. At the pinning commit /Root was unresolved
+/// ("object 1 0 R not found"). FLIPPED by pdftract-4196ae99 (see the
+/// linearized-10 note): the mislabelled-free recovery resolves the catalog
+/// and the bounded offset rescan (pdftract-4683109d) lands each mis-pointed
+/// entry on its real header.
 #[test]
-fn pin_core_multipage_100_current_behavior() {
+fn core_multipage_100_resolves_root() {
     let path = core_fixture("multipage-100.pdf");
-    let err = extract_failure(&path);
-    assert!(
-        err.contains("Failed to resolve /Root: object 1 0 R not found"),
-        "expected the /Root-resolution class error, got: {err}"
-    );
+    assert_eq!(extract_pages(&path), 100);
 }
 
 #[test]
-#[ignore = "desired behavior -- flip when pdftract-4196ae99 (multi-section xref \
-           resolution so /Root resolves) lands"]
 fn desired_core_multipage_100_resolves_root() {
     let path = core_fixture("multipage-100.pdf");
-    let _ = extract_pages(&path); // resolves without the /Root error
+    assert_eq!(extract_pages(&path), 100);
 }
 
 /// Minimal PDF whose page tree failed to flatten at the pinning commit

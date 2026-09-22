@@ -222,6 +222,48 @@ pub fn is_hybrid_trailer(trailer: Option<&PdfDict>) -> bool {
     }
 }
 
+/// Whether `entries`' Free entries form the coherent free list the spec
+/// requires (PDF 32000-1 §7.5.4): a chain headed at free object 0 that
+/// visits every free object exactly once and terminates at a 0 next link.
+///
+/// When it holds, a Free entry's first field is a free-list LINK and free
+/// semantics are applied strictly: a later revision's Free entry keeps the
+/// object dead even though its superseded bytes are still in the file.
+/// When it does not, the free-type fields are producer garbage — real-world
+/// writers type every in-use entry `f` with the entry's true BYTE OFFSET in
+/// that field (the committed fixtures linearized-10.pdf and multipage-100.pdf
+/// are exactly this shape: 25/26 and 203/204 entries mislabelled), which
+/// otherwise makes every object, including /Root, unresolvable. The resolver
+/// uses this verdict to decide whether a Free entry's first field may be
+/// attempted as a recovery offset (see `XrefResolver::resolve_with_source`).
+fn free_list_is_coherent(entries: &HashMap<u32, XrefEntry>) -> bool {
+    let free_count = entries
+        .values()
+        .filter(|e| matches!(e, XrefEntry::Free { .. }))
+        .count();
+    // The list must be headed by free object 0.
+    let mut cursor = match entries.get(&0) {
+        Some(XrefEntry::Free { next_free, .. }) => *next_free,
+        _ => return false,
+    };
+    let mut visited = 0usize;
+    while cursor != 0 {
+        if visited >= free_count {
+            // A cycle among free entries never reaches the 0 terminator.
+            return false;
+        }
+        match entries.get(&cursor) {
+            Some(XrefEntry::Free { next_free, .. }) => {
+                visited += 1;
+                cursor = *next_free;
+            }
+            _ => return false, // dangling link to a non-free or absent object
+        }
+    }
+    // The chain must cover every free object (including the head).
+    visited + 1 == free_count
+}
+
 /// Cross-reference resolver.
 ///
 /// This resolver tracks the mapping from object numbers to their file locations
@@ -237,6 +279,11 @@ pub struct XrefResolver {
     /// when `None`, `resolve` keeps the historical stub behavior of returning
     /// `Null` for uncached objects.
     source: Option<Arc<dyn PdfSource>>,
+    /// Lazily-computed free-list coherence verdict for `entries` (see
+    /// [`free_list_is_coherent`]): `false` = coherent, Free entries are
+    /// honored strictly; `true` = incoherent producer garbage, and a Free
+    /// entry's nonzero first field is attempted as a recovery offset.
+    free_recovery_armed: std::sync::OnceLock<bool>,
 }
 
 impl XrefResolver {
@@ -246,6 +293,7 @@ impl XrefResolver {
             entries: HashMap::new(),
             cache: Arc::new(ObjectCache::new()),
             source: None,
+            free_recovery_armed: std::sync::OnceLock::new(),
         }
     }
 
@@ -255,6 +303,7 @@ impl XrefResolver {
             entries: section.entries,
             cache: Arc::new(ObjectCache::new()),
             source: None,
+            free_recovery_armed: std::sync::OnceLock::new(),
         }
     }
 
@@ -269,6 +318,7 @@ impl XrefResolver {
             entries: section.entries,
             cache: Arc::new(ObjectCache::new()),
             source: Some(source),
+            free_recovery_armed: std::sync::OnceLock::new(),
         }
     }
 
@@ -364,55 +414,34 @@ impl XrefResolver {
                     return Err(ResolveError::NotFound(obj_ref));
                 }
 
-                // Read the object from the file
-                // Read up to 4KB starting from the offset
-                let bytes = source.read_at(*offset, 4096).map_err(|e| {
-                    ResolveError::Io(format!("Failed to read object at offset {}: {}", offset, e))
-                })?;
-
-                // The object should start with "obj_num gen obj"; the parsed
-                // object number and generation are verified inside.
-                if let Some(obj) = self.parse_verified_object(obj_ref, &bytes, *offset) {
-                    return Ok(obj);
-                }
-
-                // The strict read at the recorded offset did not yield this
-                // object. Real-world writers emit xref entries whose byte
-                // offset has drifted (the W3C dummy tests/fixtures/
-                // valid-minimal.pdf records obj 4 at 298 while its header
-                // sits 8 bytes earlier), and an unresolved object here
-                // silently zeroes a page's text layer while extraction still
-                // returns Ok. Re-read a bounded window around the recorded
-                // offset and scan it for this object's real "N G obj" header
-                // (same bounded-recovery shape as XREF_KEYWORD_RECOVERY_WINDOW);
-                // a whole-file scan is deliberately out of scope.
-                let window_start = offset.saturating_sub(OBJECT_OFFSET_RECOVERY_WINDOW);
-                let window_len = (offset - window_start) as usize + 4096;
-                if let Ok(window) = source.read_at(window_start, window_len) {
-                    let needle = format!("{} {} obj", obj_ref.object, obj_ref.generation);
-                    let mut searched = 0usize;
-                    while let Some(rel) = window[searched..]
-                        .windows(needle.len())
-                        .position(|w| w == needle.as_bytes())
-                    {
-                        let hit = searched + rel;
-                        if let Some(obj) = self.parse_verified_object(
-                            obj_ref,
-                            &window[hit..],
-                            window_start + hit as u64,
-                        ) {
-                            return Ok(obj);
-                        }
-                        searched = hit + 1;
-                    }
-                }
-
-                // Failed to parse indirect object at (or near) the recorded offset
-                Err(ResolveError::NotFound(obj_ref))
+                self.resolve_object_at_offset(obj_ref, *offset, source)
             }
-            XrefEntry::Free { .. } => {
-                // Free entry - object doesn't exist
-                Err(ResolveError::NotFound(obj_ref))
+            XrefEntry::Free {
+                next_free,
+                gen_nr: _,
+            } => {
+                // A Free entry means the object does not exist, and its first
+                // field is a free-list LINK — not an offset — so a nonzero
+                // value is not normally resolvable either.
+                if *next_free == 0 || !self.free_recovery_armed() {
+                    return Err(ResolveError::NotFound(obj_ref));
+                }
+
+                // Recovery: this entry map's free fields are not a coherent
+                // free list (see `free_list_is_coherent`) — the classic
+                // broken-producer malformation types every in-use entry `f`
+                // with its true byte offset in that field (committed fixtures
+                // linearized-10.pdf and multipage-100.pdf). Recover the
+                // mislabelled object through the same verified parse — and
+                // the same bounded window rescan — as an in-use entry. The
+                // parsed header must still match `obj_ref` exactly, so a
+                // first field that really was a free-list link cannot resolve
+                // a wrong object. The entry's generation is deliberately not
+                // pre-checked: it records the generation at free time in a
+                // table the malformation already proved untrustworthy, and
+                // `parse_verified_object` still enforces `obj_ref`'s
+                // generation.
+                self.resolve_object_at_offset(obj_ref, u64::from(*next_free), source)
             }
             XrefEntry::Compressed { .. } => {
                 // Object stream - not yet implemented
@@ -420,6 +449,73 @@ impl XrefResolver {
                 Err(ResolveError::NotFound(obj_ref))
             }
         }
+    }
+
+    /// Whether mislabelled-free offset recovery is armed for this entry map.
+    ///
+    /// Computed once from the entries present at the first resolve; entries
+    /// added through [`XrefResolver::add_entry`] afterwards do not re-arm it.
+    fn free_recovery_armed(&self) -> bool {
+        *self
+            .free_recovery_armed
+            .get_or_init(|| !free_list_is_coherent(&self.entries))
+    }
+
+    /// Read, parse and verify the indirect object `obj_ref` at the recorded
+    /// `offset`, falling back to a bounded window rescan when the strict read
+    /// does not yield this object's header.
+    ///
+    /// Shared by the in-use entry path and the mislabelled-free recovery
+    /// path of [`XrefResolver::resolve_with_source`].
+    fn resolve_object_at_offset(
+        &self,
+        obj_ref: ObjRef,
+        offset: u64,
+        source: &dyn PdfSource,
+    ) -> ResolveResult<PdfObject> {
+        // Read the object from the file
+        // Read up to 4KB starting from the offset
+        let bytes = source.read_at(offset, 4096).map_err(|e| {
+            ResolveError::Io(format!("Failed to read object at offset {}: {}", offset, e))
+        })?;
+
+        // The object should start with "obj_num gen obj"; the parsed
+        // object number and generation are verified inside.
+        if let Some(obj) = self.parse_verified_object(obj_ref, &bytes, offset) {
+            return Ok(obj);
+        }
+
+        // The strict read at the recorded offset did not yield this
+        // object. Real-world writers emit xref entries whose byte
+        // offset has drifted (the W3C dummy tests/fixtures/
+        // valid-minimal.pdf records obj 4 at 298 while its header
+        // sits 8 bytes earlier), and an unresolved object here
+        // silently zeroes a page's text layer while extraction still
+        // returns Ok. Re-read a bounded window around the recorded
+        // offset and scan it for this object's real "N G obj" header
+        // (same bounded-recovery shape as XREF_KEYWORD_RECOVERY_WINDOW);
+        // a whole-file scan is deliberately out of scope.
+        let window_start = offset.saturating_sub(OBJECT_OFFSET_RECOVERY_WINDOW);
+        let window_len = (offset - window_start) as usize + 4096;
+        if let Ok(window) = source.read_at(window_start, window_len) {
+            let needle = format!("{} {} obj", obj_ref.object, obj_ref.generation);
+            let mut searched = 0usize;
+            while let Some(rel) = window[searched..]
+                .windows(needle.len())
+                .position(|w| w == needle.as_bytes())
+            {
+                let hit = searched + rel;
+                if let Some(obj) =
+                    self.parse_verified_object(obj_ref, &window[hit..], window_start + hit as u64)
+                {
+                    return Ok(obj);
+                }
+                searched = hit + 1;
+            }
+        }
+
+        // Failed to parse indirect object at (or near) the recorded offset
+        Err(ResolveError::NotFound(obj_ref))
     }
 
     /// Parse the buffer `bytes` — which begins at absolute file offset `base`
@@ -2364,6 +2460,39 @@ pub fn load_xref_linearized(
     merge_linearized_xrefs(first_page_xref, full_xref)
 }
 
+/// Whether `offset` lands on (modulo leading whitespace) an indirect-object
+/// header — `<num> <gen> obj`.
+///
+/// In an xref-stream document `startxref` points at the stream OBJECT per
+/// spec (7.5.8.2), while a classic table's `startxref` points at its `xref`
+/// keyword; this probes which shape the recorded offset has.
+fn offset_lands_on_object_header(source: &dyn PdfSource, offset: u64) -> bool {
+    const PROBE_LEN: usize = 32;
+    let Ok(bytes) = source.read_at(offset, PROBE_LEN) else {
+        return false;
+    };
+    let Some(start) = bytes.iter().position(|b| !b.is_ascii_whitespace()) else {
+        return false;
+    };
+    let rest = &bytes[start..];
+    let mut idx = 0usize;
+    for _ in 0..2 {
+        let digits = rest[idx..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
+        if digits == 0 || digits > 10 {
+            return false;
+        }
+        idx += digits;
+        if rest.get(idx) != Some(&b' ') {
+            return false;
+        }
+        idx += 1;
+    }
+    rest[idx..].starts_with(b"obj")
+}
+
 /// Load a single xref section from a given offset.
 ///
 /// Handles three cases:
@@ -2371,6 +2500,22 @@ pub fn load_xref_linearized(
 /// 2. Pure traditional: only traditional xref table
 /// 3. Pure stream: only xref stream (no traditional table found)
 fn load_single_xref(source: &dyn PdfSource, offset: u64) -> XrefSection {
+    // A startxref that lands on an indirect-object header points at an
+    // xref STREAM (spec 7.5.8.2: the stream object itself), not at a classic
+    // table keyword. Try the stream parser FIRST: the bounded keyword
+    // recovery inside parse_traditional_xref would otherwise "recover" an
+    // OLDER revision's classic table that happens to sit within
+    // XREF_KEYWORD_RECOVERY_WINDOW of this offset in a mixed chain (classic
+    // base revision + xref-stream incremental update), silently dropping the
+    // newest revision's entries. Fall back to the traditional path below
+    // when the object does not yield a usable xref stream.
+    if offset_lands_on_object_header(source, offset) {
+        let stream = parse_xref_stream(source, offset);
+        if !stream.entries.is_empty() || stream.trailer.is_some() {
+            return stream;
+        }
+    }
+
     // Try traditional xref table first
     let traditional = parse_traditional_xref(source, offset);
 
@@ -6148,5 +6293,401 @@ mod trailer_loss_probe {
         );
         let err = crate::document::resolve_root_ref(&trad).unwrap_err();
         assert_eq!(err.root_cause().to_string(), "No trailer in xref section");
+    }
+
+    // -----------------------------------------------------------------------
+    // pdftract-4196ae99: mislabelled-free recovery, free-list coherence,
+    // multi-section (/Prev chain, xref stream) merge semantics
+    // -----------------------------------------------------------------------
+
+    /// Build an `Arc<dyn PdfSource>` over a byte buffer.
+    fn mem(data: &[u8]) -> Arc<dyn PdfSource> {
+        Arc::new(MemorySource::new(data.to_vec()))
+    }
+
+    #[test]
+    fn test_free_list_coherence_verdicts() {
+        let mut coherent = HashMap::new();
+        coherent.insert(
+            0,
+            XrefEntry::Free {
+                next_free: 5,
+                gen_nr: 65535,
+            },
+        );
+        coherent.insert(
+            5,
+            XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 0,
+            },
+        );
+        coherent.insert(
+            1,
+            XrefEntry::InUse {
+                offset: 10,
+                gen_nr: 0,
+            },
+        );
+        assert!(free_list_is_coherent(&coherent));
+
+        // A link to a non-free (or absent) object breaks the chain.
+        let mut dangling = coherent.clone();
+        dangling.insert(
+            5,
+            XrefEntry::Free {
+                next_free: 9,
+                gen_nr: 0,
+            },
+        );
+        assert!(!free_list_is_coherent(&dangling));
+
+        // No head at free object 0.
+        let mut headless = coherent;
+        headless.insert(
+            0,
+            XrefEntry::InUse {
+                offset: 0,
+                gen_nr: 0,
+            },
+        );
+        assert!(!free_list_is_coherent(&headless));
+
+        // Unchained free objects — the linearized-10.pdf / multipage-100.pdf
+        // shape: the head terminates immediately yet every entry claims free.
+        let mut unchained = HashMap::new();
+        unchained.insert(
+            0,
+            XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 65535,
+            },
+        );
+        for obj in 1..26u32 {
+            unchained.insert(
+                obj,
+                XrefEntry::Free {
+                    next_free: 100 * obj,
+                    gen_nr: 0,
+                },
+            );
+        }
+        assert!(!free_list_is_coherent(&unchained));
+
+        // A cycle among free entries never reaches the 0 terminator.
+        let mut cyclic = HashMap::new();
+        cyclic.insert(
+            0,
+            XrefEntry::Free {
+                next_free: 5,
+                gen_nr: 65535,
+            },
+        );
+        cyclic.insert(
+            5,
+            XrefEntry::Free {
+                next_free: 9,
+                gen_nr: 0,
+            },
+        );
+        cyclic.insert(
+            9,
+            XrefEntry::Free {
+                next_free: 5,
+                gen_nr: 0,
+            },
+        );
+        assert!(!free_list_is_coherent(&cyclic));
+    }
+
+    #[test]
+    fn test_mislabelled_free_entry_recovers() {
+        // Producer malformation (linearized-10.pdf / multipage-100.pdf
+        // class): a single classic section types every in-use entry `f`
+        // with its true byte offset in the free-list field. /Root and the
+        // page tree must resolve; a genuinely-free object 0 stays dead.
+        let mut doc = b"%PDF-1.4\n".to_vec();
+        let obj1_off = doc.len() as u64;
+        doc.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        let _obj2_off = doc.len() as u64;
+        doc.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        let xref_off = doc.len() as u64;
+        // Entry 2 deliberately mis-points at object 1's offset: the strict
+        // read yields `1 0 obj`, and the bounded window rescan finds the
+        // real header (the pdftract-4683109d path, reused by the recovery).
+        doc.extend_from_slice(
+            format!(
+                "xref\n0 3\n0000000000 65535 f \n{:010} 00000 f \n{:010} 00000 f \n\
+                 trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%%%EOF\n",
+                obj1_off, obj1_off, xref_off
+            )
+            .as_bytes(),
+        );
+
+        let source = mem(&doc);
+        let section = parse_traditional_xref(source.as_ref(), xref_off);
+        let resolver = XrefResolver::from_section_with_source(section, source);
+
+        let catalog = resolver
+            .resolve(ObjRef::new(1, 0))
+            .expect("mislabelled-free catalog entry must recover");
+        let catalog_dict = catalog.as_dict().expect("catalog is a dictionary");
+        assert!(matches!(
+            catalog_dict.get("Type"),
+            Some(PdfObject::Name(n)) if n.as_ref().ends_with("Catalog")
+        ));
+
+        // Mis-pointed entry recovers through the window rescan.
+        assert!(
+            resolver.resolve(ObjRef::new(2, 0)).is_ok(),
+            "mis-pointed mislabelled-free entry must recover via the rescan"
+        );
+
+        // Genuinely free object 0 (link 0) stays dead.
+        assert!(matches!(
+            resolver.resolve(ObjRef::new(0, 0)),
+            Err(ResolveError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_coherent_free_list_keeps_freed_object_dead() {
+        // Free list 0 -> 5 -> 9 -> 0 is coherent, so free semantics are
+        // strict: object 5 was freed by an update, its superseded bytes
+        // still sit in the file at byte 9, and object 5's link value 9
+        // doubles as that byte offset. Even with a parseable "5 0 obj"
+        // header exactly at the link-as-offset, the object stays dead.
+        let mut doc = vec![b'.'; 9]; // filler so the stale header sits at byte 9
+        doc.extend_from_slice(b"5 0 obj\n<< /Stale >>\nendobj\n");
+        let xref_off = doc.len() as u64;
+        let mut table = String::from("xref\n0 10\n0000000005 65535 f \n");
+        for obj in 1..10u32 {
+            if obj == 5 {
+                table.push_str("0000000009 00000 f \n"); // obj 5: link -> 9
+            } else if obj == 9 {
+                table.push_str("0000000000 00000 f \n"); // terminator
+            } else {
+                table.push_str("0000000000 00000 n \n");
+            }
+        }
+        table.push_str("trailer\n<< /Size 10 >>\n");
+        doc.extend_from_slice(table.as_bytes());
+
+        let source = mem(&doc);
+        let section = parse_traditional_xref(source.as_ref(), xref_off);
+        assert!(free_list_is_coherent(&section.entries));
+        let resolver = XrefResolver::from_section_with_source(section, source);
+        assert!(matches!(
+            resolver.resolve(ObjRef::new(5, 0)),
+            Err(ResolveError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_prev_chain_mixed_classic_stream_later_overrides_earlier() {
+        // Three revisions: classic -> classic (/Prev) -> xref stream (/Prev).
+        // The newest revision wins per object: object 1's entry (and body)
+        // come from the stream revision, object 2's entry from revision 2,
+        // and the merged trailer is the stream revision's.
+        let mut doc = b"%PDF-1.4\n".to_vec();
+        let obj1_v1_off = doc.len() as u64;
+        doc.extend_from_slice(b"1 0 obj\n<< /Rev 1 >>\nendobj\n");
+        let obj2_v1_off = doc.len() as u64;
+        doc.extend_from_slice(b"2 0 obj\n<< /B 1 >>\nendobj\n");
+        let rev1_xref = doc.len() as u64;
+        doc.extend_from_slice(
+            format!(
+                "xref\n0 3\n0000000000 65535 f \n{:010} 00000 n \n{:010} 00000 n \n\
+                 trailer\n<< /Size 3 /Root 1 0 R >>\n",
+                obj1_v1_off, obj2_v1_off
+            )
+            .as_bytes(),
+        );
+
+        let obj2_v2_off = doc.len() as u64;
+        doc.extend_from_slice(b"2 0 obj\n<< /B 2 >>\nendobj\n");
+        let rev2_xref = doc.len() as u64;
+        doc.extend_from_slice(
+            format!(
+                "xref\n0 3\n0000000000 65535 f \n{:010} 00000 n \n{:010} 00000 n \n\
+                 trailer\n<< /Size 3 /Prev {} >>\n",
+                obj1_v1_off, obj2_v2_off, rev1_xref
+            )
+            .as_bytes(),
+        );
+
+        // Revision 3: an xref stream overriding ONLY object 1 (/Index [1 1]).
+        let obj1_v3_off = doc.len() as u64;
+        doc.extend_from_slice(b"1 0 obj\n<< /Rev 3 >>\nendobj\n");
+        let rev3_xref = doc.len() as u64;
+        let mut payload = vec![1u8]; // entry type 1 (in-use, uncompressed)
+        payload.extend_from_slice(&(obj1_v3_off as u32).to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        doc.extend_from_slice(
+            format!(
+                "3 0 obj\n<< /Type /XRef /Size 4 /W [1 4 2] /Index [1 1] \
+                 /Root 1 0 R /Prev {} /Length {} >>\nstream\n",
+                rev2_xref,
+                payload.len()
+            )
+            .as_bytes(),
+        );
+        doc.extend_from_slice(&payload);
+        doc.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let source = mem(&doc);
+        let merged = load_xref_with_prev_chain(source.as_ref(), rev3_xref);
+
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: obj1_v3_off,
+                gen_nr: 0
+            }),
+            "the xref-stream revision's entry must override the classic ones"
+        );
+        assert_eq!(
+            merged.entries.get(&2),
+            Some(&XrefEntry::InUse {
+                offset: obj2_v2_off,
+                gen_nr: 0
+            }),
+            "revision 2's entry must override revision 1's"
+        );
+        let trailer = merged.trailer.as_ref().expect("merged trailer present");
+        assert!(
+            matches!(trailer.get("Root"), Some(PdfObject::Ref(r)) if r.object == 1),
+            "the newest revision's /Root must survive the walk"
+        );
+
+        // End-to-end: resolution reads the NEWEST bodies through the merged map.
+        let resolver = XrefResolver::from_section_with_source(merged, source);
+        let obj1_obj = resolver
+            .resolve(ObjRef::new(1, 0))
+            .expect("object 1 resolves");
+        let obj1 = obj1_obj.as_dict().expect("object 1 is a dictionary");
+        assert_eq!(obj1.get("Rev"), Some(&PdfObject::Integer(3)));
+        let obj2_obj = resolver
+            .resolve(ObjRef::new(2, 0))
+            .expect("object 2 resolves");
+        let obj2 = obj2_obj.as_dict().expect("object 2 is a dictionary");
+        assert_eq!(obj2.get("B"), Some(&PdfObject::Integer(2)));
+    }
+
+    #[test]
+    fn test_prev_chain_free_override_of_inuse_stays_strict() {
+        // Revision 2 frees object 5 with a coherent chain 0 -> 5 -> 9 -> 0
+        // while object 5's superseded bytes are still in the file AT byte 9
+        // — the freed entry's link value, read as an offset, lands exactly
+        // on a parseable "5 0 obj" header. The coherent free list keeps
+        // free semantics strict: the object must stay dead.
+        let mut doc = vec![b'.'; 9];
+        let obj5_off = 9u64;
+        doc.extend_from_slice(b"5 0 obj\n<< /Old >>\nendobj\n");
+        let rev1_xref = doc.len() as u64;
+        let mut rev1 = String::from("xref\n0 10\n0000000000 65535 f \n");
+        for obj in 1..10u32 {
+            if obj == 5 {
+                rev1.push_str(&format!("{:010} 00000 n \n", obj5_off));
+            } else {
+                rev1.push_str("0000000000 00000 n \n");
+            }
+        }
+        rev1.push_str("trailer\n<< /Size 10 /Root 5 0 R >>\n");
+        doc.extend_from_slice(rev1.as_bytes());
+
+        let rev2_xref = doc.len() as u64;
+        let mut rev2 = String::from("xref\n0 10\n0000000005 65535 f \n");
+        for obj in 1..10u32 {
+            if obj == 5 {
+                rev2.push_str("0000000009 00000 f \n"); // freed, link -> 9
+            } else if obj == 9 {
+                rev2.push_str("0000000000 00000 f \n"); // terminator
+            } else {
+                rev2.push_str("0000000000 00000 n \n");
+            }
+        }
+        rev2.push_str(&format!("trailer\n<< /Size 10 /Prev {} >>\n", rev1_xref));
+        doc.extend_from_slice(rev2.as_bytes());
+
+        let source = mem(&doc);
+        let merged = load_xref_with_prev_chain(source.as_ref(), rev2_xref);
+        assert_eq!(
+            merged.entries.get(&5),
+            Some(&XrefEntry::Free {
+                next_free: 9,
+                gen_nr: 0
+            }),
+            "revision 2's Free entry must override revision 1's InUse"
+        );
+        assert!(free_list_is_coherent(&merged.entries));
+        let resolver = XrefResolver::from_section_with_source(merged, source);
+        assert!(matches!(
+            resolver.resolve(ObjRef::new(5, 0)),
+            Err(ResolveError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_merge_linearized_full_xref_overrides_first_page() {
+        // First-page sections legitimately carry Free entries for objects
+        // they do not define; the full section's entries must win and its
+        // trailer is authoritative.
+        let mut first_page = XrefSection::new();
+        first_page.add_entry(
+            1,
+            XrefEntry::Free {
+                next_free: 0,
+                gen_nr: 0,
+            },
+        );
+        first_page.add_entry(
+            3,
+            XrefEntry::InUse {
+                offset: 100,
+                gen_nr: 0,
+            },
+        );
+        let mut first_trailer = PdfDict::new();
+        first_trailer.insert("Root".into(), PdfObject::Ref(ObjRef::new(3, 0)));
+        first_page.trailer = Some(first_trailer);
+
+        let mut full = XrefSection::new();
+        full.add_entry(
+            1,
+            XrefEntry::InUse {
+                offset: 500,
+                gen_nr: 0,
+            },
+        );
+        full.add_entry(
+            3,
+            XrefEntry::InUse {
+                offset: 700,
+                gen_nr: 0,
+            },
+        );
+        let mut full_trailer = PdfDict::new();
+        full_trailer.insert("Root".into(), PdfObject::Ref(ObjRef::new(1, 0)));
+        full.trailer = Some(full_trailer);
+
+        let merged = merge_linearized_xrefs(first_page, full);
+        assert_eq!(
+            merged.entries.get(&1),
+            Some(&XrefEntry::InUse {
+                offset: 500,
+                gen_nr: 0
+            }),
+            "the full section's entry must override the first-page Free"
+        );
+        assert_eq!(
+            merged.entries.get(&3),
+            Some(&XrefEntry::InUse {
+                offset: 700,
+                gen_nr: 0
+            })
+        );
+        let trailer = merged.trailer.as_ref().expect("merged trailer");
+        assert!(matches!(trailer.get("Root"), Some(PdfObject::Ref(r)) if r.object == 1));
     }
 }
