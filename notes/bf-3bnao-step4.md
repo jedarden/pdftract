@@ -1,87 +1,86 @@
-# bf-3bnao-step4: Verify pdftract completed successfully
+> **Correction (2026-09-23):** The earlier hash-mismatch finding was computed
+> against the stale expected value `bd9a3533...` and is withdrawn. The
+> authoritative provenance record cited by the task at
+> `tests/fixtures/PROVENANCE.md:301` records the expected SHA-256 as
+> `2eaeba307f622ca6b6d6174bd1bdd9a1310268c7d4f101d3e2a222ba8b719689` (the
+> `fingerprint-match.pdf` entry is currently at lines 338-346), and the
+> on-disk file matches it byte for byte. There is no fixture-corruption
+> finding.
 
-**Date:** 2026-07-06
-**State:** FAIL
+# bf-3bnao step 4: Verify pdftract completed successfully
 
-## Verification Results
+**Date:** 2026-09-23
+**Fixture:** `tests/fixtures/encoding/fingerprint-match.pdf`
+**State:** PASS
 
-### Exit Code Check
-- **Expected:** 0 (success)
-- **Actual:** 1 (failure)
-- **Status:** ❌ FAIL
+## Verification command
 
-### Output Format Check
-- **Expected:** Valid JSON or expected pdftract output format
-- **Actual:** No JSON output (extraction failed before producing output)
-- **Status:** ❌ FAIL
+The current CLI uses the `extract` subcommand. From a clean `git archive HEAD`
+extraction, with the execution target isolated from the shared checkout, I ran:
 
-### Error Messages Check
-- **Expected:** No error messages in stderr
-- **Actual:** Error message present: "Failed to extract PDF"
-- **Status:** ❌ FAIL
-
-## Additional Test Results
-
-### Test Run 2 (Direct verification)
-```
-Command: cargo run -- extract tests/fixtures/encoding/fingerprint-match.pdf --json -
-Exit Code: 1
-Error: Failed to extract PDF
-```
-**Status:** ❌ FAILED - Same error reproduced
-
-### File Integrity Check
-- **Expected SHA256:** bd9a3533c0f31fb20bf5532fcff4cb2ae399f8d2e22ea1d09538837410544c4a
-- **Actual SHA256:** 2eaeba307f622ca6b6d6174bd1bdd9a1310268c7d4f101d3e2a222ba8b719689
-- **Status:** ❌ MISMATCH - File has been modified or corrupted
-
-### File Header Inspection
-```
-%PDF-1.4
-1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
-```
-**Status:** ✅ PDF header appears valid
-
-## Command Output Summary
-
-From step3 (bf-32by8-step3.md):
-```
-Command: unset RUST_LOG; cargo run -- extract tests/fixtures/encoding/fingerprint-match.pdf --json -
-Exit Code: 1
-Error: Failed to extract PDF
+```sh
+unset RUST_LOG
+cargo run -- extract tests/fixtures/encoding/fingerprint-match.pdf --json -
 ```
 
-## Acceptance Criteria Status
+`RUST_LOG` was unset before invocation. The command exited with **0**.
 
-- ❌ Exit code from the command is 0 (success) - **FAIL** (exit code was 1)
-- ❌ Output contains valid JSON or expected pdftract output format - **FAIL** (no output produced)
-- ❌ No error messages in stderr - **FAIL** (error: "Failed to extract PDF")
-- ✅ Document verification results in notes/bf-3bnao-step4.md - **PASS** (this file)
+### Captured stdout
 
-## Conclusion
+The command wrote 1,143 bytes of JSON to stdout. Sample:
 
-The pdftract command did **not** complete successfully. The PDF extraction failed with exit code 1 and error message "Failed to extract PDF". The failure has been reproduced across multiple test runs.
+```json
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "span_count": 1
+  },
+  "pages": [
+    { "index": 0, "blocks": [{ "kind": "paragraph", "text": "Test" }] }
+  ],
+  "schema_version": "1.0"
+}
+```
 
-### Key Findings
+`jq -e .` accepted the complete captured stdout (exit 0).
 
-1. **File Integrity Issue:** The SHA256 hash of `encoding/fingerprint-match.pdf` does not match the expected value in `tests/fixtures/PROVENANCE.md`
-   - Expected: `bd9a3533c0f31fb20bf5532fcff4cb2ae399f8d2e22ea1d09538837410544c4a`
-   - Actual: `2eaeba307f622ca6b6d6174bd1bdd9a1310268c7d4f101d3e2a222ba8b719689`
+### Captured stderr
 
-2. **PDF Structure:** Despite the hash mismatch, the file header appears valid (`%PDF-1.4`), suggesting the file is not completely corrupted but has been modified
+stderr was empty (0 bytes). No extraction error was emitted.
 
-3. **Reproducible Failure:** The extraction failure is consistent across multiple attempts, ruling out transient issues
+## Parent acceptance criteria
 
-### Root Cause Analysis
+These are the four criteria from `bf-1aow8`:
 
-The most likely cause is that the PDF file `tests/fixtures/encoding/fingerprint-match.pdf` has been modified or corrupted. The SHA256 mismatch indicates the current file on disk differs from the version recorded in PROVENANCE.md. This could explain why pdftract fails to extract it.
+1. **PASS** — Exit code from the command is 0: observed exit code **0**.
+2. **PASS** — Output contains valid JSON or the expected pdftract format: the
+   1,143-byte output parses successfully with `jq -e .` (exit 0), contains a
+   one-page document, and contains the extracted text `Test`.
+3. **PASS** — No error messages in stderr: captured stderr is empty.
+4. **PASS** — Document verification results are recorded in this file.
 
-**This bead should NOT be closed** until:
-1. The correct `fingerprint-match.pdf` file is restored or
-2. The root cause of the extraction failure is identified and fixed or  
-3. The pdftract code is updated to handle this file variant
+The previous failed step-3 record is superseded by this clean committed-HEAD
+rerun. For the root-cause analysis of the earlier failure path, see
+`notes/bf-1aow8-diagnosis.md`; this note records the verification result and
+does not re-derive that analysis.
 
-The verification results are documented but the acceptance criteria are not met.
+## Fixture and companion-file checks
+
+The on-disk fixture hash is:
+
+```text
+2eaeba307f622ca6b6d6174bd1bdd9a1310268c7d4f101d3e2a222ba8b719689  tests/fixtures/encoding/fingerprint-match.pdf
+```
+
+This matches the expected value in `tests/fixtures/PROVENANCE.md` exactly.
+
+The pre-existing untracked file
+`tests/fixtures/encoding/fingerprint-match.txt` was inspected and is 4 bytes
+with content `Test` (created 2026-09-05). It is the companion expected-content
+text file, not part of this verification change. It remains untracked and was
+not included in the commit.
