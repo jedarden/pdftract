@@ -815,6 +815,217 @@ mod tests {
     }
 
     // =======================================================================
+    // Error-path coverage — every driveable FixtureDiscoveryError variant
+    // (bf-2y1bwm). RootMissing and NoFixtures are driven above; the Pattern
+    // and Glob variants are driven here, each through the public discovery
+    // API and once more via direct construction for the Display/source
+    // contract.
+    // =======================================================================
+
+    /// RAII guard restoring mode 0o755 on drop, so an unreadable fixture
+    /// directory never wedges [`TempDir`]'s own cleanup (remove_dir_all
+    /// cannot descend a 000-mode directory, even on panic unwinding).
+    #[cfg(unix)]
+    struct RestorePerms(PathBuf);
+    #[cfg(unix)]
+    impl Drop for RestorePerms {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    /// The `Pattern` variant, driven through the public API: a directory
+    /// whose name contains an unterminated `[` makes the internally computed
+    /// `<root>/**/*.pdf` pattern unparsable, so glob's own parser — not any
+    /// filesystem state — produces the error. Asserts the variant payload
+    /// (glob's position + message) and the Display/source chaining.
+    #[test]
+    fn test_discover_fixture_infos_result_invalid_pattern_is_pattern_error() {
+        let tmp = TempDir::create();
+        let bad = tmp.path().join("pdftract-bf-2y1bwm-unclosed-[range");
+        std::fs::create_dir(&bad).expect("create directory with '[' in its name");
+        let canonical = bad.canonicalize().expect("canonicalize the bad root");
+
+        // Precondition: the exact pattern the discovery function computes must
+        // fail glob's parser. A stray ']' in the ambient temp path would close
+        // the range and turn this into a valid (matching-nothing) pattern, so
+        // fail loudly rather than pass vacuously if the environment is odd.
+        let pattern = format!("{}/**/*.pdf", canonical.display());
+        assert!(
+            !canonical.to_string_lossy().contains(']'),
+            "temp path must not contain ']' or the range stays terminated: {canonical:?}"
+        );
+        assert!(
+            glob::Pattern::new(&pattern).is_err(),
+            "precondition: computed pattern must be unparsable: {pattern}"
+        );
+
+        let err = discover_fixture_infos_result_in(&canonical)
+            .err()
+            .expect("discovery must fail on an unparsable pattern");
+        let e = match &err {
+            FixtureDiscoveryError::Pattern(e) => e,
+            other => panic!("expected Pattern, got {other:?}"),
+        };
+        // glob reports the offending position and reason
+        assert!(
+            e.msg.contains("range pattern"),
+            "expected glob's range-pattern error, got: {}",
+            e.msg
+        );
+        // Display chains the inner parser error
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("invalid glob pattern"),
+            "Display should explain the variant: {msg}"
+        );
+        assert!(
+            msg.contains(&e.to_string()),
+            "Display must embed the inner PatternError: {msg}"
+        );
+        // source() chains to the same error, downcastable
+        let src = std::error::Error::source(&err).expect("Pattern must chain a source");
+        let inner = src
+            .downcast_ref::<glob::PatternError>()
+            .expect("source must be the glob PatternError");
+        assert_eq!((inner.pos, inner.msg), (e.pos, e.msg));
+    }
+
+    /// The `Glob` variant, driven through the public API: an unreadable
+    /// directory under the root surfaces glob's per-entry read error even
+    /// though a sibling PDF is perfectly readable — discovery must report the
+    /// hard failure rather than silently skip the entry (a silent skip would
+    /// collapse into a misleading success or NoFixtures). Skips when the
+    /// process cannot make a directory unreadable (a privileged runner).
+    #[cfg(unix)]
+    #[test]
+    fn test_discover_fixture_infos_result_unreadable_dir_is_glob_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::create();
+        // Readable sibling proves the error is not merely "nothing found".
+        std::fs::write(tmp.path().join("visible.pdf"), b"%PDF-1.4\n").expect("write visible pdf");
+        let locked = tmp.path().join("locked");
+        std::fs::create_dir(&locked).expect("create locked dir");
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000))
+            .expect("chmod 000 the locked dir");
+        // Driveability probe ("where feasible"): root-like runners can read
+        // through any mode bits, so the error path cannot be exercised there.
+        if std::fs::read_dir(&locked).is_ok() {
+            eprintln!("skipping: this process can read a 000-mode directory (privileged runner)");
+            return;
+        }
+        let _restore = RestorePerms(locked.clone());
+
+        let err = discover_fixture_infos_result_in(tmp.path())
+            .err()
+            .expect("discovery must fail while a directory is unreadable");
+        match &err {
+            FixtureDiscoveryError::Glob { entry, source } => {
+                assert_eq!(entry, &locked, "Glob must name the unreadable entry");
+                assert_eq!(
+                    source.kind(),
+                    std::io::ErrorKind::PermissionDenied,
+                    "underlying error should be the EACCES from read_dir: {source}"
+                );
+            }
+            other => panic!("expected Glob, got {other:?}"),
+        }
+        // Display chains the entry and the underlying I/O error
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("failed to read"),
+            "Display should explain the variant: {msg}"
+        );
+        assert!(
+            msg.contains("locked"),
+            "Display should name the entry: {msg}"
+        );
+        // source() chains to the io::Error, downcastable
+        let src = std::error::Error::source(&err).expect("Glob must chain a source");
+        let io_err = src
+            .downcast_ref::<std::io::Error>()
+            .expect("source must be the io::Error");
+        assert_eq!(io_err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    /// `Pattern` Display/source contract, constructed directly from a real
+    /// (not synthetic) `glob::PatternError` — glob's own parser rejecting a
+    /// bare `[` — and via the `From` conversion the discovery function relies
+    /// on for its `?` propagation.
+    #[test]
+    fn test_fixture_discovery_error_pattern_display_and_source() {
+        let pe = glob::Pattern::new("[").expect_err("'[' alone must fail to parse");
+        let (pos, msg) = (pe.pos, pe.msg);
+
+        // The From impl the `?` in discover_fixture_infos_result_in uses.
+        let via_from = FixtureDiscoveryError::from(glob::Pattern::new("[").unwrap_err());
+        assert!(
+            matches!(via_from, FixtureDiscoveryError::Pattern(_)),
+            "From<PatternError> must produce the Pattern variant: {via_from:?}"
+        );
+
+        let err = FixtureDiscoveryError::Pattern(pe);
+        let rendered = format!("{err}");
+        assert!(
+            rendered.starts_with("invalid glob pattern:"),
+            "Display should lead with the variant explanation: {rendered}"
+        );
+        assert!(
+            rendered.contains(msg),
+            "Display must embed the glob message: {rendered}"
+        );
+        assert!(
+            rendered.contains(&pos.to_string()),
+            "Display must embed the glob error position: {rendered}"
+        );
+
+        let src = std::error::Error::source(&err).expect("Pattern must chain a source");
+        let inner = src
+            .downcast_ref::<glob::PatternError>()
+            .expect("source must downcast to glob::PatternError");
+        assert_eq!(
+            (inner.pos, inner.msg),
+            (pos, msg),
+            "source is the same parser error"
+        );
+    }
+
+    /// `Glob` Display/source contract, constructed directly: Display names
+    /// the entry and embeds the underlying I/O error, and `source()` hands
+    /// back the same `io::Error` for `Error::source`-chain walkers.
+    #[test]
+    fn test_fixture_discovery_error_glob_display_and_source() {
+        let entry = PathBuf::from("/tmp/pdftract-bf-2y1bwm/locked");
+        let err = FixtureDiscoveryError::Glob {
+            entry: entry.clone(),
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        };
+
+        let rendered = format!("{err}");
+        assert!(
+            rendered.starts_with("failed to read "),
+            "Display should lead with the variant explanation: {rendered}"
+        );
+        assert!(
+            rendered.contains(entry.to_str().unwrap()),
+            "Display must name the failing entry: {rendered}"
+        );
+        assert!(
+            rendered.to_lowercase().contains("permission denied"),
+            "Display must embed the underlying I/O error: {rendered}"
+        );
+
+        let src = std::error::Error::source(&err).expect("Glob must chain a source");
+        let io_err = src
+            .downcast_ref::<std::io::Error>()
+            .expect("source must downcast to std::io::Error");
+        assert_eq!(io_err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    // =======================================================================
     // Shared-module import path — the result API lives in
     // tests/common/fixture_discovery.rs; these tests pin both that route and
     // the symlink guard that must survive the move intact.
