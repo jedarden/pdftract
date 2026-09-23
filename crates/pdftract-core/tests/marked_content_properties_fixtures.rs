@@ -25,6 +25,7 @@ use pdftract_core::parser::object::{intern, ObjRef, PdfObject};
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::stream::{FileSource, PdfSource};
 use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefResolver};
+use pdftract_core::{extract_pdf, ExtractionOptions};
 use std::path::PathBuf;
 
 /// Locate a fixture under the workspace-root `tests/fixtures/tagged/`.
@@ -258,6 +259,38 @@ fn bdc_name_props_indirect_reference_recovers_mcid() {
         "MCID must be recovered from the /MC0 target dict \
          (4 0 R -> << /MCID 0 /ActualText ... >>); diagnostics: {:?}",
         diagnostics
+    );
+}
+
+/// The public extraction entry point must carry the indirect property through
+/// the same resolver-backed BDC path. An unresolved `/Properties` reference
+/// makes `process_with_mode` return a diagnostic and the page extraction fail,
+/// so a successful page containing the marked text is the public observable
+/// for the MCID-bearing frame asserted above.
+#[test]
+fn public_extract_pdf_indirect_properties_recovers_mcid_end_to_end() {
+    let path = fixture_path("mc_properties_indirect.pdf");
+    let result = extract_pdf(&path, &ExtractionOptions::default()).unwrap_or_else(|error| {
+        panic!(
+            "public extract_pdf should resolve the indirect /Properties fixture: {error:#}"
+        )
+    });
+
+    assert_eq!(result.pages.len(), 1);
+    assert_eq!(result.metadata.error_count, 0);
+
+    let page = &result.pages[0];
+    assert!(
+        page.error.is_none(),
+        "public extraction must not lose the MCID-bearing page: {:?}",
+        page.error
+    );
+    assert!(
+        page.spans
+            .iter()
+            .any(|span| span.text.contains("Tagged content")),
+        "public extraction must retain text inside the indirect /Properties BDC; spans: {:?}",
+        page.spans
     );
 }
 
