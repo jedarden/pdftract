@@ -1,5 +1,12 @@
 //! CLI smoke contract for the provenance-recorded real PDF fixture.
 
+// Cross-binary reuse boundary: every tests/*.rs file compiles as its own
+// crate, so a plain `use` cannot reach items defined in a sibling test
+// binary. The shared test-support module is included explicitly instead —
+// see the module-boundary comment in tests/common/mod.rs.
+mod common;
+
+use common::fixture_discovery::discover_all_fixture_infos_result;
 use std::path::Path;
 use std::process::Command;
 
@@ -47,4 +54,36 @@ fn cli_extracts_fixture_in_text_and_structured_modes() {
     assert_eq!(span_text, "Dummy PDF file");
 
     assert!(Path::new(FIXTURE).is_file());
+}
+
+/// The shared fixture-discovery API (`tests/common/fixture_discovery.rs`) must
+/// enumerate this suite's fixture: the hardcoded [`FIXTURE`] path above is only
+/// smoke-testable if discovery still reaches that file. Guards against the
+/// fixture drifting out of the discovered tree (a rename, or a move under a
+/// symlinked *directory*, which the discovery symlink guard deliberately
+/// drops) and proves cross-binary reuse of the shared module from a second
+/// integration binary.
+#[test]
+fn smoke_fixture_is_enumerated_by_shared_discovery() {
+    let infos = discover_all_fixture_infos_result()
+        .expect("shared fixture discovery must enumerate the fixtures tree");
+    println!(
+        "shared discovery enumerated {} fixtures for CLI invocation",
+        infos.len()
+    );
+
+    // Discovery returns canonical paths; canonicalize the relative FIXTURE
+    // constant the same way before comparing.
+    let smoke = std::fs::canonicalize(FIXTURE).expect("smoke fixture must exist");
+    let info = infos
+        .iter()
+        .find(|info| info.path == smoke)
+        .unwrap_or_else(|| panic!("shared discovery must enumerate the smoke fixture {smoke:?}"));
+
+    // Derived metadata: name is the file stem, description is non-empty prose.
+    assert_eq!(info.name, "test-minimal");
+    assert!(
+        !info.description.is_empty(),
+        "description must be derived for the smoke fixture: {info}"
+    );
 }
