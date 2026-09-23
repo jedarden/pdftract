@@ -2341,7 +2341,9 @@ mod tests {
         let state = ServeState::new(None, 1024 * 1024 * 1024, true, None, 1 << 30, false)
             .with_readiness(crate::metrics::Readiness::with_inputs(|| 0.95, || true));
 
-        let response = oneshot_app(state)
+        // Liveness remains healthy on the main router even when the
+        // injected readiness input reports saturation.
+        let response = oneshot_app(state.clone())
             .oneshot(
                 Request::builder()
                     .uri("/health")
@@ -2351,6 +2353,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+
+        // The same injected state is exposed through the real metrics
+        // listener, where saturation must make readiness fail and identify
+        // the pool condition.
+        let bound = crate::metrics::bind_and_spawn(
+            "127.0.0.1:0",
+            state.metrics.clone(),
+            state.readiness.clone(),
+        )
+        .await
+        .expect("metrics listener binds on :0");
+        let response = reqwest::Client::new()
+            .get(format!("http://{bound}/ready"))
+            .send()
+            .await
+            .expect("ready request");
+        assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+        let body: serde_json::Value = response.json().await.expect("ready body");
+        assert_eq!(body["status"], "unready", "got: {body}");
+        assert_eq!(
+            body["unready"],
+            serde_json::json!(["pool_saturated"]),
+            "body must name pool saturation: {body}"
+        );
     }
 
     /// Readiness vs liveness, cache state: with the cache forced
@@ -2438,6 +2464,8 @@ mod tests {
     #[cfg(feature = "metrics")]
     #[tokio::test]
     async fn test_ready_is_503_when_cache_points_at_an_unwritable_path() {
+        use tower::ServiceExt;
+
         let parent = tempfile::tempdir().expect("tempdir");
         let missing = parent.path().join("cache-dir-does-not-exist");
         let state = ServeState::new(
@@ -2448,6 +2476,19 @@ mod tests {
             1 << 30,
             false,
         );
+        // Cache readiness failure is not a liveness failure: the main
+        // router must continue to answer /health with 200.
+        let health = oneshot_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("health request");
+        assert_eq!(health.status(), StatusCode::OK);
+
         let bound = crate::metrics::bind_and_spawn(
             "127.0.0.1:0",
             state.metrics.clone(),

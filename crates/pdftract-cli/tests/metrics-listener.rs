@@ -265,6 +265,16 @@ fn assert_exposition(client: &Client, metrics_url: &str) -> String {
     body
 }
 
+/// Return the first numeric sample for a metric line prefix. This is used
+/// for before/after assertions so a request must move a counter, not merely
+/// cause the formatter to emit a family that was already present.
+fn sample_value(body: &str, line_prefix: &str) -> Option<f64> {
+    body.lines()
+        .find(|line| line.starts_with(line_prefix))
+        .and_then(|line| line.split_whitespace().last())
+        .and_then(|value| value.parse::<f64>().ok())
+}
+
 /// The monitoring section is the source of truth for the public metric
 /// family list. Keep the integration test coupled to that table instead of
 /// letting a renamed or removed documented family silently pass.
@@ -491,7 +501,9 @@ fn serve_metrics_listener_serves_openmetrics_on_a_second_port() {
     let metrics_url = server.metrics_url();
 
     // The exposition on the second listener: full surface, right type.
-    assert_exposition(&client, &metrics_url);
+    let before = assert_exposition(&client, &metrics_url);
+    let before_failed_extractions =
+        sample_value(&before, "pdftract_extractions_total{result=\"error\"").unwrap_or(0.0);
     let ready = client
         .get(format!("{metrics_url}/ready"))
         .send()
@@ -540,6 +552,13 @@ fn serve_metrics_listener_serves_openmetrics_on_a_second_port() {
     );
 
     let body = assert_exposition(&client, &metrics_url);
+    let after_failed_extractions =
+        sample_value(&body, "pdftract_extractions_total{result=\"error\"")
+            .expect("the real request must create an extraction counter sample");
+    assert!(
+        after_failed_extractions > before_failed_extractions,
+        "the real extraction request must move the error counter: before={before_failed_extractions}, after={after_failed_extractions}\n{body}"
+    );
     assert!(
         body.contains("pdftract_extractions_total{result=\"error\""),
         "a failed extraction must record pdftract_extractions_total{{result=\"error\"}}; body:\n{body}"
