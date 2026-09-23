@@ -681,7 +681,13 @@ pub fn parse_traditional_xref(source: &dyn PdfSource, start_offset: u64) -> Xref
             } else {
                 // Nearest keyword at or before the recorded offset.
                 let lookback_start = start_offset.saturating_sub(XREF_KEYWORD_RECOVERY_WINDOW);
-                let lookback_len = (start_offset - lookback_start) as usize;
+                // Include the four bytes beginning immediately before the
+                // recorded offset.  A malformed startxref may point into the
+                // `xref` keyword itself, so reading only through the recorded
+                // offset would expose an incomplete keyword and miss recovery.
+                let lookback_len = (start_offset - lookback_start)
+                    .saturating_add(4)
+                    .min(usize::MAX as u64) as usize;
                 let backward = source
                     .read_at(lookback_start, lookback_len)
                     .ok()
