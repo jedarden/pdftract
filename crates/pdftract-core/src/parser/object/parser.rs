@@ -51,7 +51,28 @@ impl<'a> ObjectParser<'a> {
 
     /// Take all accumulated diagnostics.
     pub fn take_diagnostics(&mut self) -> Vec<Diag> {
+        self.drain_lexer_diagnostics();
         std::mem::take(&mut self.diagnostics)
+    }
+
+    /// Move diagnostics emitted by the lexer into the object parser's buffer.
+    ///
+    /// The lexer owns byte offsets, while this parser is the first layer that
+    /// knows an indirect object's identity. Keeping the transfer centralized
+    /// prevents lexer recovery diagnostics from disappearing and lets the
+    /// indirect-object path attach its object context at the right boundary.
+    fn drain_lexer_diagnostics(&mut self) {
+        self.diagnostics.extend(self.lexer.take_diagnostics());
+    }
+
+    /// Attach an indirect-object location to diagnostics emitted while its
+    /// body was being parsed. Header diagnostics deliberately remain
+    /// document-level because the object identity was not valid yet.
+    fn attach_object_context(&mut self, start: usize, object_ref: ObjRef) {
+        let object_ref = crate::diagnostics::ObjRef::new(object_ref.object, object_ref.generation);
+        for diagnostic in &mut self.diagnostics[start..] {
+            diagnostic.object_ref = Some(object_ref);
+        }
     }
 
     /// Parse the next direct object from the token stream.
@@ -511,6 +532,12 @@ impl<'a> ObjectParser<'a> {
         // Construct the ObjRef
         let id = ObjRef::new(obj_num, gen_num);
 
+        // Lexer diagnostics from the header belong to the document-level
+        // parser context. Start the body range only after the object identity
+        // is known, so body/recovery diagnostics can retain its location.
+        self.drain_lexer_diagnostics();
+        let body_diagnostic_start = self.diagnostics.len();
+
         // Parse the direct object body
         let obj = self.parse_direct_object().unwrap_or(PdfObject::Null);
 
@@ -554,6 +581,9 @@ impl<'a> ObjectParser<'a> {
                 self.scan_to_endobj_or_obj();
             }
         }
+
+        self.drain_lexer_diagnostics();
+        self.attach_object_context(body_diagnostic_start, id);
 
         Some(PdfIndirect { id, obj })
     }
@@ -1196,6 +1226,24 @@ mod tests {
         assert!(diags
             .iter()
             .any(|d| d.code == DiagCode::StructInvalidIndirectHeader));
+    }
+
+    #[test]
+    fn test_indirect_body_diagnostic_retains_object_location() {
+        let mut parser = ObjectParser::new(b"7 2 obj << /Key >> endobj");
+        let indirect = parser.parse_indirect_object().expect("object should recover");
+        assert_eq!(indirect.id, ObjRef::new(7, 2));
+
+        let diagnostics = parser.take_diagnostics();
+        let diagnostic = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == DiagCode::StructInvalidDictValue)
+            .expect("missing dictionary value should be diagnosed");
+        assert_eq!(
+            diagnostic.object_ref,
+            Some(crate::diagnostics::ObjRef::new(7, 2))
+        );
+        assert_eq!(diagnostic.byte_offset, None);
     }
 
     #[test]

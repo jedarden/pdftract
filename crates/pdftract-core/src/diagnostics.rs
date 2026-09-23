@@ -52,6 +52,15 @@
 //! The `DIAGNOSTIC_CATALOG` provides metadata about each diagnostic code, including
 //! severity, recoverable flag, and suggested user action. Use the `pdftract --list-diagnostics`
 //! CLI command to print the catalog (Phase 6).
+//!
+//! # Message policy
+//!
+//! Every code has a deterministic message/hint policy: severity comes from
+//! [`DiagCode::severity`], the hint from the catalog's `suggested_action`,
+//! and the message is either contextual text supplied by the emission site
+//! or the code's [`DiagCode::default_message`]. The `emit!` macro and
+//! [`DiagnosticsCollector`] apply the default automatically, so a code never
+//! renders a placeholder message.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -1483,6 +1492,139 @@ impl DiagCode {
         }
     }
 
+
+    /// Deterministic default message for this diagnostic code.
+    ///
+    /// Message policy (docs/integrations/diagnostics-codes.md): an emission
+    /// site either supplies contextual text of its own, or — when it has
+    /// nothing more specific to contribute — the diagnostic carries this
+    /// per-code default, derived from the code's catalog description. The
+    /// `emit!` macro and [`DiagnosticsCollector`] apply it automatically for
+    /// message-less emissions, so a given code always renders a stable,
+    /// non-placeholder message. This is the message half of the
+    /// severity/message/hint contract; the hint half is the catalog's
+    /// `suggested_action`.
+    #[inline]
+    pub const fn default_message(self) -> &'static str {
+        match self {
+            DiagCode::StructInvalidName => "Invalid name character or malformed name object",
+            DiagCode::StructInvalidHex => "Invalid hexadecimal character in hex string or name escape",
+            DiagCode::StructInvalidOctal => "Invalid octal escape sequence in literal string",
+            DiagCode::StructInvalidStreamHeader => "Invalid stream header (stream keyword not followed by proper newline)",
+            DiagCode::StructUnexpectedByte => "Unexpected byte (e.g., stray `>` not part of `>>`)",
+            DiagCode::StructUnexpectedEof => "Unexpected end of file while parsing a token",
+            DiagCode::StructUnterminatedString => "Unterminated literal string (missing closing paren)",
+            DiagCode::StructMissingKey => "Missing required dictionary key",
+            DiagCode::StructCircularRef => "Circular reference detected",
+            DiagCode::StructXobjectCycle => "Form XObject cycle detected",
+            DiagCode::StructDepthExceeded => "Dictionary nesting depth exceeds limit",
+            DiagCode::StructInvalidDictValue => "Invalid dictionary value (missing value after key)",
+            DiagCode::StructInvalidDictKey => "Invalid dictionary key (not a name object)",
+            DiagCode::StructInvalidIndirectHeader => "Invalid indirect object header",
+            DiagCode::StructIntegerOverflow => "Integer overflow during parsing",
+            DiagCode::StructRealInvalid => "Invalid real number literal",
+            DiagCode::StructInvalidNumber => "Invalid numeric literal",
+            DiagCode::StructInvalidAscii85 => "Invalid ASCII85 character or malformed ASCII85 stream",
+            DiagCode::StructInvalidObjstm => "Invalid object stream format",
+            DiagCode::StructInvalidUtf16 => "Invalid UTF-16BE encoding in string",
+            DiagCode::StructUnresolvedDestination => "Unresolved named destination",
+            DiagCode::StructNonGotoOutline => "Non-GoTo action in outline",
+            DiagCode::StructInvalidPdfDocEncoding => "Invalid PDFDocEncoding in string",
+            DiagCode::StructInvalidGeometry => "Invalid geometry value (NaN or Inf in MediaBox/CropBox/Rotate)",
+            DiagCode::StructInvalidType => "Invalid object type (expected type not found)",
+            DiagCode::StructHybridConflict => "Hybrid xref conflict: traditional table and stream disagree on object state",
+            DiagCode::StructIncompleteCoverage => "StructTree coverage below 80% threshold with /Suspects true",
+            DiagCode::XrefInvalidHeader => "Invalid xref keyword or header",
+            DiagCode::XrefInvalidEntry => "Malformed xref entry (not 20 bytes, bad format)",
+            DiagCode::XrefInvalidSubsectionHeader => "Invalid subsection header (not \"start count\")",
+            DiagCode::XrefObjectZeroNotFree => "Object 0 is not free (violates PDF spec)",
+            DiagCode::XrefTrailerNotFound => "Trailer dictionary not found or malformed",
+            DiagCode::XrefTruncated => "Truncated xref table (unexpected EOF)",
+            DiagCode::XrefRepaired => "Xref was reconstructed via forward scan (EC-07 recovery)",
+            DiagCode::XrefLinearizedNoForwardScan => "Forward scan disabled for linearized files",
+            DiagCode::XrefRemoteNoForwardScan => "Forward scan disabled for remote sources",
+            DiagCode::XrefInvalidStreamFormat => "Invalid xref stream format",
+            DiagCode::XrefInvalidStreamEntry => "Invalid xref stream entry",
+            DiagCode::StructInvalidPrevOffset => "Invalid /Prev offset in xref chain",
+            DiagCode::StructInvalidHintStream => "Invalid linearized hint stream",
+            DiagCode::StreamDecodeError => "Stream decompression failed (corrupt data)",
+            DiagCode::StreamBomb => "Decompression bomb limit exceeded",
+            DiagCode::StreamUnknownFilter => "Unknown filter name",
+            DiagCode::StreamInvalidParams => "Invalid filter parameters",
+            DiagCode::StreamInvalidJpeg => "JPEG data has invalid or missing markers",
+            DiagCode::StreamInvalidCcitt => "CCITT fax data has invalid or missing parameters",
+            DiagCode::StreamInvalidJpx => "JPEG2000 (JPX) data has invalid JP2 box magic",
+            DiagCode::EncryptionUnsupported => "Unsupported encryption or no password supplied",
+            DiagCode::EncryptionWrongPassword => "Password incorrect",
+            DiagCode::EncryptionInvalidDict => "Invalid encryption dictionary",
+            DiagCode::PageOutOfRange => "Page number out of range",
+            DiagCode::PageInvalidCount => "Invalid page count",
+            DiagCode::PageInvalidRotate => "Invalid /Rotate value (not multiple of 90)",
+            DiagCode::FontGlyphUnmapped => "Glyph could not be mapped to Unicode",
+            DiagCode::FontNotFound => "Font not found or couldn't be parsed",
+            DiagCode::FontInvalidCmap => "Invalid CMap format",
+            DiagCode::FontParseFailed => "Font program parsing failed",
+            DiagCode::FontUnsupported => "Font type not supported for embedded loading",
+            DiagCode::FontCidtogidmapTruncated => "CIDToGIDMap stream has odd byte count (truncated GID entry)",
+            DiagCode::FontEncodingDifferenceOutOfRange => "Character code in /Differences array exceeds valid range",
+            DiagCode::FontType3WidthsLengthMismatch => "Type3 font /Widths array length mismatch",
+            #[cfg(feature = "cjk")]
+            DiagCode::CjkDecodeMalformed => "Malformed byte sequence in CJK encoding fallback",
+            #[cfg(feature = "cjk")]
+            DiagCode::CjkTokenizeUnknownByte => "Unrecognized byte during CJK codespace tokenization",
+            DiagCode::CmapInvalidCodespace => "Invalid codespace range in CMap",
+            DiagCode::OcrJbig2Unsupported => "JBIG2 decoder not available",
+            DiagCode::OcrJpxUnsupported => "JPEG2000 (JPX) decoder not available",
+            DiagCode::OcrCcittUnsupported => "CCITT fax decoder not available",
+            DiagCode::OcrTesseractFailed => "Tesseract OCR failed",
+            DiagCode::OcrBrokenVectorUnavailable => "OCR unavailable on broken-vector page",
+            DiagCode::OcrLanguageUnavailable => "Requested OCR language pack not available",
+            DiagCode::ImgSoftmaskUnsupported => "Image soft mask not supported in direct compositing path",
+            DiagCode::ImgUnsupportedFormat => "Image format not supported",
+            DiagCode::ImgDeskewOutOfRange => "Deskew angle out of detectable range",
+            DiagCode::StreamTruncated => "Stream data truncated",
+            DiagCode::RemoteFetchInterrupted => "HTTP fetch interrupted or failed",
+            DiagCode::RemoteNoRangeSupport => "Server does not support Range requests",
+            DiagCode::RemoteTlsFailed => "TLS handshake failed",
+            DiagCode::RemoteDnsFailed => "DNS resolution failed",
+            DiagCode::RemoteUrlPrivateNetwork => "URL targets private network (SSRF protection)",
+            DiagCode::RemoteInsufficientDisk => "Insufficient disk space for fallback download",
+            DiagCode::GstateStackOverflow => "Graphics state stack overflow",
+            DiagCode::GstateStackUnderflow => "Graphics state stack underflow",
+            DiagCode::GstateBtEtMismatch => "Mismatched BT/ET pair",
+            DiagCode::CmArgCount => "Invalid argument count for cm operator",
+            DiagCode::CmDegenerate => "Degenerate matrix (det == 0 or NaN)",
+            DiagCode::HorizScalingZero => "Horizontal scaling set to zero (Tz 0)",
+            DiagCode::TextRenderingModeClamped => "Text rendering mode clamped to valid range (0-7)",
+            DiagCode::TstarZeroLeading => "T* operator when leading == 0 (no-op)",
+            DiagCode::FontResourceNotFound => "Font resource not found",
+            DiagCode::FontSizeZeroOrNegative => "Font size zero or negative (clamped to 1.0)",
+            DiagCode::BtNested => "BT operator nested inside another BT block",
+            DiagCode::EtWithoutBt => "ET operator without matching BT",
+            DiagCode::TextShowOutsideBt => "Text-show operator outside BT/ET block",
+            DiagCode::LayoutTaggedPdfDeferred => "Tagged PDF StructTree traversal is deferred; XY-cut reading order is used",
+            DiagCode::LayoutReadingOrderAmbiguous => "Reading order may be incorrect",
+            DiagCode::LayoutLowReadability => "Low readability score",
+            DiagCode::McpToolInvalidParams => "MCP tool call has invalid parameters",
+            DiagCode::McpPathTraversal => "MCP path traversal attempt",
+            DiagCode::CacheEntryCorrupt => "Cache entry is corrupted",
+            DiagCode::CacheIntegrityFail => "Cache entry failed integrity check (HMAC mismatch)",
+            DiagCode::CacheWriteFailed => "Cache write failed",
+            DiagCode::EmcWithoutBmc => "EMC operator without matching BMC/BDC",
+            DiagCode::MarkedContentDepthExceeded => "Marked-content stack depth exceeded",
+            DiagCode::UnknownMarkedContentProps => "Unknown marked-content property name",
+            DiagCode::StructInvalidBdcOperand => "Invalid BDC operand",
+            DiagCode::McidRedefined => "MCID redefined in same scope",
+            DiagCode::ImgSourceMixed => "Image sources mixed in unexpected way",
+            DiagCode::InlineImageIdWhitespaceMissing => "ID token without trailing whitespace",
+            DiagCode::InlineImageNoEi => "Inline image missing EI terminator",
+            DiagCode::ProfileSecretsForbidden => "Profile YAML contains forbidden secret keys",
+            DiagCode::ProfileInvalid => "Profile YAML is invalid or malformed",
+            DiagCode::RepairRescuedFromBackwardsXref => "Xref repaired from backwards scan",
+            DiagCode::SecurityJavascriptPresent => "JavaScript present in PDF (never executed)",
+        }
+    }
+
     /// Check if this diagnostic code indicates a recoverable error.
     ///
     /// Recoverable errors allow parsing/extraction to continue. Non-recoverable
@@ -2812,6 +2954,44 @@ impl Diagnostic {
         }
     }
 
+    /// Create a diagnostic from any message form, no location context.
+    ///
+    /// This is the general entry point for emission helpers: the message may
+    /// be a `&'static str` or an owned `String` (stored without copying in
+    /// the static case), and any available context is attached afterwards
+    /// with the [`with_byte_offset`](Self::with_byte_offset),
+    /// [`with_object_ref`](Self::with_object_ref) and
+    /// [`with_page_index`](Self::with_page_index) builders — instead of being
+    /// flattened into the message text.
+    #[inline]
+    pub fn with_message(code: DiagCode, message: impl Into<Cow<'static, str>>) -> Self {
+        Self::with_context(code, message, None, None, None)
+    }
+
+    /// Create a diagnostic while retaining every piece of location context
+    /// known by the caller.
+    ///
+    /// The optional fields intentionally remain separate from `message`:
+    /// callers can add an object reference, byte offset, or page index without
+    /// making the legacy human-readable text unstable or forcing consumers to
+    /// parse location suffixes back out of it.
+    #[inline]
+    pub fn with_context(
+        code: DiagCode,
+        message: impl Into<Cow<'static, str>>,
+        byte_offset: Option<u64>,
+        object_ref: Option<ObjRef>,
+        page_index: Option<usize>,
+    ) -> Self {
+        Diagnostic {
+            code,
+            byte_offset,
+            object_ref,
+            page_index: page_index.map(|page| page as u32),
+            message: message.into(),
+        }
+    }
+
     /// Get the severity level for this diagnostic.
     #[inline]
     pub fn severity(&self) -> Severity {
@@ -2824,10 +3004,49 @@ impl Diagnostic {
         self.code.is_recoverable()
     }
 
+    /// Set the byte offset for this diagnostic.
+    #[inline]
+    pub fn with_byte_offset(mut self, byte_offset: u64) -> Self {
+        self.byte_offset = Some(byte_offset);
+        self
+    }
+
+    /// Set the object reference for this diagnostic, if one is known.
+    ///
+    /// Passing `None` leaves the field unset, so call sites holding an
+    /// optional reference can attach it without branching.
+    #[inline]
+    pub fn with_object_ref_opt(mut self, object_ref: Option<ObjRef>) -> Self {
+        self.object_ref = object_ref;
+        self
+    }
+
     /// Set the object reference for this diagnostic.
     #[inline]
     pub fn with_object_ref(mut self, object_ref: ObjRef) -> Self {
         self.object_ref = Some(object_ref);
+        self
+    }
+
+    /// Set an indirect-object location from its numeric parts.
+    ///
+    /// Parser subsystems maintain their own `ObjRef` type for graph
+    /// traversal. This parts-based form lets them transfer that context to
+    /// the typed diagnostic model without flattening it into the message or
+    /// coupling the diagnostic module to parser internals.
+    #[inline]
+    pub fn with_object_ref_parts(mut self, object: u32, generation: u16) -> Self {
+        self.object_ref = Some(ObjRef::new(object, generation));
+        self
+    }
+
+    /// Set an indirect-object location from optional numeric parts.
+    #[inline]
+    pub fn with_object_ref_parts_opt(
+        mut self,
+        object_ref: Option<(u32, u16)>,
+    ) -> Self {
+        self.object_ref = object_ref.map(|(object, generation)| ObjRef::new(object, generation));
         self
     }
 
@@ -2839,6 +3058,13 @@ impl Diagnostic {
     #[inline]
     pub fn with_page_index(mut self, page_index: usize) -> Self {
         self.page_index = Some(page_index as u32);
+        self
+    }
+
+    /// Set the zero-based page index when the caller has one.
+    #[inline]
+    pub fn with_page_index_opt(mut self, page_index: Option<usize>) -> Self {
+        self.page_index = page_index.map(|page| page as u32);
         self
     }
 }
@@ -2895,14 +3121,17 @@ impl From<&Diagnostic> for DiagnosticJson {
 /// Emit a diagnostic to a diagnostics vector.
 ///
 /// This macro provides ergonomic syntax for creating and pushing diagnostics.
-/// It supports several forms:
+/// Every form retains the contextual fields it is given (byte offset,
+/// indirect-object reference, page index) as structured fields rather than
+/// flattening them into the message text, and a form without `message = …`
+/// carries the code's deterministic [`DiagCode::default_message`].
 ///
 /// ```rust
 /// use pdftract_core::emit;
 ///
 /// let mut diagnostics = Vec::new();
 ///
-/// // Emit with code only (no offset, default message)
+/// // Emit with code only (default message from the catalog)
 /// emit!(diagnostics, StructInvalidName);
 ///
 /// // Emit with code and byte offset
@@ -2915,15 +3144,21 @@ impl From<&Diagnostic> for DiagnosticJson {
 /// emit!(diagnostics, StreamDecodeError, offset = 200,
 ///       message = "zlib stream truncated".to_string());
 ///
-/// assert_eq!(diagnostics.len(), 4);
+/// // Emit with page context (per-page emission sites)
+/// emit!(diagnostics, PageInvalidRotate, page = 3);
+/// emit!(diagnostics, PageOutOfRange, page = 11,
+///       message = "page 12 exceeds document page count (10)".to_string());
+///
+/// assert_eq!(diagnostics.len(), 6);
 /// ```
 ///
 /// # Parameters
 ///
 /// - `diagnostics`: The `Vec<Diagnostic>` to push to
 /// - `code`: The `DiagCode` variant (without the `DiagCode::` prefix)
-/// - `offset = <expr>`: Optional byte offset (u64 or None)
+/// - `offset = <expr>`: Optional byte offset (u64)
 /// - `object = (<num>, <gen>)`: Optional object reference (e.g., `(5, 0)` for object 5 gen 0)
+/// - `page = <expr>`: Optional zero-based page index (usize)
 /// - `message = <expr>`: Optional custom message (String or &'static str)
 #[macro_export]
 macro_rules! emit {
@@ -2931,7 +3166,7 @@ macro_rules! emit {
     ($diagnostics:expr, $code:ident) => {{
         $diagnostics.push($crate::diagnostics::Diagnostic::with_static_no_offset(
             $crate::diagnostics::DiagCode::$code,
-            concat!(stringify!($code), " diagnostic emitted"),
+            $crate::diagnostics::DiagCode::$code.default_message(),
         ));
     }};
 
@@ -2940,8 +3175,62 @@ macro_rules! emit {
         $diagnostics.push($crate::diagnostics::Diagnostic::with_static(
             $crate::diagnostics::DiagCode::$code,
             $offset,
-            concat!(stringify!($code), " diagnostic emitted"),
+            $crate::diagnostics::DiagCode::$code.default_message(),
         ));
+    }};
+
+    // emit!(diagnostics, CODE, message = <expr>)
+    ($diagnostics:expr, $code:ident, message = $msg:expr) => {{
+        $diagnostics.push($crate::diagnostics::Diagnostic::with_message(
+            $crate::diagnostics::DiagCode::$code,
+            $msg,
+        ));
+    }};
+
+    // emit!(diagnostics, CODE, object = (<num>, <gen>))
+    ($diagnostics:expr, $code:ident, object = ($obj_num:expr, $obj_gen:expr)) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_static_no_offset(
+                $crate::diagnostics::DiagCode::$code,
+                $crate::diagnostics::DiagCode::$code.default_message(),
+            )
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen)),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, object = (<num>, <gen>), message = <expr>)
+    ($diagnostics:expr, $code:ident, object = ($obj_num:expr, $obj_gen:expr), message = $msg:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen)),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, object = (<num>, <gen>), page = <expr>)
+    ($diagnostics:expr, $code:ident, object = ($obj_num:expr, $obj_gen:expr), page = $page_index:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_static_no_offset(
+                $crate::diagnostics::DiagCode::$code,
+                $crate::diagnostics::DiagCode::$code.default_message(),
+            )
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen))
+            .with_page_index($page_index),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, object, page, message) — no byte offset
+    ($diagnostics:expr, $code:ident, object = ($obj_num:expr, $obj_gen:expr), page = $page_index:expr, message = $msg:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen))
+            .with_page_index($page_index),
+        );
     }};
 
     // emit!(diagnostics, CODE, offset = <expr>, object = (<num>, <gen>))
@@ -2950,7 +3239,7 @@ macro_rules! emit {
             $crate::diagnostics::Diagnostic::with_static(
                 $crate::diagnostics::DiagCode::$code,
                 $offset,
-                concat!(stringify!($code), " diagnostic emitted"),
+                $crate::diagnostics::DiagCode::$code.default_message(),
             )
             .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen)),
         );
@@ -2958,19 +3247,97 @@ macro_rules! emit {
 
     // emit!(diagnostics, CODE, offset = <expr>, message = <expr>)
     ($diagnostics:expr, $code:ident, offset = $offset:expr, message = $msg:expr) => {{
-        $diagnostics.push($crate::diagnostics::Diagnostic::with_dynamic(
-            $crate::diagnostics::DiagCode::$code,
-            $offset,
-            $msg.into(),
-        ));
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_byte_offset($offset),
+        );
     }};
 
-    // emit!(diagnostics, CODE, message = <expr>)
-    ($diagnostics:expr, $code:ident, message = $msg:expr) => {{
-        $diagnostics.push($crate::diagnostics::Diagnostic::with_dynamic_no_offset(
-            $crate::diagnostics::DiagCode::$code,
-            $msg.into(),
-        ));
+    // emit!(diagnostics, CODE, page = <expr>)
+    ($diagnostics:expr, $code:ident, page = $page_index:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_static_no_offset(
+                $crate::diagnostics::DiagCode::$code,
+                $crate::diagnostics::DiagCode::$code.default_message(),
+            )
+            .with_page_index($page_index),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, offset = <expr>, page = <expr>)
+    ($diagnostics:expr, $code:ident, offset = $offset:expr, page = $page_index:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_static(
+                $crate::diagnostics::DiagCode::$code,
+                $offset,
+                $crate::diagnostics::DiagCode::$code.default_message(),
+            )
+            .with_page_index($page_index),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, page = <expr>, message = <expr>)
+    ($diagnostics:expr, $code:ident, page = $page_index:expr, message = $msg:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_page_index($page_index),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, offset = <expr>, object = (<num>, <gen>), page = <expr>)
+    ($diagnostics:expr, $code:ident, offset = $offset:expr, object = ($obj_num:expr, $obj_gen:expr), page = $page_index:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_static(
+                $crate::diagnostics::DiagCode::$code,
+                $offset,
+                $crate::diagnostics::DiagCode::$code.default_message(),
+            )
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen))
+            .with_page_index($page_index),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, offset = <expr>, object = (<num>, <gen>), message = <expr>)
+    ($diagnostics:expr, $code:ident, offset = $offset:expr, object = ($obj_num:expr, $obj_gen:expr), message = $msg:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_byte_offset($offset)
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen)),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, offset = <expr>, page = <expr>, message = <expr>)
+    ($diagnostics:expr, $code:ident, offset = $offset:expr, page = $page_index:expr, message = $msg:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_byte_offset($offset)
+            .with_page_index($page_index),
+        );
+    }};
+
+    // emit!(diagnostics, CODE, offset, object, page, message) — full context
+    ($diagnostics:expr, $code:ident, offset = $offset:expr, object = ($obj_num:expr, $obj_gen:expr), page = $page_index:expr, message = $msg:expr) => {{
+        $diagnostics.push(
+            $crate::diagnostics::Diagnostic::with_message(
+                $crate::diagnostics::DiagCode::$code,
+                $msg,
+            )
+            .with_byte_offset($offset)
+            .with_object_ref($crate::diagnostics::ObjRef::new($obj_num, $obj_gen))
+            .with_page_index($page_index),
+        );
     }};
 }
 
@@ -3146,6 +3513,138 @@ mod tests {
     }
 
     #[test]
+    fn test_emit_macro_defaults_to_catalog_message() {
+        // Message policy: a message-less emission carries the code's
+        // deterministic default, never a placeholder.
+        let mut diagnostics = Vec::new();
+        emit!(diagnostics, StructInvalidName);
+        assert_eq!(
+            diagnostics[0].message.as_ref(),
+            DiagCode::StructInvalidName.default_message()
+        );
+        assert_ne!(diagnostics[0].message.as_ref(), "");
+        assert!(
+            !diagnostics[0]
+                .message
+                .to_ascii_lowercase()
+                .contains("diagnostic emitted"),
+            "placeholder message leaked: {}",
+            diagnostics[0].message
+        );
+
+        // Deterministic: the same code yields the same default every time,
+        // and it matches the description the catalog documents.
+        for _ in 0..3 {
+            let mut again = Vec::new();
+            emit!(again, StructInvalidName);
+            assert_eq!(again[0].message, diagnostics[0].message);
+        }
+    }
+
+    #[test]
+    fn every_code_has_non_empty_default_message() {
+        for code in DiagCode::ALL {
+            let message = code.default_message();
+            assert!(
+                !message.trim().is_empty(),
+                "{} has an empty default message",
+                code.name()
+            );
+            assert_eq!(message, code.default_message());
+        }
+    }
+
+    #[test]
+    fn test_emit_macro_with_page() {
+        let mut diagnostics = Vec::new();
+        emit!(diagnostics, PageInvalidRotate, page = 3);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].page_index, Some(3));
+        assert_eq!(diagnostics[0].byte_offset, None);
+        assert_eq!(diagnostics[0].object_ref, None);
+        assert_eq!(
+            diagnostics[0].message.as_ref(),
+            DiagCode::PageInvalidRotate.default_message()
+        );
+    }
+
+    #[test]
+    fn test_emit_macro_offset_and_page() {
+        let mut diagnostics = Vec::new();
+        emit!(diagnostics, StructMissingKey, offset = 88, page = 12);
+        assert_eq!(diagnostics[0].byte_offset, Some(88));
+        assert_eq!(diagnostics[0].page_index, Some(12));
+        assert_eq!(diagnostics[0].object_ref, None);
+    }
+
+    #[test]
+    fn test_emit_macro_page_and_message() {
+        let mut diagnostics = Vec::new();
+        emit!(
+            diagnostics,
+            PageOutOfRange,
+            page = 11,
+            message = "page 12 exceeds document page count (10)".to_string()
+        );
+        assert_eq!(diagnostics[0].page_index, Some(11));
+        assert_eq!(
+            diagnostics[0].message.as_ref(),
+            "page 12 exceeds document page count (10)"
+        );
+        assert_eq!(diagnostics[0].byte_offset, None);
+    }
+
+    #[test]
+    fn test_emit_macro_full_context() {
+        let mut diagnostics = Vec::new();
+        emit!(
+            diagnostics,
+            StreamBomb,
+            offset = 4096,
+            object = (12, 0),
+            page = 2,
+            message = "decompress limit exceeded".to_string()
+        );
+        assert_eq!(diagnostics[0].code, DiagCode::StreamBomb);
+        assert_eq!(diagnostics[0].byte_offset, Some(4096));
+        assert_eq!(diagnostics[0].object_ref, Some(ObjRef::new(12, 0)));
+        assert_eq!(diagnostics[0].page_index, Some(2));
+        assert_eq!(diagnostics[0].message.as_ref(), "decompress limit exceeded");
+
+        // offset + object + message (no page): the decoder-recovery shape.
+        emit!(
+            diagnostics,
+            StreamUnknownFilter,
+            offset = 8192,
+            object = (13, 0),
+            message = "Unknown filter: JBig2Decode".to_string()
+        );
+        assert_eq!(diagnostics[1].byte_offset, Some(8192));
+        assert_eq!(diagnostics[1].object_ref, Some(ObjRef::new(13, 0)));
+        assert_eq!(diagnostics[1].page_index, None);
+
+        emit!(diagnostics, StructMissingKey, object = (14, 1));
+        assert_eq!(diagnostics[2].byte_offset, None);
+        assert_eq!(diagnostics[2].object_ref, Some(ObjRef::new(14, 1)));
+
+        emit!(diagnostics, StructMissingKey, object = (15, 1), page = 6);
+        assert_eq!(diagnostics[3].object_ref, Some(ObjRef::new(15, 1)));
+        assert_eq!(diagnostics[3].page_index, Some(6));
+    }
+
+    #[test]
+    fn test_with_byte_offset_builder() {
+        let diag = Diagnostic::with_message(DiagCode::StreamTruncated, "short read")
+            .with_byte_offset(77)
+            .with_object_ref_opt(None)
+            .with_page_index(1);
+        assert_eq!(diag.byte_offset, Some(77));
+        assert_eq!(diag.object_ref, None);
+        assert_eq!(diag.page_index, Some(1));
+        assert_eq!(diag.message.as_ref(), "short read");
+    }
+
+    #[test]
     fn test_catalog_complete() {
         // Verify that every DiagCode variant has a catalog entry
         for info in DIAGNOSTIC_CATALOG {
@@ -3211,14 +3710,14 @@ impl DiagnosticsCollector {
 
     /// Emit a diagnostic with the given code.
     ///
-    /// This is a convenience method that creates a diagnostic with the default
-    /// message and no byte offset.
+    /// This is a convenience method that creates a diagnostic carrying the
+    /// code's deterministic default message and no location context.
     #[inline]
     pub fn emit(&self, code: DiagCode) {
         let mut diagnostics = self.inner.lock().unwrap();
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+        diagnostics.push(Diagnostic::with_static_no_offset(
             code,
-            format!("{} diagnostic emitted", code.name()),
+            code.default_message(),
         ));
     }
 
@@ -3226,11 +3725,7 @@ impl DiagnosticsCollector {
     #[inline]
     pub fn emit_with_offset(&self, code: DiagCode, offset: u64) {
         let mut diagnostics = self.inner.lock().unwrap();
-        diagnostics.push(Diagnostic::with_dynamic(
-            code,
-            offset,
-            format!("{} diagnostic emitted", code.name()),
-        ));
+        diagnostics.push(Diagnostic::with_static(code, offset, code.default_message()));
     }
 
     /// Emit a diagnostic with the given code and custom message.
@@ -3238,6 +3733,21 @@ impl DiagnosticsCollector {
     pub fn emit_with_message(&self, code: DiagCode, message: String) {
         let mut diagnostics = self.inner.lock().unwrap();
         diagnostics.push(Diagnostic::with_dynamic_no_offset(code, message));
+    }
+
+    /// Emit a fully-structured diagnostic, retaining every contextual field.
+    ///
+    /// This is the general form for concurrent emission sites: build the
+    /// [`Diagnostic`] with its builders
+    /// ([`with_byte_offset`](Diagnostic::with_byte_offset),
+    /// [`with_object_ref`](Diagnostic::with_object_ref),
+    /// [`with_page_index`](Diagnostic::with_page_index)) and push it through
+    /// the collector — the offset, object location and page index survive as
+    /// structured fields instead of being flattened into the message.
+    #[inline]
+    pub fn emit_diagnostic(&self, diagnostic: Diagnostic) {
+        let mut diagnostics = self.inner.lock().unwrap();
+        diagnostics.push(diagnostic);
     }
 
     /// Consume the collector and return the underlying vector of diagnostics.
@@ -3312,6 +3822,41 @@ mod collector_tests {
         collector.emit_with_message(DiagCode::StreamDecodeError, "custom message".to_string());
         let diagnostics = collector.into_vec();
         assert_eq!(diagnostics[0].message.as_ref(), "custom message");
+    }
+
+    #[test]
+    fn test_collector_emit_diagnostic_retains_context() {
+        // The general emission path must keep every contextual field the
+        // caller attached — nothing is flattened into the message.
+        let collector = DiagnosticsCollector::new();
+        collector.emit_diagnostic(
+            Diagnostic::with_message(DiagCode::StreamBomb, "decompress limit exceeded")
+                .with_byte_offset(4096)
+                .with_object_ref(ObjRef::new(12, 0))
+                .with_page_index(2),
+        );
+        let diagnostics = collector.into_vec();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].byte_offset, Some(4096));
+        assert_eq!(diagnostics[0].object_ref, Some(ObjRef::new(12, 0)));
+        assert_eq!(diagnostics[0].page_index, Some(2));
+        assert_eq!(diagnostics[0].message.as_ref(), "decompress limit exceeded");
+    }
+
+    #[test]
+    fn test_collector_emit_uses_default_message() {
+        let collector = DiagnosticsCollector::new();
+        collector.emit(DiagCode::FontNotFound);
+        collector.emit_with_offset(DiagCode::StructInvalidName, 42);
+        let diagnostics = collector.into_vec();
+        assert_eq!(
+            diagnostics[0].message.as_ref(),
+            DiagCode::FontNotFound.default_message()
+        );
+        assert_eq!(
+            diagnostics[1].message.as_ref(),
+            DiagCode::StructInvalidName.default_message()
+        );
     }
 
     #[test]

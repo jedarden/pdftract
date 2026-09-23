@@ -179,10 +179,13 @@ pub fn parse_pages(
             // Check if start > end
             if s > e {
                 // Emit a single diagnostic for the out-of-range start
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::PageOutOfRange,
-                    format!("page {} exceeds document page count ({})", s, page_count),
-                ));
+                diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::PageOutOfRange,
+                        format!("page {} exceeds document page count ({})", s, page_count),
+                    )
+                    .with_page_index(s - 1),
+                );
                 continue;
             }
 
@@ -193,10 +196,13 @@ pub fn parse_pages(
             for n in s..=e {
                 if n > page_count {
                     // Emit diagnostic for out-of-range page
-                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                        DiagCode::PageOutOfRange,
-                        format!("page {} exceeds document page count ({})", n, page_count),
-                    ));
+                    diagnostics.push(
+                        Diagnostic::with_dynamic_no_offset(
+                            DiagCode::PageOutOfRange,
+                            format!("page {} exceeds document page count ({})", n, page_count),
+                        )
+                        .with_page_index(n - 1),
+                    );
                     continue;
                 }
                 if n == 0 {
@@ -217,10 +223,13 @@ pub fn parse_pages(
             }
 
             if n > page_count {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::PageOutOfRange,
-                    format!("page {} exceeds document page count ({})", n, page_count),
-                ));
+                diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::PageOutOfRange,
+                        format!("page {} exceeds document page count ({})", n, page_count),
+                    )
+                    .with_page_index(n - 1),
+                );
                 continue;
             }
             // Convert 1-based to 0-based
@@ -312,6 +321,26 @@ mod tests {
         let indices = parse_pages("12-", 10, &mut diagnostics).unwrap();
         assert!(indices.is_empty());
         assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn test_out_of_range_diagnostic_carries_page_index_and_code_prefix() {
+        // Structured surface (docs/integrations/diagnostics-codes.md): a
+        // PAGE_OUT_OF_RANGE diagnostic must carry the 0-based page_index it
+        // refers to.
+        let mut diagnostics = Vec::new();
+        let indices = parse_pages("12", 10, &mut diagnostics).unwrap();
+        assert!(indices.is_empty());
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].page_index, Some(11));
+        assert_eq!(diagnostics[0].severity(), Severity::Error);
+        assert!(crate::diagnostics::suggested_action(DiagCode::PageOutOfRange).is_some());
+
+        // Legacy string form (docs/errors-array-format.md): "CODE: message".
+        assert_eq!(
+            diagnostics[0].to_string(),
+            "PAGE_OUT_OF_RANGE: page 12 exceeds document page count (10)"
+        );
     }
 
     #[test]

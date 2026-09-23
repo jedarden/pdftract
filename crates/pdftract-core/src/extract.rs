@@ -96,14 +96,22 @@ use crate::receipts::svg::GlyphList;
 /// - Each stream is decoded and returned as Vec<u8>
 /// - The caller must drop the Vec before processing the next page
 /// - No decoded data is held across page boundaries
+#[derive(Debug, Default)]
+struct DecodedPageContent {
+    bytes: Vec<u8>,
+    diagnostics: Vec<Diagnostic>,
+}
+
 fn decode_page_content_streams(
     page: &crate::parser::pages::PageDict,
     resolver: &crate::parser::xref::XrefResolver,
     source: &dyn crate::parser::stream::PdfSource,
     max_decompress_bytes: u64,
     page_index: usize,
-) -> Result<Vec<u8>, PageExtractionError> {
-    use crate::parser::stream::{decode_stream, ExtractionOptions as StreamExtractionOptions};
+) -> Result<DecodedPageContent, PageExtractionError> {
+    use crate::parser::stream::{
+        decode_stream_with_context, ExtractionOptions as StreamExtractionOptions,
+    };
 
     // Create stream extraction options with the bomb limit
     let stream_opts = StreamExtractionOptions {
@@ -112,6 +120,7 @@ fn decode_page_content_streams(
     };
 
     let mut all_decoded = Vec::new();
+    let mut diagnostics = Vec::new();
     let mut doc_counter = 0u64;
 
     for stream_ref in &page.contents {
@@ -119,7 +128,14 @@ fn decode_page_content_streams(
             Ok(obj) => {
                 if let Some(stream) = obj.as_stream() {
                     // Decode this stream - it will be dropped after this iteration
-                    let decoded = decode_stream(stream, source, &stream_opts, &mut doc_counter);
+                    let decoded = decode_stream_with_context(
+                        stream,
+                        source,
+                        &stream_opts,
+                        &mut doc_counter,
+                        Some(*stream_ref),
+                        Some(page_index),
+                    );
 
                     // Check if we exceeded the bomb limit
                     if doc_counter > max_decompress_bytes {
@@ -131,10 +147,9 @@ fn decode_page_content_streams(
                     }
 
                     // Extend the accumulated content
-                    all_decoded.extend_from_slice(&decoded);
+                    all_decoded.extend_from_slice(&decoded.bytes);
+                    diagnostics.extend(decoded.diagnostics);
 
-                    // Explicitly drop decoded to free memory before next iteration
-                    drop(decoded);
                 }
             }
             Err(e) => {
@@ -152,7 +167,10 @@ fn decode_page_content_streams(
         return Err(PageExtractionError::MissingContentStream { page_index });
     }
 
-    Ok(all_decoded)
+    Ok(DecodedPageContent {
+        bytes: all_decoded,
+        diagnostics,
+    })
 }
 
 /// Process a page's content streams to produce glyph::Glyph structs.
@@ -408,6 +426,8 @@ struct PageResultInternal {
     pub annotations: Vec<AnnotationJson>,
     /// Error message if extraction failed for this page.
     pub error: Option<String>,
+    /// Structured diagnostics emitted while decoding this page's streams.
+    pub diagnostics: Vec<Diagnostic>,
     /// Page media box height for two-page detection.
     pub page_height: f64,
 }
@@ -721,13 +741,18 @@ pub fn extract_pdf(
     // First, collect all PageDict objects for annotation extraction
     // We need these before extracting content so we can dispatch annotations once
     let mut all_pages: Vec<crate::parser::pages::PageDict> = Vec::new();
+    let mut page_diagnostics: Vec<Diagnostic> = Vec::new();
     loop {
         match page_iter.next() {
             Some(Ok(page_dict)) => {
                 all_pages.push(page_dict);
             }
-            Some(Err(_)) | None => {
-                // End of pages or error - stop collecting
+            Some(Err(diags)) => {
+                page_diagnostics.extend(diags);
+                break;
+            }
+            None => {
+                // End of pages
                 break;
             }
         }
@@ -818,6 +843,7 @@ pub fn extract_pdf(
 
     // Now process pages for content extraction (re-using the collected pages)
     let mut extracted_pages = Vec::new();
+    let mut extraction_diagnostics = Vec::new();
     let mut total_spans = 0;
     let mut total_blocks = 0;
     let mut error_count = 0;
@@ -860,7 +886,7 @@ pub fn extract_pdf(
             );
 
             let mut tracker = McidTracker::new();
-            track_mcids_from_content_stream(&decoded_streams?, &mut tracker);
+            track_mcids_from_content_stream(&decoded_streams?.bytes, &mut tracker);
 
             // Get the struct_parents value for this page
             let struct_parents = page_dict.struct_parents();
@@ -893,6 +919,7 @@ pub fn extract_pdf(
             Ok(Ok(mut page)) => {
                 total_spans += page.spans.len();
                 total_blocks += page.blocks.len();
+                extraction_diagnostics.extend(page.diagnostics.drain(..));
                 page.annotations = page_annotations;
                 extracted_pages.push(page);
             }
@@ -905,6 +932,7 @@ pub fn extract_pdf(
                     tables: vec![],
                     annotations: page_annotations,
                     error: Some(e.to_string()),
+                    diagnostics: Vec::new(),
                     page_height,
                 });
             }
@@ -917,6 +945,7 @@ pub fn extract_pdf(
                     tables: vec![],
                     annotations: page_annotations,
                     error: Some(format!("Page {} extraction panicked", page_index)),
+                    diagnostics: Vec::new(),
                     page_height,
                 });
             }
@@ -944,7 +973,10 @@ pub fn extract_pdf(
     };
 
     // Add the tagged PDF deferred diagnostic if present
-    let mut all_diagnostics = coverage_diagnostics;
+    let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(page_diagnostics);
+    all_diagnostics.extend(page_range_diagnostics);
+    all_diagnostics.extend(coverage_diagnostics);
     if let Some(ref deferred) = deferred_diagnostic {
         all_diagnostics.push(deferred.clone());
     }
@@ -1077,9 +1109,6 @@ pub fn extract_pdf(
     // Add JavaScript detection diagnostics to the error list
     let mut all_diagnostics_with_js = all_diagnostics;
     all_diagnostics_with_js.extend(js_diagnostics);
-
-    // Add page range diagnostics (PAGE_OUT_OF_RANGE warnings)
-    all_diagnostics_with_js.extend(page_range_diagnostics);
 
     Ok(ExtractionResult {
         fingerprint,
@@ -1816,6 +1845,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     let mut total_blocks = 0u64;
     let mut error_count = 0u64;
     let _page_count = 0usize;
+    let mut extraction_diagnostics = Vec::new();
 
     // Phase 7.1.4: Collect page data for coverage check
     // Track MCIDs and struct_parents for each page
@@ -1908,7 +1938,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
             );
 
             let mut tracker = McidTracker::new();
-            track_mcids_from_content_stream(&decoded_streams?, &mut tracker);
+            track_mcids_from_content_stream(&decoded_streams?.bytes, &mut tracker);
 
             // Get the struct_parents value for this page
             let struct_parents = page_dict.struct_parents();
@@ -1937,9 +1967,10 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         }));
 
         match extract_result {
-            Ok(Ok(page)) => {
+            Ok(Ok(mut page)) => {
                 total_spans += page.spans.len() as u64;
                 total_blocks += page.blocks.len() as u64;
+                extraction_diagnostics.extend(page.diagnostics.drain(..));
 
                 // Serialize and write this page immediately
                 // Extract TableJson from TableWithGrid for serialization
@@ -2008,8 +2039,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         (reading_order_algorithm, Vec::new())
     };
 
-    // Add the tagged PDF deferred diagnostic if present
-    let mut all_diagnostics = coverage_diagnostics;
+    // Add the page-tree and page-range diagnostics before document-level diagnostics.
+    let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(page_diagnostics);
+    all_diagnostics.extend(page_range_diagnostics);
+    all_diagnostics.extend(coverage_diagnostics);
     if let Some(ref deferred) = deferred_diagnostic {
         all_diagnostics.push(deferred.clone());
     }
@@ -2185,6 +2219,7 @@ where
     let mut total_blocks = 0;
     let mut error_count = 0;
     let mut page_count = 0;
+    let mut extraction_diagnostics = Vec::new();
 
     // Phase 7.1.4: Collect page data for coverage check
     let mut pages_with_mcids: Vec<(usize, Option<i32>, std::collections::HashSet<u32>)> =
@@ -2197,8 +2232,9 @@ where
             Err(diagnostics) => {
                 let msg = diagnostics
                     .first()
-                    .map(|d| d.message.as_ref())
-                    .unwrap_or("unknown error");
+                    .map(|d| d.message.to_string())
+                    .unwrap_or_else(|| "unknown error".to_string());
+                extraction_diagnostics.extend(diagnostics);
                 error_count += 1;
                 let error_page = PageResult {
                     index: page_count,
@@ -2212,7 +2248,7 @@ where
                     blocks: vec![],
                     tables: vec![],
                     annotations: vec![],
-                    error: Some(msg.to_string()),
+                    error: Some(msg),
                 };
                 if !callback(&error_page) {
                     break;
@@ -2238,7 +2274,7 @@ where
             let struct_parents = page_dict.struct_parents();
             let mcid_set = if let Ok(streams) = decoded_streams {
                 let mut tracker = McidTracker::new();
-                track_mcids_from_content_stream(&streams, &mut tracker);
+                track_mcids_from_content_stream(&streams.bytes, &mut tracker);
                 tracker.mcid_set().clone()
             } else {
                 std::collections::HashSet::new()
@@ -2261,9 +2297,10 @@ where
         }));
 
         let page_result = match extract_result {
-            Ok(Ok(internal_page)) => {
+            Ok(Ok(mut internal_page)) => {
                 total_spans += internal_page.spans.len();
                 total_blocks += internal_page.blocks.len();
+                extraction_diagnostics.extend(internal_page.diagnostics.drain(..));
                 PageResult::from(internal_page)
             }
             Ok(Err(e)) => {
@@ -2326,8 +2363,9 @@ where
         (reading_order_algorithm, Vec::new())
     };
 
-    // Add the tagged PDF deferred diagnostic if present
-    let mut all_diagnostics = coverage_diagnostics;
+    // Add page decoder diagnostics before document-level diagnostics.
+    let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(coverage_diagnostics);
     if let Some(ref deferred) = deferred_diagnostic {
         all_diagnostics.push(deferred.clone());
     }
@@ -2494,8 +2532,14 @@ fn extract_page_from_dict(
     // This implements the complete glyph→span→line→block→reading_order flow
 
     // Step 1: Extract glyphs from content streams (Phase 3)
-    let glyphs = if let (Some(content_bytes), Some(res)) = (decoded_streams.as_ref(), resolver) {
-        process_content_stream_to_glyphs(content_bytes, page, res, page_index, default_off_ocgs)?
+    let glyphs = if let (Some(content), Some(res)) = (decoded_streams.as_ref(), resolver) {
+        process_content_stream_to_glyphs(
+            &content.bytes,
+            page,
+            res,
+            page_index,
+            default_off_ocgs,
+        )?
     } else {
         Vec::new()
     };
@@ -2612,8 +2656,8 @@ fn extract_page_from_dict(
     }
 
     // Step 8: Detect tables using line-based and borderless detection
-    let tables = if let Some(content_bytes) = decoded_streams.as_ref() {
-        detect_tables_on_page(page, content_bytes, page_index).map_err(|e| {
+    let tables = if let Some(content) = decoded_streams.as_ref() {
+        detect_tables_on_page(page, &content.bytes, page_index).map_err(|e| {
             PageExtractionError::TableDetectionFailed {
                 page_index,
                 message: format!("{:?}", e),
@@ -2761,6 +2805,10 @@ fn extract_page_from_dict(
         tables,
         annotations: vec![],
         error: None,
+        diagnostics: decoded_streams
+            .as_ref()
+            .map(|content| content.diagnostics.clone())
+            .unwrap_or_default(),
         page_height,
     })
 }

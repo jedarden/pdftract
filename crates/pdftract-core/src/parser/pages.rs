@@ -17,8 +17,7 @@ use crate::parser::xref::XrefResolver;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-// Interning helper used by the cfg(test) page-dict builders below; gated so
-// non-test builds never see an unused import.
+// Test fixture builders intern PDF names; production paths receive them pre-interned.
 #[cfg(test)]
 use crate::parser::object::intern;
 
@@ -180,25 +179,31 @@ fn count_pages_walk(
 ) -> usize {
     // Depth limit check
     if depth > MAX_PAGES_DEPTH {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructDepthExceeded,
-            format!(
-                "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
-                MAX_PAGES_DEPTH
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructDepthExceeded,
+                format!(
+                    "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
+                    MAX_PAGES_DEPTH
+                ),
+            )
+            .with_object_ref_parts(node_ref.object, node_ref.generation),
+        );
         return 0;
     }
 
     // Check for cycles
     if visited.contains(&node_ref) {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructCircularRef,
-            format!(
-                "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
-                node_ref
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructCircularRef,
+                format!(
+                    "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
+                    node_ref
+                ),
+            )
+            .with_object_ref_parts(node_ref.object, node_ref.generation),
+        );
         return 0;
     }
     visited.insert(node_ref);
@@ -207,10 +212,13 @@ fn count_pages_walk(
     let node_obj = match resolver.resolve(node_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructMissingKey,
-                format!("Failed to resolve /Pages node {}: {}", node_ref, e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!("Failed to resolve /Pages node {}: {}", node_ref, e),
+                )
+                .with_object_ref_parts(node_ref.object, node_ref.generation),
+            );
             return 0;
         }
     };
@@ -234,10 +242,13 @@ fn count_pages_walk(
             let kids = match dict.get("Kids") {
                 Some(k) => k,
                 None => {
-                    diagnostics.push(Diagnostic::with_static_no_offset(
-                        DiagCode::StructMissingKey,
-                        "STRUCT_MISSING_KEY: /Pages node missing /Kids",
-                    ));
+                    diagnostics.push(
+                        Diagnostic::with_static_no_offset(
+                            DiagCode::StructMissingKey,
+                            "STRUCT_MISSING_KEY: /Pages node missing /Kids",
+                        )
+                        .with_object_ref_parts(node_ref.object, node_ref.generation),
+                    );
                     return 0;
                 }
             };
@@ -319,10 +330,13 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
     let pages_obj = match resolver.resolve(pages_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructMissingKey,
-                format!("Failed to resolve root /Pages node {}: {}", pages_ref, e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!("Failed to resolve root /Pages node {}: {}", pages_ref, e),
+                )
+                .with_object_ref_parts(pages_ref.object, pages_ref.generation),
+            );
             return Err(diagnostics);
         }
     };
@@ -338,6 +352,7 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
     let pages = walk_page_tree(
         resolver,
         &pages_obj,
+        Some(pages_ref),
         &mut inherited,
         &mut visited,
         0,
@@ -347,13 +362,17 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
     // Validate page count against /Count
     let actual_count = pages.len() as i64;
     if declared_count > 0 && actual_count != declared_count {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::PageInvalidCount,
-            format!(
-                "STRUCT_INVALID_PAGE_COUNT: /Count declares {} pages, but tree contains {} pages",
-                declared_count, actual_count
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::PageInvalidCount,
+                format!(
+                    "STRUCT_INVALID_PAGE_COUNT: /Count declares {} pages, but tree contains {} pages",
+                    declared_count, actual_count
+                ),
+            )
+            // /Count lives on the root /Pages dictionary this walk started from.
+            .with_object_ref_parts(pages_ref.object, pages_ref.generation),
+        );
     }
 
     if !diagnostics.is_empty() && pages.is_empty() {
@@ -372,6 +391,10 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
 /// # Arguments
 /// * `resolver` - The xref resolver
 /// * `node` - The current node (either /Pages or /Page)
+/// * `node_ref` - The indirect reference this node was resolved from, when
+///   known (`None` for direct embedded dictionaries). Attached to the
+///   diagnostics this subtree emits, so the structured object location is
+///   populated wherever the source information is available.
 /// * `inherited` - Current inherited attributes (mutated during traversal)
 /// * `visited` - Set of visited object references for cycle detection
 /// * `depth` - Current nesting depth
@@ -382,6 +405,7 @@ pub fn flatten_page_tree(resolver: &XrefResolver, pages_ref: ObjRef) -> Result<V
 fn walk_page_tree(
     resolver: &XrefResolver,
     node: &PdfObject,
+    node_ref: Option<ObjRef>,
     inherited: &mut InheritedAttrs,
     visited: &mut HashSet<ObjRef>,
     depth: u8,
@@ -389,13 +413,16 @@ fn walk_page_tree(
 ) -> Vec<PageDict> {
     // Depth limit check
     if depth > MAX_PAGES_DEPTH {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructDepthExceeded,
-            format!(
-                "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
-                MAX_PAGES_DEPTH
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructDepthExceeded,
+                format!(
+                    "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
+                    MAX_PAGES_DEPTH
+                ),
+            )
+            .with_object_ref_parts_opt(node_ref.map(|r| (r.object, r.generation))),
+        );
         return Vec::new();
     }
 
@@ -414,22 +441,25 @@ fn walk_page_tree(
     let parent_inherited = inherited.clone();
 
     // Merge inheritable attributes from this node
-    merge_inherited_attrs(dict, resolver, inherited, diagnostics);
+    merge_inherited_attrs(dict, node_ref, inherited, diagnostics);
 
     match node_type {
         "Page" => {
             // Leaf node: emit a PageDict
-            vec![build_page_dict(node, resolver, inherited, diagnostics)]
+            vec![build_page_dict(node, node_ref, inherited, diagnostics)]
         }
         "Pages" => {
             // Internal node: recurse into /Kids
             let kids = match dict.get("Kids") {
                 Some(k) => k,
                 None => {
-                    diagnostics.push(Diagnostic::with_static_no_offset(
-                        DiagCode::StructMissingKey,
-                        "STRUCT_MISSING_KEY: /Pages node missing /Kids",
-                    ));
+                    diagnostics.push(
+                        Diagnostic::with_static_no_offset(
+                            DiagCode::StructMissingKey,
+                            "STRUCT_MISSING_KEY: /Pages node missing /Kids",
+                        )
+                        .with_object_ref_parts_opt(node_ref.map(|r| (r.object, r.generation))),
+                    );
                     return Vec::new();
                 }
             };
@@ -450,38 +480,45 @@ fn walk_page_tree(
             let mut pages = Vec::new();
             for kid in kids_array {
                 // Handle both direct (embedded dict) and indirect references
-                let kid_obj = match kid {
+                let (kid_obj, kid_ref) = match kid {
                     PdfObject::Ref(ref_) => {
                         // Check for cycles
                         if visited.contains(ref_) {
-                            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                DiagCode::StructCircularRef,
-                                format!(
-                                    "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
-                                    ref_
-                                ),
-                            ));
+                            diagnostics.push(
+                                Diagnostic::with_dynamic_no_offset(
+                                    DiagCode::StructCircularRef,
+                                    format!(
+                                        "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
+                                        ref_
+                                    ),
+                                )
+                                .with_object_ref_parts(ref_.object, ref_.generation),
+                            );
                             continue;
                         }
                         visited.insert(*ref_);
 
                         match resolver.resolve(*ref_) {
-                            Ok(obj) => obj,
+                            Ok(obj) => (obj, Some(*ref_)),
                             Err(e) => {
-                                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                    DiagCode::StructMissingKey,
-                                    format!(
-                                        "STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}",
-                                        ref_, e
-                                    ),
-                                ));
+                                diagnostics.push(
+                                    Diagnostic::with_dynamic_no_offset(
+                                        DiagCode::StructMissingKey,
+                                        format!(
+                                            "STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}",
+                                            ref_, e
+                                        ),
+                                    )
+                                    .with_object_ref_parts(ref_.object, ref_.generation),
+                                );
                                 continue;
                             }
                         }
                     }
                     PdfObject::Dict(_) => {
-                        // Direct dictionary - uncommon but legal
-                        kid.clone()
+                        // Direct dictionary - uncommon but legal; no object
+                        // reference exists to attach.
+                        (kid.clone(), None)
                     }
                     _ => {
                         // Invalid /Kids entry - skip
@@ -493,6 +530,7 @@ fn walk_page_tree(
                 let child_pages = walk_page_tree(
                     resolver,
                     &kid_obj,
+                    kid_ref,
                     inherited,
                     visited,
                     depth + 1,
@@ -518,9 +556,12 @@ fn walk_page_tree(
 ///
 /// Per PDF spec 7.7.3.4, only MediaBox, CropBox, Resources, and Rotate are inheritable.
 /// This function updates the `inherited` accumulator with any values present in `dict`.
+///
+/// `node_ref` is the indirect reference the dictionary was resolved from, when
+/// known; it is attached to the diagnostics emitted here.
 fn merge_inherited_attrs(
     dict: &PdfDict,
-    resolver: &XrefResolver,
+    node_ref: Option<ObjRef>,
     inherited: &mut InheritedAttrs,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -536,21 +577,23 @@ fn merge_inherited_attrs(
 
     // Resources (inheritable) - merge with existing resources
     if let Some(resources_obj) = dict.get("Resources") {
-        let resolved_resources = resolve_resource_object(resolver, resources_obj);
-        let merged = merge_resources(&inherited.resources, &resolved_resources);
+        let merged = merge_resources(&inherited.resources, resources_obj);
         inherited.resources = Arc::new(merged);
     }
 
     // Rotate (inheritable)
     if let Some(rot) = dict.get("Rotate").and_then(|o| o.as_int()) {
         if rot % 90 != 0 {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::PageInvalidRotate,
-                format!(
-                    "STRUCT_INVALID_ROTATE: /Rotate value {} is not a multiple of 90",
-                    rot
-                ),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::PageInvalidRotate,
+                    format!(
+                        "STRUCT_INVALID_ROTATE: /Rotate value {} is not a multiple of 90",
+                        rot
+                    ),
+                )
+                .with_object_ref_parts_opt(node_ref.map(|r| (r.object, r.generation))),
+            );
             // Clamp to nearest multiple of 90 (floor toward negative infinity)
             inherited.rotate = ((rot as f64 / 90.0).floor() as i64 * 90) as i32;
         } else {
@@ -563,9 +606,13 @@ fn merge_inherited_attrs(
 ///
 /// This function extracts all page-level attributes, substituting defaults for
 /// missing values and emitting diagnostics where appropriate.
+///
+/// `node_ref` is the indirect reference the page was resolved from, when known
+/// (the walker always has it for indirect kids); it is attached to the
+/// diagnostics emitted here as the structured object location.
 fn build_page_dict(
     page_obj: &PdfObject,
-    resolver: &XrefResolver,
+    node_ref: Option<ObjRef>,
     inherited: &InheritedAttrs,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> PageDict {
@@ -599,16 +646,31 @@ fn build_page_dict(
         ObjRef::new(0, 0)
     };
 
+    // The structured object location for this page's diagnostics: the
+    // reference the walker resolved (preferred) or the Indirect wrapper's id.
+    // The (0, 0) placeholder means "no reference known" (object 0 is always
+    // free per spec), so it is not attached.
+    let diag_ref = match node_ref {
+        Some(reference) => Some(reference),
+        None => match page_obj {
+            PdfObject::Indirect(ind) => Some(ind.id),
+            _ => None,
+        },
+    };
+
     // MediaBox: use page's own, or inherited, or default
     let media_box = if let Some(mb) = parse_rect(dict.get("MediaBox")) {
         mb
     } else if let Some(inherited_mb) = inherited.media_box {
         inherited_mb
     } else {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructMissingKey,
-            format!("STRUCT_MISSING_KEY: Page {} has no /MediaBox and no inherited /MediaBox; using US Letter default", obj_ref),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                format!("STRUCT_MISSING_KEY: Page {} has no /MediaBox and no inherited /MediaBox; using US Letter default", obj_ref),
+            )
+            .with_object_ref_parts_opt(diag_ref.map(|r| (r.object, r.generation))),
+        );
         DEFAULT_MEDIABOX
     };
 
@@ -628,14 +690,16 @@ fn build_page_dict(
     let mut rotate = inherited.rotate;
     if let Some(rot) = dict.get("Rotate").and_then(|o| o.as_int()) {
         if rot % 90 != 0 {
-            diagnostics.push(Diagnostic::with_dynamic(
-                DiagCode::PageInvalidRotate,
-                0,
-                format!(
-                    "Page {} has /Rotate value {} (not a multiple of 90)",
-                    obj_ref, rot
-                ),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::PageInvalidRotate,
+                    format!(
+                        "Page {} has /Rotate value {} (not a multiple of 90)",
+                        obj_ref, rot
+                    ),
+                )
+                .with_object_ref_parts_opt(diag_ref.map(|r| (r.object, r.generation))),
+            );
             // Clamp to nearest multiple of 90 (floor toward negative infinity)
             rotate = ((rot as f64 / 90.0).floor() as i64 * 90) as i32;
         } else {
@@ -646,8 +710,7 @@ fn build_page_dict(
 
     // Resources: merge page's own resources with inherited resources
     let resources = if let Some(resources_obj) = dict.get("Resources") {
-        let resolved_resources = resolve_resource_object(resolver, resources_obj);
-        let merged = merge_resources(&inherited.resources, &resolved_resources);
+        let merged = merge_resources(&inherited.resources, resources_obj);
         Arc::new(merged)
     } else {
         // No resources on this page - use inherited resources as-is
@@ -701,42 +764,6 @@ fn build_page_dict(
         aa,
         struct_parents,
     }
-}
-
-/// Resolve an indirect page resource dictionary and its indirect namespaces.
-///
-/// Real PDFs commonly store `/Resources` and namespaces such as `/Font` as
-/// separate indirect objects. Page-tree traversal already owns the resolver,
-/// so resolve those references before `merge_resources` converts the resource
-/// names into the compact `ResourceDict` used by content extraction.
-fn resolve_resource_object(resolver: &XrefResolver, object: &PdfObject) -> PdfObject {
-    let resolved = match object {
-        PdfObject::Ref(reference) => resolver.resolve(*reference).unwrap_or(PdfObject::Null),
-        _ => object.clone(),
-    };
-
-    let PdfObject::Dict(dict) = resolved else {
-        return resolved;
-    };
-
-    let mut resolved_dict = (*dict).clone();
-    for namespace in [
-        "Font",
-        "XObject",
-        "ExtGState",
-        "ColorSpace",
-        "Shading",
-        "Pattern",
-        "Properties",
-    ] {
-        if let Some(PdfObject::Ref(reference)) = resolved_dict.get(namespace) {
-            if let Ok(namespace_object) = resolver.resolve(*reference) {
-                resolved_dict.insert(namespace.into(), namespace_object);
-            }
-        }
-    }
-
-    PdfObject::Dict(Box::new(resolved_dict))
 }
 
 /// Parse a rectangle array [x1 y1 x2 y2] from a PdfObject.
@@ -1443,9 +1470,12 @@ mod tests {
 pub struct LazyPageIter<'a> {
     /// The xref resolver for resolving indirect references
     resolver: &'a XrefResolver,
-    /// Stack of (node_obj, inherited_attrs, kid_index) for depth-first traversal
-    /// Each element represents a level in the page tree we're currently traversing
-    stack: Vec<(PdfObject, InheritedAttrs, usize)>,
+    /// Stack of (node_obj, inherited_attrs, kid_index, node_ref) for depth-first traversal
+    /// Each element represents a level in the page tree we're currently traversing;
+    /// `node_ref` is the indirect reference the node was resolved from (None
+    /// for direct embedded dictionaries) and feeds the diagnostics' object
+    /// location.
+    stack: Vec<(PdfObject, InheritedAttrs, usize, Option<ObjRef>)>,
     /// Set of visited object references for cycle detection
     visited: HashSet<ObjRef>,
     /// Diagnostics collected during traversal
@@ -1467,10 +1497,13 @@ impl<'a> LazyPageIter<'a> {
         let pages_obj = match resolver.resolve(pages_ref) {
             Ok(obj) => obj,
             Err(e) => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructMissingKey,
-                    format!("Failed to resolve root /Pages node {}: {}", pages_ref, e),
-                ));
+                diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructMissingKey,
+                        format!("Failed to resolve root /Pages node {}: {}", pages_ref, e),
+                    )
+                    .with_object_ref_parts(pages_ref.object, pages_ref.generation),
+                );
                 return Err(diagnostics);
             }
         };
@@ -1483,7 +1516,7 @@ impl<'a> LazyPageIter<'a> {
         let mut stack = Vec::new();
 
         // Push root node onto stack
-        stack.push((pages_obj, inherited, 0));
+        stack.push((pages_obj, inherited, 0, Some(pages_ref)));
 
         Ok(Self {
             resolver,
@@ -1509,17 +1542,20 @@ impl<'a> Iterator for LazyPageIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stack.is_empty() {
-            let (node, mut inherited, kid_idx) = self.stack.pop().unwrap();
+            let (node, mut inherited, kid_idx, node_ref) = self.stack.pop().unwrap();
 
             // Depth limit check
             if self.stack.len() > MAX_PAGES_DEPTH as usize {
-                self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructDepthExceeded,
-                    format!(
-                        "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
-                        MAX_PAGES_DEPTH
-                    ),
-                ));
+                self.diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructDepthExceeded,
+                        format!(
+                            "STRUCT_DEPTH_EXCEEDED: /Pages nesting exceeds {} levels",
+                            MAX_PAGES_DEPTH
+                        ),
+                    )
+                    .with_object_ref_parts_opt(node_ref.map(|r| (r.object, r.generation))),
+                );
                 continue;
             }
 
@@ -1537,17 +1573,13 @@ impl<'a> Iterator for LazyPageIter<'a> {
             let parent_inherited = inherited.clone();
 
             // Merge inheritable attributes from this node
-            merge_inherited_attrs(dict, self.resolver, &mut inherited, &mut self.diagnostics);
+            merge_inherited_attrs(dict, node_ref, &mut inherited, &mut self.diagnostics);
 
             match node_type {
                 "Page" => {
                     // Leaf node: emit a PageDict
-                    let page_dict = build_page_dict(
-                        &node,
-                        self.resolver,
-                        &inherited,
-                        &mut self.diagnostics,
-                    );
+                    let page_dict =
+                        build_page_dict(&node, node_ref, &inherited, &mut self.diagnostics);
                     return Some(Ok(page_dict));
                 }
                 "Pages" => {
@@ -1555,10 +1587,13 @@ impl<'a> Iterator for LazyPageIter<'a> {
                     let kids = match dict.get("Kids") {
                         Some(k) => k,
                         None => {
-                            self.diagnostics.push(Diagnostic::with_static_no_offset(
-                                DiagCode::StructMissingKey,
-                                "STRUCT_MISSING_KEY: /Pages node missing /Kids",
-                            ));
+                            self.diagnostics.push(
+                                Diagnostic::with_static_no_offset(
+                                    DiagCode::StructMissingKey,
+                                    "STRUCT_MISSING_KEY: /Pages node missing /Kids",
+                                )
+                                .with_object_ref_parts_opt(node_ref.map(|r| (r.object, r.generation))),
+                            );
                             inherited = parent_inherited;
                             continue;
                         }
@@ -1585,6 +1620,7 @@ impl<'a> Iterator for LazyPageIter<'a> {
                             node.clone(),
                             pages_parent_inherited.clone(),
                             kid_idx + 1,
+                            node_ref,
                         ));
                     }
 
@@ -1593,37 +1629,44 @@ impl<'a> Iterator for LazyPageIter<'a> {
                         let kid = &kids_array[kid_idx];
 
                         // Handle both direct (embedded dict) and indirect references
-                        let kid_obj = match kid {
+                        let (kid_obj, kid_ref) = match kid {
                             PdfObject::Ref(ref_) => {
                                 // Check for cycles
                                 if self.visited.contains(ref_) {
-                                    self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                        DiagCode::StructCircularRef,
-                                        format!(
-                                            "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
-                                            ref_
-                                        ),
-                                    ));
+                                    self.diagnostics.push(
+                                        Diagnostic::with_dynamic_no_offset(
+                                            DiagCode::StructCircularRef,
+                                            format!(
+                                                "STRUCT_CIRCULAR_REF: /Pages node {} already visited",
+                                                ref_
+                                            ),
+                                        )
+                                        .with_object_ref_parts(ref_.object, ref_.generation),
+                                    );
                                     inherited = parent_inherited;
                                     continue;
                                 }
                                 self.visited.insert(*ref_);
 
                                 match self.resolver.resolve(*ref_) {
-                                    Ok(obj) => obj,
+                                    Ok(obj) => (obj, Some(*ref_)),
                                     Err(e) => {
-                                        self.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                            DiagCode::StructMissingKey,
-                                            format!("STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}", ref_, e),
-                                        ));
+                                        self.diagnostics.push(
+                                            Diagnostic::with_dynamic_no_offset(
+                                                DiagCode::StructMissingKey,
+                                                format!("STRUCT_MISSING_KEY: Failed to resolve /Kids entry {}: {}", ref_, e),
+                                            )
+                                            .with_object_ref_parts(ref_.object, ref_.generation),
+                                        );
                                         inherited = parent_inherited;
                                         continue;
                                     }
                                 }
                             }
                             PdfObject::Dict(_) => {
-                                // Direct dictionary - uncommon but legal
-                                kid.clone()
+                                // Direct dictionary - uncommon but legal; no
+                                // indirect object location is available.
+                                (kid.clone(), None)
                             }
                             _ => {
                                 // Invalid /Kids entry - skip
@@ -1633,7 +1676,8 @@ impl<'a> Iterator for LazyPageIter<'a> {
                         };
 
                         // Push kid onto stack with inherited attrs from this /Pages node
-                        self.stack.push((kid_obj, pages_parent_inherited, 0));
+                        self.stack
+                            .push((kid_obj, pages_parent_inherited, 0, kid_ref));
                     } else {
                         inherited = parent_inherited;
                     }
@@ -1791,10 +1835,9 @@ mod proptests {
             let inherited = InheritedAttrs::default();
             let mut diagnostics = Vec::new();
             let page_obj = PdfObject::Dict(Box::new(page_dict));
-            let resolver = XrefResolver::new();
 
             // This should never panic
-            let _ = build_page_dict(&page_obj, &resolver, &inherited, &mut diagnostics);
+            let _ = build_page_dict(&page_obj, None, &inherited, &mut diagnostics);
         }
 
         /// Test that flatten_page_tree handles arbitrary /Pages structures without panicking.

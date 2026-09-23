@@ -1914,7 +1914,7 @@ mod tests {
     fn test_asciihex_roundtrip_random() {
         // Round-trip test: encode random bytes as hex, decode back
         use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        use std::hash::Hash;
 
         // Create a deterministic 1 KB pattern using a seed
         let mut hasher = DefaultHasher::new();
@@ -3600,6 +3600,32 @@ impl DecodeResult {
     }
 }
 
+/// Retain the stream's source location on every diagnostic emitted by the
+/// decoder. The parser object reference and the diagnostic model intentionally
+/// use separate types, so the numeric parts are copied at this boundary.
+fn with_stream_context(
+    diagnostic: Diagnostic,
+    object_ref: Option<ObjRef>,
+    page_index: Option<usize>,
+) -> Diagnostic {
+    diagnostic
+        .with_object_ref_parts_opt(object_ref.map(|reference| {
+            (reference.object, reference.generation)
+        }))
+        .with_page_index_opt(page_index)
+}
+
+fn with_stream_contexts(
+    diagnostics: Vec<Diagnostic>,
+    object_ref: Option<ObjRef>,
+    page_index: Option<usize>,
+) -> Vec<Diagnostic> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| with_stream_context(diagnostic, object_ref, page_index))
+        .collect()
+}
+
 /// Scan for the `endstream` keyword starting at the given offset.
 ///
 /// This is a fallback for streams where /Length is indirect or missing.
@@ -3673,7 +3699,46 @@ pub fn decode_stream(
     opts: &ExtractionOptions,
     doc_decompress_counter: &mut u64,
 ) -> Vec<u8> {
-    decode_stream_impl(stream, source, opts, doc_decompress_counter, None, None).bytes
+    decode_stream_impl(
+        stream,
+        source,
+        opts,
+        doc_decompress_counter,
+        None,
+        None,
+        None,
+    )
+    .bytes
+}
+
+/// Decode a stream and retain diagnostics together with the decoded bytes.
+///
+/// This is the extraction-facing entry point. `decode_stream` remains the
+/// compatibility helper for callers that only need bytes, while this form
+/// preserves the indirect object and page context available at a page's
+/// content-stream site.
+pub fn decode_stream_with_context(
+    stream: &PdfStream,
+    source: &dyn PdfSource,
+    opts: &ExtractionOptions,
+    doc_decompress_counter: &mut u64,
+    obj_ref: Option<ObjRef>,
+    page_index: Option<usize>,
+) -> DecodeResult {
+    #[cfg(feature = "decrypt")]
+    let decryption_context = None;
+    #[cfg(not(feature = "decrypt"))]
+    let decryption_context = None;
+
+    decode_stream_impl(
+        stream,
+        source,
+        opts,
+        doc_decompress_counter,
+        obj_ref,
+        page_index,
+        decryption_context,
+    )
 }
 
 /// Decode a PDF stream by applying its filter pipeline (with decryption support).
@@ -3706,6 +3771,7 @@ pub fn decode_stream_with_decryption(
         opts,
         doc_decompress_counter,
         obj_ref,
+        None,
         decryption_context,
     )
     .bytes
@@ -3719,14 +3785,10 @@ fn decode_stream_impl(
     opts: &ExtractionOptions,
     doc_decompress_counter: &mut u64,
     obj_ref: Option<ObjRef>,
+    page_index: Option<usize>,
     #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
     #[cfg(not(feature = "decrypt"))] _decryption_context: Option<&()>,
 ) -> DecodeResult {
-    // `obj_ref` only feeds stream decryption below; without `decrypt` it has
-    // no consumer in this build.
-    #[cfg(not(feature = "decrypt"))]
-    let _ = obj_ref;
-
     // Step 0: Initialize stream metadata
     let mut stream_meta = StreamMeta::new();
 
@@ -3763,10 +3825,14 @@ fn decode_stream_impl(
                 return DecodeResult::with_meta_and_diagnostic(
                     Vec::new(),
                     stream_meta,
-                    Diagnostic::with_dynamic_no_offset(
-                        DiagCode::EncryptionWrongPassword,
-                        "Stream decryption failed: incorrect password or corrupt crypt filter"
-                            .to_string(),
+                    with_stream_context(
+                        Diagnostic::with_dynamic_no_offset(
+                            DiagCode::EncryptionWrongPassword,
+                            "Stream decryption failed: incorrect password or corrupt crypt filter"
+                                .to_string(),
+                        ),
+                        Some(obj_ref),
+                        page_index,
                     ),
                 );
             }
@@ -3787,12 +3853,16 @@ fn decode_stream_impl(
                 return DecodeResult::with_meta_and_diagnostic(
                     truncated,
                     stream_meta,
-                    Diagnostic::with_dynamic_no_offset(
-                        DiagCode::StreamBomb,
-                        format!(
-                            "Decompression bomb limit exceeded: {} bytes",
-                            opts.max_decompress_bytes
+                    with_stream_context(
+                        Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StreamBomb,
+                            format!(
+                                "Decompression bomb limit exceeded: {} bytes",
+                                opts.max_decompress_bytes
+                            ),
                         ),
+                        obj_ref,
+                        page_index,
                     ),
                 );
             }
@@ -3817,13 +3887,17 @@ fn decode_stream_impl(
         return DecodeResult::with_meta_and_diagnostic(
             current_bytes,
             stream_meta,
-            Diagnostic::with_dynamic_no_offset(
-                DiagCode::StreamInvalidParams,
-                format!(
-                    "/DecodeParms array length ({}) > /Filter array length ({})",
-                    decode_params.len(),
-                    filters.len()
+            with_stream_context(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StreamInvalidParams,
+                    format!(
+                        "/DecodeParms array length ({}) > /Filter array length ({})",
+                        decode_params.len(),
+                        filters.len()
+                    ),
                 ),
+                obj_ref,
+                page_index,
             ),
         );
     }
@@ -3958,7 +4032,11 @@ fn decode_stream_impl(
                         ));
                         return DecodeResult {
                             bytes: Vec::new(),
-                            diagnostics,
+                            diagnostics: with_stream_contexts(
+                                diagnostics,
+                                obj_ref,
+                                page_index,
+                            ),
                             meta: stream_meta,
                         };
                     }
@@ -3991,7 +4069,7 @@ fn decode_stream_impl(
 
     DecodeResult {
         bytes: current_bytes,
-        diagnostics,
+        diagnostics: with_stream_contexts(diagnostics, obj_ref, page_index),
         meta: stream_meta,
     }
 }
@@ -4195,6 +4273,37 @@ mod integration_tests {
 
         // Should return raw bytes since filter is unknown
         assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn test_decode_stream_context_retains_object_and_page() {
+        let data = b"raw data";
+        let source = MemorySource::new(data.to_vec());
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Name("CustomDecode".into()));
+        dict.insert("/Length".into(), PdfObject::Integer(data.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(data.len() as u64));
+
+        let mut counter = 0;
+        let result = decode_stream_with_context(
+            &stream,
+            &source,
+            &ExtractionOptions::default(),
+            &mut counter,
+            Some(ObjRef::new(19, 2)),
+            Some(4),
+        );
+
+        assert_eq!(result.bytes, data);
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == DiagCode::StreamUnknownFilter)
+            .expect("unknown filter should be diagnosed");
+        assert_eq!(diagnostic.object_ref, Some(crate::diagnostics::ObjRef::new(19, 2)));
+        assert_eq!(diagnostic.page_index, Some(4));
+        assert_eq!(diagnostic.severity().to_string(), "warning");
     }
 
     #[test]

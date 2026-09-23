@@ -735,10 +735,15 @@ pub fn check_coverage_for_pages(
     if suspects_mode {
         for page_result in &result.page_results {
             if let Some(diag_message) = page_result.fallback_diagnostic() {
-                result.diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructIncompleteCoverage,
-                    diag_message,
-                ));
+                // page_index ties the warning to its page in the structured
+                // diagnostic surface (docs/integrations/diagnostics-codes.md).
+                result.diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructIncompleteCoverage,
+                        diag_message,
+                    )
+                    .with_page_index(page_result.page_index),
+                );
             }
         }
     }
@@ -3802,6 +3807,19 @@ mod tests {
             coverage_result.diagnostics[0].code,
             DiagCode::StructIncompleteCoverage
         );
+        assert_eq!(
+            coverage_result.diagnostics[0].page_index,
+            Some(0),
+            "coverage fallback retains its source page"
+        );
+        assert_eq!(
+            coverage_result.diagnostics[0].severity(),
+            crate::diagnostics::Severity::Info
+        );
+        assert!(crate::diagnostics::suggested_action(
+            DiagCode::StructIncompleteCoverage
+        )
+        .is_some());
         assert!(coverage_result.diagnostics[0].message.contains("Page 0"));
         assert!(coverage_result.diagnostics[0].message.contains("60.0%"));
         assert!(coverage_result.diagnostics[0].message.contains("6/10"));
