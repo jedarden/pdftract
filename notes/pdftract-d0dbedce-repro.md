@@ -1,0 +1,854 @@
+# Repro transcript — "universal extraction failure" (parent pdftract-d0dbedce)
+
+Bead: pdftract-b4898662 (diagnosis chain bead 1 of 4). Evidence capture only — no
+verdict, no code change, no fix.
+
+## TL;DR — the failure is NOT universal at HEAD 7b5da77f
+
+**10 of the 11 named fixtures PASS both `extract` and `hash`** with genuine document
+models (real text blocks, real fingerprints, no error keys in the JSON). Exactly one
+fixture fails:
+
+```
+tests/fixtures/tagged-suspects-true.pdf
+  extract: exit 1 — "No trailer in xref section"                  (cause chain present)
+  hash:    exit 2 — "Failed to compute fingerprint from file"     (no cause chain)
+```
+
+Both error strings the parent bead describes as universal ("Failed to compute
+fingerprint from file" from hash, an opaque payload from extract) appear ONLY on this
+single fixture. Observation recorded as seen (classification is the next bead's job):
+`hash` prints a fixed wrapper message for any underlying failure and drops the cause
+chain, while `extract` on the same fixture names the underlying cause.
+
+Also recorded, observation only:
+
+- `remote_100page.pdf` extracts successfully but reports `page_count: 1`.
+- `test_working_copy.pdf` and `remote_100page.pdf` extract successfully with
+  0 blocks / empty text (structural success, no content).
+
+## Capture substrate
+
+- HEAD: `7b5da77fd471098e680a23798563bb152bbf135d`
+  ("test(pdftract-8ec45a90): scaffold shared fixture-discovery module under tests/common")
+- The shared working tree at /home/coding/pdftract does NOT compile: `cargo build
+  -p pdftract-cli` fails with `error: could not compile pdftract-core (lib) due to 18
+  previous errors` — all 18 are `error[E0308]: mismatched types`, coming from ~50
+  stranded in-flight edits by other workers (dirty files in `git status`, not touched
+  by this bead per its no-code-change scope). The capture therefore ran from a clean
+  `git archive HEAD` extraction at `/var/tmp/pdftract-repro-head`.
+- All 11 fixture files verified byte-identical (md5) between the shared workspace and
+  the HEAD extraction before capture.
+- Build: `timeout --kill-after=30s 600s cargo build -p pdftract-cli` — **exit 0** from
+  the extraction.
+- Binary: `/build/target-workers/debug/pdftract` (the global cargo `target-dir`
+  override in `~/.cargo/config.toml` sends every build there), mtime
+  `2026-09-22 20:24:47 -0400`, size 205607328 bytes — fresh, seconds after build
+  start. `pdftract --version` → `pdftract 0.1.0`.
+- Binary mtime re-checked after the full 22-run matrix: **unchanged** — no other
+  worker rebuilt the binary underneath this capture, so no stale shared build was
+  diagnosed.
+- Working directory for every run below: `/var/tmp/pdftract-repro-head`; fixture
+  paths in the transcript are repo-relative.
+- Raw per-run artifacts: `/var/tmp/repro-runs/<slug>/{extract,hash}.{out,err,exit}`.
+
+## Matrix (all 11 fixtures)
+
+| fixture | extract exit | hash exit | extract stdout | extract stderr | hash stdout | hash stderr |
+|---|---|---|---|---|---|---|
+| tests/fixtures/encoding/agl-only.pdf | 0 | 0 | 1131 B | empty | fingerprint | empty |
+| tests/fixtures/encoding/fingerprint-match.pdf | 0 | 0 | 1143 B | empty | fingerprint | empty |
+| tests/fixtures/encoding/no-mapping.pdf | 0 | 0 | 1237 B | empty | fingerprint | empty |
+| tests/fixtures/encoding/shape-match.pdf | 0 | 0 | 1143 B | empty | fingerprint | empty |
+| tests/fixtures/encoding/test_working_copy.pdf | 0 | 0 | 542 B | empty | fingerprint | empty |
+| tests/fixtures/encoding/unmapped-comprehensive.pdf | 0 | 0 | 1241 B | empty | fingerprint | empty |
+| tests/fixtures/encoding/unmapped-glyphs.pdf | 0 | 0 | 1241 B | empty | fingerprint | empty |
+| tests/fixtures/test-minimal.pdf | 0 | 0 | 1216 B | empty | fingerprint | empty |
+| tests/fixtures/tagged-suspects-true.pdf | **1** | **2** | empty | 113 B | empty | 47 B |
+| tests/fixtures/classify_page_simple.pdf | 0 | 0 | 1153 B | empty | fingerprint | empty |
+| tests/fixtures/remote_100page.pdf | 0 | 0 | 542 B | empty | fingerprint | empty |
+
+---
+
+## tests/fixtures/encoding/agl-only.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/agl-only.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            100.0,
+            700.0,
+            172.0,
+            712.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "ABCabc01 ,"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            100.0,
+            700.0,
+            172.0,
+            712.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "ABCabc01 ,"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/agl-only.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/encoding/fingerprint-match.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/fingerprint-match.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            100.0,
+            700.0,
+            128.8000030517578,
+            712.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Test"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            100.0,
+            700.0,
+            128.8000030517578,
+            712.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Test"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/fingerprint-match.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/encoding/no-mapping.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/no-mapping.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            78.80000305175781,
+            712.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            78.80000305175781,
+            712.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/no-mapping.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/encoding/shape-match.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/shape-match.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            100.0,
+            600.0,
+            215.1999969482422,
+            648.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Test"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            100.0,
+            600.0,
+            215.1999969482422,
+            648.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Test"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/shape-match.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/encoding/test_working_copy.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/test_working_copy.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 0,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 0
+  },
+  "pages": [
+    {
+      "blocks": [],
+      "index": 0,
+      "spans": [],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/test_working_copy.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/encoding/unmapped-comprehensive.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/unmapped-comprehensive.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            171.60000610351562,
+            2052.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            171.60000610351562,
+            2052.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/unmapped-comprehensive.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/encoding/unmapped-glyphs.pdf
+
+### Command: `pdftract extract tests/fixtures/encoding/unmapped-glyphs.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            171.60000610351562,
+            2052.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            171.60000610351562,
+            2052.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/encoding/unmapped-glyphs.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/test-minimal.pdf
+
+### Command: `pdftract extract tests/fixtures/test-minimal.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            56.79999923706055,
+            758.0999755859375,
+            186.1199951171875,
+            774.2000122070312
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Dummy PDF file"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            56.79999923706055,
+            758.0999755859375,
+            186.1199951171875,
+            774.2000122070312
+          ],
+          "color": "#000000",
+          "confidence": 1.0,
+          "confidence_source": "native",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Dummy PDF file"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/test-minimal.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/tagged-suspects-true.pdf
+
+### Command: `pdftract extract tests/fixtures/tagged-suspects-true.pdf --json -`
+
+- exit code: 1
+- stderr (full):
+
+```
+Error: Failed to extract PDF: tests/fixtures/tagged-suspects-true.pdf
+
+Caused by:
+    No trailer in xref section
+```
+- stdout (full `--json` payload):
+
+(empty)
+
+### Command: `pdftract hash tests/fixtures/tagged-suspects-true.pdf`
+
+- exit code: 2
+- stderr (full):
+
+```
+Error: Failed to compute fingerprint from file
+```
+- stdout (full):
+
+(empty)
+
+---
+
+## tests/fixtures/classify_page_simple.pdf
+
+### Command: `pdftract extract tests/fixtures/classify_page_simple.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            114.80000305175781,
+            712.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Test Page"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            50.0,
+            700.0,
+            114.80000305175781,
+            712.0
+          ],
+          "color": "#000000",
+          "confidence": 0.30000001192092896,
+          "confidence_source": "heuristic",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Test Page"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/classify_page_simple.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
+
+---
+
+## tests/fixtures/remote_100page.pdf
+
+### Command: `pdftract extract tests/fixtures/remote_100page.pdf --json -`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full `--json` payload):
+
+```
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 0,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 0
+  },
+  "pages": [
+    {
+      "blocks": [],
+      "index": 0,
+      "spans": [],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}
+```
+
+### Command: `pdftract hash tests/fixtures/remote_100page.pdf`
+
+- exit code: 0
+- stderr (full):
+
+(empty)
+- stdout (full):
+
+```
+pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8
+```
