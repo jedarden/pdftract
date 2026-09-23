@@ -367,11 +367,15 @@ where
 
     // Finalize the last block
     if !current_block_lines.is_empty() {
+        // A line can remain unassigned when column detection cannot establish
+        // an axis-aligned column (for example, for rotated text). Keep the
+        // block in the default column rather than panicking while finalizing
+        // the page.
         blocks.push(finalize_block(
             current_block_lines,
             block_avg_x0.unwrap(),
             block_median_font_size.unwrap(),
-            block_column.unwrap(),
+            block_column.unwrap_or(0),
         ));
     }
 
@@ -1280,6 +1284,22 @@ mod tests {
         let blocks = group_lines_into_blocks(lines, &column_widths);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].lines.len(), 1);
+    }
+
+    #[test]
+    fn test_unassigned_column_finalizes_in_default_column() {
+        let lines = vec![
+            // Rotated or otherwise unassigned lines do not have a column
+            // label, but must not prevent axis-aligned text from forming a
+            // block or panic during finalization.
+            make_test_line(100.0, [0.0, 95.0, 100.0, 105.0], 12.0, None),
+            make_test_line(90.0, [0.0, 85.0, 100.0, 95.0], 12.0, Some(0)),
+        ];
+        let blocks = group_lines_into_blocks(lines, &[100.0]);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].column, 0);
+        assert_eq!(blocks[0].lines.len(), 2);
     }
 
     #[test]
