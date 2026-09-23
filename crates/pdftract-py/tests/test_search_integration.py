@@ -58,6 +58,9 @@ class TestSearchIntegration:
         assert matches, "expected non-empty matches"
 
         for match in matches:
+            assert set(match) == {"page_index", "span_index", "text", "bbox"}, (
+                "native search matches should expose exactly the sdk::SearchMatch fields"
+            )
             assert isinstance(match["page_index"], int), "page_index should be int"
             assert isinstance(match["span_index"], int), "span_index should be int"
             assert isinstance(match["text"], str) and match["text"], (

@@ -23,7 +23,7 @@ use extract_markdown::extract_markdown_fn;
 
 // Re-export core types
 use pdftract_core::{AttachmentJson, ExtractionOptions, PageResult, TableJson};
-use pdftract_core::sdk::search as sdk_search;
+use pdftract_core::sdk::{search as sdk_search, SearchMatch};
 
 // ============================================================================
 // PyPdfProcessor - Python-facing PDF processor
@@ -274,6 +274,21 @@ fn py_extract_markdown(py: Python, path: &str, kwargs: Option<&PyDict>) -> PyRes
 // Contract method: search
 // ============================================================================
 
+/// Convert one SDK search result to the Python-facing match dictionary.
+///
+/// Keep this mapping next to the binding so the Python contract remains a
+/// direct representation of [`pdftract_core::sdk::SearchMatch`]. In
+/// particular, `bbox` is exposed as a four-element Python list, matching the
+/// other geometry fields produced by this module.
+fn search_match_to_py<'py>(py: Python<'py>, search_match: SearchMatch) -> PyResultAny<'py> {
+    let match_dict = PyDict::new(py);
+    match_dict.set_item("page_index", search_match.page_index)?;
+    match_dict.set_item("span_index", search_match.span_index)?;
+    match_dict.set_item("text", search_match.text)?;
+    match_dict.set_item("bbox", search_match.bbox.to_vec())?;
+    Ok(match_dict.into())
+}
+
 /// Search for text patterns in a PDF.
 ///
 /// This function searches for a pattern in the PDF text content and returns
@@ -340,11 +355,7 @@ fn search<'py>(
     // Convert matches to Python list of dicts
     let matches_list = pyo3::types::PyList::empty(py);
     for search_match in matches {
-        let match_dict = PyDict::new(py);
-        match_dict.set_item("page_index", search_match.page_index)?;
-        match_dict.set_item("span_index", search_match.span_index)?;
-        match_dict.set_item("text", search_match.text)?;
-        match_dict.set_item("bbox", search_match.bbox.to_vec())?;
+        let match_dict = search_match_to_py(py, search_match)?;
         matches_list.append(match_dict)?;
     }
     dict.set_item("matches", matches_list)?;
