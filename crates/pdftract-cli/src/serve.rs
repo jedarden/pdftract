@@ -162,6 +162,17 @@ impl ServeState {
         };
         #[cfg(feature = "metrics")]
         let metrics = crate::metrics::Registry::new();
+        // Publish the cache's current size before the first request.  The
+        // gauge is a point-in-time view of the on-disk index, not merely the
+        // size of entries written by this process since startup.
+        #[cfg(feature = "metrics")]
+        if !cache_disabled {
+            if let Some(dir) = cache_dir.as_deref() {
+                if let Ok(Some(index)) = pdftract_core::cache::layout::load_index(dir) {
+                    metrics.set_cache_size_bytes(index.total_bytes);
+                }
+            }
+        }
         // The cache location is fixed at startup, so the readiness probe
         // can capture it; a disabled or absent cache makes the condition
         // trivially pass (plan: the check applies "if enabled").
@@ -655,6 +666,24 @@ async fn metrics_http_middleware(
     response
 }
 
+/// Record structured diagnostics on the registry (`metrics` feature).
+///
+/// Keeping this separate from the extraction result recorder lets the
+/// streaming path report the diagnostics carried by its footer without
+/// creating a second extraction observation.
+#[cfg(feature = "metrics")]
+fn record_diagnostics(
+    metrics: &crate::metrics::Registry,
+    diagnostics: &[pdftract_core::schema::DiagnosticJson],
+) {
+    for diagnostic in diagnostics {
+        metrics.inc_diagnostic(
+            &diagnostic.code,
+            diagnostic_metric_severity_name(&diagnostic.severity),
+        );
+    }
+}
+
 /// Record one completed extraction on the registry (`metrics` feature):
 /// duration histogram, result/ocr counter, emitted pages, cache hit or
 /// miss, and the document's diagnostics with code and severity labels.
@@ -679,12 +708,7 @@ fn record_extraction(
     if let Some(code) = extraction_diagnostic {
         metrics.inc_diagnostic(code.name(), diagnostic_metric_severity(code.severity()));
     }
-    for diagnostic in diagnostics_detailed {
-        metrics.inc_diagnostic(
-            &diagnostic.code,
-            diagnostic_metric_severity_name(&diagnostic.severity),
-        );
-    }
+    record_diagnostics(metrics, diagnostics_detailed);
 }
 
 /// Map core diagnostic severities to the labels documented by the metrics
@@ -778,6 +802,11 @@ async fn extract_handler(
         #[cfg(feature = "metrics")]
         let task_metrics = request_metrics.clone();
         tokio::task::spawn_blocking(move || {
+            // The synchronous extraction is the unit of work submitted by
+            // this service to the worker pool.  Hold the guard for its full
+            // lifetime so the sampler can observe live utilization.
+            #[cfg(feature = "metrics")]
+            let _busy = crate::metrics::sampler::BusyGuard::begin();
             let cache_dir_ref = cache_dir.as_deref();
             let extraction = cache::extract_with_cache(
                 &pdf_file_clone,
@@ -916,6 +945,8 @@ async fn extract_text_handler(
         #[cfg(feature = "metrics")]
         let task_metrics = request_metrics.clone();
         tokio::task::spawn_blocking(move || {
+            #[cfg(feature = "metrics")]
+            let _busy = crate::metrics::sampler::BusyGuard::begin();
             let cache_dir_ref = cache_dir.as_deref();
             let extraction = cache::extract_with_cache(
                 &pdf_file,
@@ -1060,6 +1091,9 @@ async fn extract_stream_handler(
     tokio::task::spawn_blocking(move || {
         use pdftract_core::extract::extract_pdf_ndjson;
 
+        #[cfg(feature = "metrics")]
+        let _busy = crate::metrics::sampler::BusyGuard::begin();
+
         // Clone sender for error handling
         let tx_for_error = tx.clone();
 
@@ -1102,6 +1136,7 @@ async fn extract_stream_handler(
                 Ok(metadata) => {
                     stream_metrics.inc_extraction("success", OCR_PATH_ENABLED);
                     stream_metrics.add_pages_extracted(metadata.page_count as u64);
+                    record_diagnostics(&stream_metrics, &metadata.diagnostics_detailed);
                 }
                 Err(_) => stream_metrics.inc_extraction("error", OCR_PATH_ENABLED),
             }
@@ -1594,6 +1629,32 @@ mod tests {
         assert_eq!(CacheStatus::from_string("miss"), CacheStatus::Miss);
         assert_eq!(CacheStatus::from_string("skipped"), CacheStatus::Skipped);
         assert_eq!(CacheStatus::from_string("invalid"), CacheStatus::Skipped);
+    }
+
+    /// Metrics: an existing cache is represented immediately after server
+    /// startup, before the first request has a chance to refresh the gauge.
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_cache_size_is_initialized_from_existing_index() {
+        let cache_dir = tempfile::tempdir().expect("temp cache dir");
+        let mut index = pdftract_core::cache::layout::CacheIndex::default();
+        index.total_bytes = 4096;
+        pdftract_core::cache::layout::save_index(cache_dir.path(), &index)
+            .expect("write cache index");
+
+        let state = ServeState::new(
+            Some(cache_dir.path().to_path_buf()),
+            64 * 1024 * 1024,
+            false,
+            None,
+            1 << 30,
+            false,
+        );
+
+        assert!(state
+            .metrics
+            .render()
+            .contains("pdftract_cache_size_bytes 4096\n"));
     }
 
     /// Helper to load a valid test PDF.

@@ -498,6 +498,14 @@ async fn handle_post_request(
             (Instant::now(), extraction_ocr_enabled())
         });
 
+        // MCP extraction tools execute the same synchronous core pipeline as
+        // the serve handlers.  Keep the worker-pool guard alive across the
+        // dispatch so the periodic utilization sampler sees this work too.
+        #[cfg(feature = "metrics")]
+        let _busy = extraction
+            .as_ref()
+            .map(|_| crate::metrics::sampler::BusyGuard::begin());
+
         let response = handle_request(request, registry, root);
 
         #[cfg(feature = "metrics")]
@@ -1414,6 +1422,23 @@ mod tests {
             ),
             "missing STRUCT_MISSING_KEY counter:\n{text}"
         );
+    }
+
+    /// Metrics: an MCP extraction failure still records one timed error and
+    /// always settles the in-flight gauge, just like the serve path.
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_record_mcp_extraction_failure() {
+        let registry = crate::metrics::Registry::new();
+        registry.inc_inflight_extractions();
+        let response = Response::error(Id::Number(1), ErrorObject::invalid_params());
+
+        record_mcp_extraction(&registry, Instant::now(), false, &response);
+
+        let text = registry.render();
+        assert!(text.contains("pdftract_extractions_total{result=\"error\",ocr=\"false\"} 1\n"));
+        assert!(text.contains("pdftract_extraction_duration_seconds_count 1\n"));
+        assert!(text.contains("pdftract_inflight_extractions 0\n"));
     }
 
     /// Metrics: a `tools/call` to `extract` driven through the HTTP
