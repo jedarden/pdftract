@@ -37,6 +37,24 @@
 //! - security/ - Security-related fixtures
 //! - vector/ - Vector PDF fixtures
 //! - Various root-level fixtures
+//!
+//! # Shared-module scaffold
+//!
+//! The shared home for cross-binary reuse of these helpers is
+//! `tests/common/fixture_discovery.rs` (included by consumers via
+//! `mod common;` — each `tests/*.rs` file is a separate integration-test
+//! binary, so direct `use` of items from this file cannot work across
+//! siblings). The helper move/publicity work factors the reusable API into
+//! that shared module.
+
+// `#[path]` pins the include to tests/common/ in every inclusion context:
+// this file is both a standalone test binary (crate root — plain `mod
+// common;` would look in tests/) and a module included by sibling binaries
+// via `mod fixture_discovery;` (where implicit lookup would look in
+// tests/fixture_discovery/). The attribute resolves relative to the
+// directory of THIS file, so both contexts find the same shared module.
+#[path = "common/mod.rs"]
+mod common;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
