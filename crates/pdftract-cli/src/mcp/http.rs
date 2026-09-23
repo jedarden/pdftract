@@ -502,9 +502,9 @@ async fn handle_post_request(
         // the serve handlers.  Keep the worker-pool guard alive across the
         // dispatch so the periodic utilization sampler sees this work too.
         #[cfg(feature = "metrics")]
-        let _busy = extraction
-            .as_ref()
-            .map(|_| crate::metrics::sampler::BusyGuard::begin());
+        let _busy = extraction.as_ref().map(|_| {
+            crate::metrics::sampler::BusyGuard::begin_with_registry(state.metrics.clone())
+        });
 
         let response = handle_request(request, registry, root);
 

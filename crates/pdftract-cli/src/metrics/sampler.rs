@@ -12,6 +12,8 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::Registry;
+
 /// Number of rayon tasks currently executing under a [`BusyGuard`].
 static RAYON_BUSY_TASKS: AtomicUsize = AtomicUsize::new(0);
 
@@ -20,17 +22,43 @@ static RAYON_BUSY_TASKS: AtomicUsize = AtomicUsize::new(0);
 #[must_use = "the guard must be held for the task's whole execution"]
 pub struct BusyGuard(());
 
+/// RAII marker for work associated with a registry.  In addition to the
+/// process-wide count used by the sampler, publish an immediate sample so
+/// short requests are visible without waiting for the periodic task.
+pub struct RegisteredBusyGuard {
+    registry: Registry,
+}
+
 impl BusyGuard {
     /// Mark one rayon task as started (call on a pool worker thread).
     pub fn begin() -> Self {
         RAYON_BUSY_TASKS.fetch_add(1, Ordering::Relaxed);
         BusyGuard(())
     }
+
+    /// Mark one task as busy and publish the new utilization immediately.
+    ///
+    /// The periodic sampler remains the source of truth for long-lived idle
+    /// periods, while this hook keeps the gauge responsive for short-lived
+    /// extraction requests.
+    pub fn begin_with_registry(registry: Registry) -> RegisteredBusyGuard {
+        RAYON_BUSY_TASKS.fetch_add(1, Ordering::Relaxed);
+        registry.set_rayon_pool_utilization(sample_utilization());
+        RegisteredBusyGuard { registry }
+    }
 }
 
 impl Drop for BusyGuard {
     fn drop(&mut self) {
         RAYON_BUSY_TASKS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl Drop for RegisteredBusyGuard {
+    fn drop(&mut self) {
+        RAYON_BUSY_TASKS.fetch_sub(1, Ordering::Relaxed);
+        self.registry
+            .set_rayon_pool_utilization(sample_utilization());
     }
 }
 
@@ -54,5 +82,12 @@ mod tests {
 
         drop(guard);
         assert_eq!(super::sample_utilization(), 0.0);
+
+        let registry = super::Registry::new();
+        let registered_guard = super::BusyGuard::begin_with_registry(registry.clone());
+        assert!(registry.rayon_pool_utilization() > 0.0);
+
+        drop(registered_guard);
+        assert_eq!(registry.rayon_pool_utilization(), 0.0);
     }
 }

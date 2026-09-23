@@ -168,9 +168,7 @@ impl ServeState {
         #[cfg(feature = "metrics")]
         if !cache_disabled {
             if let Some(dir) = cache_dir.as_deref() {
-                if let Ok(Some(index)) = pdftract_core::cache::layout::load_index(dir) {
-                    metrics.set_cache_size_bytes(index.total_bytes);
-                }
+                refresh_cache_size(&metrics, dir, cache_size_bytes);
             }
         }
         // The cache location is fixed at startup, so the readiness probe
@@ -692,13 +690,14 @@ fn record_extraction(
     metrics: &crate::metrics::Registry,
     elapsed_seconds: f64,
     result_label: &str,
+    ocr: bool,
     pages: u64,
     cache_status: Option<&str>,
     diagnostics_detailed: &[pdftract_core::schema::DiagnosticJson],
     extraction_diagnostic: Option<DiagCode>,
 ) {
     metrics.observe_extraction_duration(elapsed_seconds);
-    metrics.inc_extraction(result_label, OCR_PATH_ENABLED);
+    metrics.inc_extraction(result_label, ocr);
     metrics.add_pages_extracted(pages);
     match cache_status {
         Some("hit") => metrics.inc_cache_hit(),
@@ -709,6 +708,116 @@ fn record_extraction(
         metrics.inc_diagnostic(code.name(), diagnostic_metric_severity(code.severity()));
     }
     record_diagnostics(metrics, diagnostics_detailed);
+}
+
+/// Own the lifecycle of one extraction submitted to `spawn_blocking`.
+///
+/// The guard lives inside the blocking task, rather than in the request
+/// future. That makes cancellation and panics observable too: dropping a
+/// task that never starts, or unwinding a task that fails, records one error
+/// and decrements the in-flight gauge exactly once.
+#[cfg(feature = "metrics")]
+struct ExtractionMetricsGuard {
+    metrics: crate::metrics::Registry,
+    started: std::time::Instant,
+    cache_status_on_error: Option<&'static str>,
+    done: bool,
+}
+
+#[cfg(feature = "metrics")]
+impl ExtractionMetricsGuard {
+    fn new(metrics: crate::metrics::Registry, cache_enabled: bool) -> Self {
+        metrics.inc_inflight_extractions();
+        Self {
+            metrics,
+            started: std::time::Instant::now(),
+            cache_status_on_error: cache_enabled.then_some("miss"),
+            done: false,
+        }
+    }
+
+    fn finish(
+        &mut self,
+        result_label: &str,
+        pages: u64,
+        cache_status: Option<&str>,
+        diagnostics_detailed: &[pdftract_core::schema::DiagnosticJson],
+        extraction_diagnostic: Option<DiagCode>,
+    ) {
+        if self.done {
+            return;
+        }
+        self.done = true;
+        self.metrics.dec_inflight_extractions();
+        record_extraction(
+            &self.metrics,
+            self.started.elapsed().as_secs_f64(),
+            result_label,
+            OCR_PATH_ENABLED,
+            pages,
+            cache_status,
+            diagnostics_detailed,
+            extraction_diagnostic,
+        );
+    }
+
+    fn finish_success(
+        &mut self,
+        result: &pdftract_core::extract::ExtractionResult,
+        cache_status: &str,
+    ) {
+        self.finish(
+            "success",
+            result.pages.len() as u64,
+            Some(cache_status),
+            result.metadata.diagnostics_detailed.as_slice(),
+            None,
+        );
+    }
+
+    fn finish_error(&mut self, extraction_diagnostic: Option<DiagCode>) {
+        self.finish(
+            "error",
+            0,
+            self.cache_status_on_error,
+            &[],
+            extraction_diagnostic,
+        );
+    }
+}
+
+#[cfg(feature = "metrics")]
+impl Drop for ExtractionMetricsGuard {
+    fn drop(&mut self) {
+        // A task that is cancelled before it reaches its explicit result
+        // handling, or one that panics, is still a completed error outcome.
+        self.finish_error(None);
+    }
+}
+
+/// Refresh the cache-size gauge from entry files, falling back to the index
+/// for a cache that only has metadata (as in startup recovery/tests).
+#[cfg(feature = "metrics")]
+fn refresh_cache_size(
+    metrics: &crate::metrics::Registry,
+    cache_dir: &std::path::Path,
+    cache_size_bytes: u64,
+) {
+    let indexed_size = || {
+        pdftract_core::cache::layout::load_index(cache_dir)
+            .ok()
+            .flatten()
+            .map(|index| index.total_bytes)
+    };
+    let size = match pdftract_core::cache::Lru::new(cache_dir, cache_size_bytes)
+        .current_size_bytes()
+    {
+        Ok(size) if size > 0 => Some(size),
+        Ok(_) | Err(_) => indexed_size(),
+    };
+    if let Some(size) = size {
+        metrics.set_cache_size_bytes(size);
+    }
 }
 
 /// Map core diagnostic severities to the labels documented by the metrics
@@ -791,22 +900,20 @@ async fn extract_handler(
 
     // Perform extraction with cache integration
     #[cfg(feature = "metrics")]
-    let request_metrics = state.metrics.clone();
-    #[cfg(feature = "metrics")]
-    let extraction_started = std::time::Instant::now();
-    #[cfg(feature = "metrics")]
-    request_metrics.inc_inflight_extractions();
+    let extraction_metrics = ExtractionMetricsGuard::new(state.metrics.clone(), !cache_disabled);
 
     let pdf_file_clone = pdf_file.clone();
     let extracted = {
         #[cfg(feature = "metrics")]
-        let task_metrics = request_metrics.clone();
+        let mut extraction_metrics = extraction_metrics;
         tokio::task::spawn_blocking(move || {
             // The synchronous extraction is the unit of work submitted by
             // this service to the worker pool.  Hold the guard for its full
             // lifetime so the sampler can observe live utilization.
             #[cfg(feature = "metrics")]
-            let _busy = crate::metrics::sampler::BusyGuard::begin();
+            let _busy = crate::metrics::sampler::BusyGuard::begin_with_registry(
+                extraction_metrics.metrics.clone(),
+            );
             let cache_dir_ref = cache_dir.as_deref();
             let extraction = cache::extract_with_cache(
                 &pdf_file_clone,
@@ -820,16 +927,24 @@ async fn extract_handler(
             #[cfg(feature = "metrics")]
             if !cache_disabled {
                 if let Some(dir) = cache_dir_ref {
-                    if let Ok(Some(index)) = pdftract_core::cache::layout::load_index(dir) {
-                        task_metrics.set_cache_size_bytes(index.total_bytes);
-                    }
+                    refresh_cache_size(&extraction_metrics.metrics, dir, cache_size_bytes);
                 }
             }
-            extraction.map_err(|e| {
-                let msg = format!("{:?}", e);
-                let diag_code = extract_diag_code_from_error(&msg);
-                AxumError::Extraction(msg, diag_code)
-            })
+
+            match extraction {
+                Ok((result, status, age)) => {
+                    #[cfg(feature = "metrics")]
+                    extraction_metrics.finish_success(&result, &status);
+                    Ok((result, status, age))
+                }
+                Err(e) => {
+                    let msg = format!("{:?}", e);
+                    let diag_code = extract_diag_code_from_error(&msg);
+                    #[cfg(feature = "metrics")]
+                    extraction_metrics.finish_error(diag_code);
+                    Err(AxumError::Extraction(msg, diag_code))
+                }
+            }
         })
         .await
         .map_err(|e| {
@@ -842,43 +957,6 @@ async fn extract_handler(
             }
         })
     };
-
-    // Observation only (`metrics` feature): the gauge always settles, and
-    // duration/result/pages/cache/diagnostics are recorded for both the
-    // success and the error outcome.
-    #[cfg(feature = "metrics")]
-    {
-        request_metrics.dec_inflight_extractions();
-        // `extracted` nests two Results: the join error (outer) and the
-        // extraction error (inner) — either outcome is a metric "error".
-        let (result_label, pages, cache_status_label, diagnostics_detailed) = match &extracted {
-            Ok(Ok((result, status, _age))) => (
-                "success",
-                result.pages.len() as u64,
-                Some(status.as_str()),
-                result.metadata.diagnostics_detailed.as_slice(),
-            ),
-            _ => (
-                "error",
-                0,
-                None,
-                &[] as &[pdftract_core::schema::DiagnosticJson],
-            ),
-        };
-        let extraction_diagnostic = match &extracted {
-            Ok(Err(AxumError::Extraction(_, code))) => *code,
-            _ => None,
-        };
-        record_extraction(
-            &request_metrics,
-            extraction_started.elapsed().as_secs_f64(),
-            result_label,
-            pages,
-            cache_status_label,
-            diagnostics_detailed,
-            extraction_diagnostic,
-        );
-    }
 
     let (mut result, cache_status, cache_age) = extracted??;
 
@@ -935,18 +1013,16 @@ async fn extract_text_handler(
     drop(cache_state);
 
     #[cfg(feature = "metrics")]
-    let request_metrics = state.metrics.clone();
-    #[cfg(feature = "metrics")]
-    let extraction_started = std::time::Instant::now();
-    #[cfg(feature = "metrics")]
-    request_metrics.inc_inflight_extractions();
+    let extraction_metrics = ExtractionMetricsGuard::new(state.metrics.clone(), !cache_disabled);
 
     let extracted = {
         #[cfg(feature = "metrics")]
-        let task_metrics = request_metrics.clone();
+        let mut extraction_metrics = extraction_metrics;
         tokio::task::spawn_blocking(move || {
             #[cfg(feature = "metrics")]
-            let _busy = crate::metrics::sampler::BusyGuard::begin();
+            let _busy = crate::metrics::sampler::BusyGuard::begin_with_registry(
+                extraction_metrics.metrics.clone(),
+            );
             let cache_dir_ref = cache_dir.as_deref();
             let extraction = cache::extract_with_cache(
                 &pdf_file,
@@ -960,16 +1036,24 @@ async fn extract_text_handler(
             #[cfg(feature = "metrics")]
             if !cache_disabled {
                 if let Some(dir) = cache_dir_ref {
-                    if let Ok(Some(index)) = pdftract_core::cache::layout::load_index(dir) {
-                        task_metrics.set_cache_size_bytes(index.total_bytes);
-                    }
+                    refresh_cache_size(&extraction_metrics.metrics, dir, cache_size_bytes);
                 }
             }
-            extraction.map_err(|e| {
-                let msg = format!("{:?}", e);
-                let diag_code = extract_diag_code_from_error(&msg);
-                AxumError::Extraction(msg, diag_code)
-            })
+
+            match extraction {
+                Ok((result, status, age)) => {
+                    #[cfg(feature = "metrics")]
+                    extraction_metrics.finish_success(&result, &status);
+                    Ok((result, status, age))
+                }
+                Err(e) => {
+                    let msg = format!("{:?}", e);
+                    let diag_code = extract_diag_code_from_error(&msg);
+                    #[cfg(feature = "metrics")]
+                    extraction_metrics.finish_error(diag_code);
+                    Err(AxumError::Extraction(msg, diag_code))
+                }
+            }
         })
         .await
         .map_err(|e| {
@@ -982,40 +1066,6 @@ async fn extract_text_handler(
             }
         })
     };
-
-    // Observation only (`metrics` feature) — see extract_handler.
-    #[cfg(feature = "metrics")]
-    {
-        request_metrics.dec_inflight_extractions();
-        // `extracted` nests two Results — see extract_handler.
-        let (result_label, pages, cache_status_label, diagnostics_detailed) = match &extracted {
-            Ok(Ok((result, status, _age))) => (
-                "success",
-                result.pages.len() as u64,
-                Some(status.as_str()),
-                result.metadata.diagnostics_detailed.as_slice(),
-            ),
-            _ => (
-                "error",
-                0,
-                None,
-                &[] as &[pdftract_core::schema::DiagnosticJson],
-            ),
-        };
-        let extraction_diagnostic = match &extracted {
-            Ok(Err(AxumError::Extraction(_, code))) => *code,
-            _ => None,
-        };
-        record_extraction(
-            &request_metrics,
-            extraction_started.elapsed().as_secs_f64(),
-            result_label,
-            pages,
-            cache_status_label,
-            diagnostics_detailed,
-            extraction_diagnostic,
-        );
-    }
 
     let (result, cache_status, _cache_age) = extracted??;
 
@@ -1083,16 +1133,18 @@ async fn extract_stream_handler(
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
 
     #[cfg(feature = "metrics")]
-    let stream_metrics = state.metrics.clone();
-    #[cfg(feature = "metrics")]
-    stream_metrics.inc_inflight_extractions();
+    let extraction_metrics = ExtractionMetricsGuard::new(state.metrics.clone(), false);
 
     // Spawn extraction task in background
     tokio::task::spawn_blocking(move || {
         use pdftract_core::extract::extract_pdf_ndjson;
 
         #[cfg(feature = "metrics")]
-        let _busy = crate::metrics::sampler::BusyGuard::begin();
+        let mut extraction_metrics = extraction_metrics;
+        #[cfg(feature = "metrics")]
+        let _busy = crate::metrics::sampler::BusyGuard::begin_with_registry(
+            extraction_metrics.metrics.clone(),
+        );
 
         // Clone sender for error handling
         let tx_for_error = tx.clone();
@@ -1118,28 +1170,22 @@ async fn extract_stream_handler(
 
         let writer = ChannelWriter { tx };
 
-        #[cfg(feature = "metrics")]
-        let extraction_started = std::time::Instant::now();
-
         // Extract to NDJSON, streaming each page as it's extracted
         let extraction = extract_pdf_ndjson(&pdf_file, &options, writer);
 
-        // Observation only (`metrics` feature). Recorded before the last
-        // channel sender drops, so a fully-drained response always sees
-        // these values.
+        // Record before the last sender drops, so a fully-drained response
+        // always sees the completion values. The guard's Drop path covers a
+        // task cancelled before this match or a panic during extraction.
         #[cfg(feature = "metrics")]
-        {
-            stream_metrics.dec_inflight_extractions();
-            stream_metrics
-                .observe_extraction_duration(extraction_started.elapsed().as_secs_f64());
-            match &extraction {
-                Ok(metadata) => {
-                    stream_metrics.inc_extraction("success", OCR_PATH_ENABLED);
-                    stream_metrics.add_pages_extracted(metadata.page_count as u64);
-                    record_diagnostics(&stream_metrics, &metadata.diagnostics_detailed);
-                }
-                Err(_) => stream_metrics.inc_extraction("error", OCR_PATH_ENABLED),
-            }
+        match &extraction {
+            Ok(metadata) => extraction_metrics.finish(
+                "success",
+                metadata.page_count as u64,
+                None,
+                &metadata.diagnostics_detailed,
+                None,
+            ),
+            Err(_) => extraction_metrics.finish_error(None),
         }
 
         if let Err(e) = extraction {
@@ -2243,6 +2289,61 @@ mod tests {
             text.contains("pdftract_inflight_extractions 0\n"),
             "inflight gauge did not settle:\n{text}"
         );
+    }
+
+    /// A blocking task can be cancelled before it starts. Its owned guard
+    /// must still publish one timed error and release the in-flight gauge.
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_cancelled_extraction_records_error_and_releases_inflight() {
+        let metrics = crate::metrics::Registry::new();
+        let guard = ExtractionMetricsGuard::new(metrics.clone(), true);
+        assert!(metrics
+            .render()
+            .contains("pdftract_inflight_extractions 1\n"));
+
+        drop(guard);
+
+        let text = metrics.render();
+        assert!(text.contains("pdftract_extractions_total{result=\"error\",ocr=\"false\"} 1\n"));
+        assert!(text.contains("pdftract_cache_misses_total 1\n"));
+        assert!(text.contains("pdftract_extraction_duration_seconds_count 1\n"));
+        assert!(text.contains("pdftract_inflight_extractions 0\n"));
+    }
+
+    /// A cache location that is an existing file is not writable as a cache
+    /// directory. Extraction remains best-effort, while the miss metric and
+    /// the production readiness probe report the distinct states.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_cache_unwritable_path_records_miss_and_unready() {
+        use tower::ServiceExt;
+
+        let cache_file = tempfile::NamedTempFile::new().expect("cache sentinel file");
+        let state = ServeState::new(
+            Some(cache_file.path().to_path_buf()),
+            64 * 1024 * 1024,
+            false,
+            None,
+            1 << 30,
+            false,
+        );
+        let metrics = state.metrics.clone();
+        let readiness = state.readiness.clone();
+        let app = oneshot_app(state);
+
+        let response = app
+            .oneshot(multipart_file_request("/extract", &fixture_pdf_bytes()))
+            .await
+            .expect("extraction request");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let text = metrics.render();
+        assert!(text.contains("pdftract_cache_misses_total 1\n"));
+        assert!(text.contains("pdftract_cache_size_bytes 0\n"));
+        let report = readiness.evaluate();
+        assert!(!report.cache_writable);
+        assert_eq!(report.failed_conditions(), vec!["cache_unwritable"]);
     }
 
     /// Metrics: a streamed extraction counts its result, pages, duration,
