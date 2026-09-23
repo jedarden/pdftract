@@ -271,9 +271,7 @@ fn bdc_name_props_indirect_reference_recovers_mcid() {
 fn public_extract_pdf_indirect_properties_recovers_mcid_end_to_end() {
     let path = fixture_path("mc_properties_indirect.pdf");
     let result = extract_pdf(&path, &ExtractionOptions::default()).unwrap_or_else(|error| {
-        panic!(
-            "public extract_pdf should resolve the indirect /Properties fixture: {error:#}"
-        )
+        panic!("public extract_pdf should resolve the indirect /Properties fixture: {error:#}")
     });
 
     assert_eq!(result.pages.len(), 1);
