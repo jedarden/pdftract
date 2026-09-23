@@ -629,16 +629,37 @@ mod tests {
     }
 
     #[test]
-    fn test_discover_all_fixture_infos() {
+    fn test_discover_all_fixture_infos_returns_full_structured_set() {
         let paths = discover_all_fixtures();
         let infos = discover_all_fixture_infos();
 
-        // Same count and ordering as the path-based discovery
+        // The reusable structured entry point must enumerate the complete
+        // follow_links(false) fixture set. In particular, the self-referential
+        // scientific_paper directory symlink must not create phantom records.
+        assert!(!paths.is_empty(), "fixture discovery should find real PDFs");
+        assert!(!infos.is_empty(), "structured discovery should find real PDFs");
         assert_eq!(infos.len(), paths.len());
+
+        // The path order is part of the discovery contract, and a duplicate
+        // would indicate that symlink handling has regressed even if the
+        // overall count happened to remain unchanged.
+        for window in infos.windows(2) {
+            assert!(
+                window[0].path <= window[1].path,
+                "structured fixtures must be sorted by path: {} > {}",
+                window[0].path.display(),
+                window[1].path.display()
+            );
+        }
+        let mut seen = std::collections::HashSet::with_capacity(infos.len());
+
         for (info, path) in infos.iter().zip(paths.iter()) {
             assert_eq!(info.path, *path);
+            assert!(!info.path.as_os_str().is_empty(), "path must be non-empty");
+            assert!(info.path.is_absolute(), "path must be absolute: {info}");
             assert!(!info.name.is_empty(), "name must not be empty");
             assert!(!info.description.is_empty(), "description must not be empty");
+            assert!(seen.insert(&info.path), "duplicate fixture path: {info}");
         }
     }
 
