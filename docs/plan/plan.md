@@ -3936,6 +3936,7 @@ The patch release MUST go through the same Pre-Release Go/No-Go Checklist as a n
 
 **Endpoint policy.**
 - `/metrics` MUST bind only on the `--metrics PORT` listener, NOT on the main `serve` or `mcp` port. This permits a different network reachability for metrics scraping vs production traffic.
+- `/ready` is served on the same separate `--metrics PORT` listener as `/metrics`; it is never added to the main `serve` or `mcp` router. `--metrics 0` asks the OS for an ephemeral port, which pdftract reports on stderr.
 - `/metrics` is unauthenticated by default; operators are RECOMMENDED to restrict scraping at the network layer (firewall, K8s `NetworkPolicy`).
 - `/metrics` content-type is `application/openmetrics-text; version=1.0.0; charset=utf-8`.
 
@@ -3961,15 +3962,15 @@ The patch release MUST go through the same Pre-Release Go/No-Go Checklist as a n
 
 | Alert | Rule | Severity |
 |---|---|---|
-| Slow extractions | `histogram_quantile(0.99, pdftract_extraction_duration_seconds) > 5` for 5m | warn |
-| Cache underperforming | `pdftract_cache_hits_total / (pdftract_cache_hits_total + pdftract_cache_misses_total) < 0.30` for 1h | info |
+| Slow extractions | `histogram_quantile(0.99, pdftract_extraction_duration_seconds_bucket) > 0.3` for 5m | warn |
+| Cache underperforming | `pdftract_cache_hits_total / (pdftract_cache_hits_total + pdftract_cache_misses_total) < 0.5` for 10m | info |
 | Diagnostic flood | `sum(rate(pdftract_diagnostic_emitted_total{severity="error"}[5m])) > 10` | warn |
 | HTTP 5xx rate | `sum(rate(pdftract_http_requests_total{status=~"5.."}[5m])) / sum(rate(pdftract_http_requests_total[5m])) > 0.01` for 5m | page |
-| Worker pool saturated | `pdftract_rayon_pool_utilization > 0.95` for 5m | warn |
-| Cache size growing unchecked | `deriv(pdftract_cache_size_bytes[1h]) > 1e9` (1 GB/h) for 6h | warn |
+| Worker pool saturated | `pdftract_rayon_pool_utilization > 0.8` for 5m | warn |
+| Cache size growing unchecked | `abs(deriv(pdftract_cache_size_bytes[1h])) > 1e9` (1 GB/h) for 6h | warn |
 
 **Health and readiness endpoints.**
 - `GET /health` returns `200 OK` with `{"status":"ok","version":"X.Y.Z"}`. Always returns 200 as long as the process is up; intended for liveness probes.
-- `GET /ready` returns `200 OK` only when the rayon pool utilization is below 90% AND the cache (if enabled) is writable. Returns 503 otherwise. Intended for readiness probes; routing layers SHOULD pull a node out of rotation when `/ready` reports 503.
+- `GET /ready` returns `200 OK` when the rayon pool utilization is at or below 90% AND the cache (if enabled) is writable. It returns `503 Service Unavailable` otherwise, with `unready` containing `pool_saturated`, `cache_unwritable`, or both. The cache check creates, writes, and removes a uniquely named probe file, leaving no probe artifact. Intended for readiness probes; routing layers SHOULD pull a node out of rotation when `/ready` reports 503. `/health` remains a 200 liveness check while `/ready` is 503.
 
 **Cardinality.** Operators are warned not to use unbounded labels (e.g. per-request paths); the `endpoint` label on `pdftract_http_requests_total` is restricted to the registered route templates, never the raw path.

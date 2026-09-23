@@ -9,6 +9,16 @@
 //!   exact OpenMetrics content type, all 13 documented `pdftract_*`
 //!   families, and `# EOF` termination — while the main port does NOT
 //!   serve `/metrics`;
+//! - `GET /ready` on that listener is 200 while the server accepts work
+//!   (idle pool, writable or absent cache) and 503 naming the failed
+//!   condition when the cache location cannot be written — with
+//!   `GET /health` on the main port staying 200 in that unready state
+//!   (liveness and readiness are separate concerns);
+//! - every metric name and label selector the shipped alert rules
+//!   (`docs/operations/prometheus-rules.yaml`) reference is served by
+//!   the live exposition after real traffic;
+//! - readiness probes leave no probe files behind in the cache
+//!   directory;
 //! - without the flag, no metrics listener exists at all;
 //! - a `--metrics` port that cannot be bound fails startup cleanly
 //!   (error message, nonzero exit), never a panic.
@@ -23,8 +33,12 @@
 
 #![cfg(feature = "metrics")]
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -66,7 +80,10 @@ const DOCUMENTED_FAMILIES: &[(&str, &str)] = &[
         "pdftract_diagnostic_emitted_total",
         "pdftract_diagnostic_emitted",
     ),
-    ("pdftract_inflight_extractions", "pdftract_inflight_extractions"),
+    (
+        "pdftract_inflight_extractions",
+        "pdftract_inflight_extractions",
+    ),
     (
         "pdftract_rayon_pool_utilization",
         "pdftract_rayon_pool_utilization",
@@ -109,7 +126,10 @@ impl Server {
                 }
             }
         });
-        Server { child, stderr: buffer }
+        Server {
+            child,
+            stderr: buffer,
+        }
     }
 
     /// The bound metrics address from the stderr banner, waiting (bounded)
@@ -127,7 +147,9 @@ impl Server {
         let text = self.stderr.lock().expect("stderr lock");
         let start = text.find(METRICS_BANNER).expect("banner present") + METRICS_BANNER.len();
         let rest = &text[start..];
-        let end = rest.find("/metrics").expect("banner names the /metrics route");
+        let end = rest
+            .find("/metrics")
+            .expect("banner names the /metrics route");
         format!("http://{}", &rest[..end])
     }
 
@@ -220,6 +242,8 @@ fn assert_exposition(client: &Client, metrics_url: &str) -> String {
     );
     let body = response.text().expect("exposition body");
 
+    assert_valid_openmetrics(&body);
+
     assert_eq!(
         body.matches("# TYPE ").count(),
         13,
@@ -239,6 +263,212 @@ fn assert_exposition(client: &Client, metrics_url: &str) -> String {
         &body[body.len().saturating_sub(80)..]
     );
     body
+}
+
+/// The monitoring section is the source of truth for the public metric
+/// family list. Keep the integration test coupled to that table instead of
+/// letting a renamed or removed documented family silently pass.
+fn documented_families_from_plan() -> BTreeSet<String> {
+    const PLAN: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/plan/plan.md"
+    ));
+    let (_, rest) = PLAN
+        .split_once("## Monitoring and Alerting")
+        .expect("plan must contain a Monitoring and Alerting section");
+    let section = rest
+        .split_once("\n## ")
+        .map_or(rest, |(section, _)| section);
+
+    section
+        .lines()
+        .filter(|line| line.trim_start().starts_with("| `pdftract_"))
+        .filter_map(|line| {
+            let metric = line.split('`').nth(1)?;
+            metric
+                .strip_prefix("pdftract_")
+                .map(|_| family_of(metric).to_string())
+        })
+        .collect()
+}
+
+/// Validate the wire body as OpenMetrics text, not merely as a collection of
+/// expected substrings. This deliberately covers the subset emitted by the
+/// hand-rolled formatter: HELP/TYPE metadata, samples, labels, numeric
+/// values, and the required final EOF marker.
+fn assert_valid_openmetrics(body: &str) {
+    let mut types = BTreeMap::new();
+    let mut saw_eof = false;
+
+    for (line_number, line) in body.lines().enumerate() {
+        assert!(
+            !saw_eof,
+            "OpenMetrics has content after # EOF at line {line_number}"
+        );
+        if line == "# EOF" {
+            saw_eof = true;
+            continue;
+        }
+        if line.starts_with("# HELP ") {
+            let mut parts = line[7..].splitn(2, ' ');
+            let name = parts.next().unwrap_or_default();
+            let help = parts.next().unwrap_or_default();
+            assert_metric_name(name, line_number);
+            assert!(!help.is_empty(), "HELP text is empty at line {line_number}");
+            continue;
+        }
+        if line.starts_with("# TYPE ") {
+            let mut parts = line[7..].split_whitespace();
+            let name = parts.next().unwrap_or_default();
+            let kind = parts.next().unwrap_or_default();
+            assert_metric_name(name, line_number);
+            assert!(
+                matches!(kind, "counter" | "gauge" | "histogram"),
+                "unsupported OpenMetrics type {kind:?} at line {line_number}"
+            );
+            assert!(
+                types.insert(name.to_string(), kind).is_none(),
+                "duplicate TYPE metadata for {name}"
+            );
+            continue;
+        }
+        assert!(
+            !line.starts_with('#'),
+            "unknown OpenMetrics comment at line {line_number}: {line}"
+        );
+
+        let (name, labels, value) = parse_sample(line, line_number);
+        let family = family_of(name);
+        let kind = types
+            .get(family)
+            .unwrap_or_else(|| panic!("sample {name} appears before its TYPE metadata"));
+        match (
+            *kind,
+            name.strip_suffix("_total"),
+            name.strip_suffix("_bucket"),
+        ) {
+            ("counter", Some(_), _) => {}
+            ("histogram", _, Some(_)) => {
+                assert!(labels.contains("le="), "histogram bucket lacks le label")
+            }
+            ("histogram", _, None) if name.ends_with("_sum") || name.ends_with("_count") => {}
+            ("gauge", _, _) => {}
+            _ => panic!("sample {name} does not match TYPE {family} {kind}"),
+        }
+        let _ = value;
+    }
+
+    assert!(saw_eof, "OpenMetrics exposition is missing # EOF");
+    assert_eq!(
+        types.len(),
+        DOCUMENTED_FAMILIES.len(),
+        "TYPE metadata count changed; update the documented metric surface"
+    );
+    let metadata_families: BTreeSet<_> = types.keys().cloned().collect();
+    let expected_families: BTreeSet<_> = DOCUMENTED_FAMILIES
+        .iter()
+        .map(|(_, family)| (*family).to_string())
+        .collect();
+    assert_eq!(metadata_families, expected_families);
+    assert_eq!(documented_families_from_plan(), expected_families);
+}
+
+fn assert_metric_name(name: &str, line_number: usize) {
+    assert!(!name.is_empty(), "empty metric name at line {line_number}");
+    assert!(
+        name.bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':')),
+        "invalid metric name {name:?} at line {line_number}"
+    );
+}
+
+/// Return `(sample name, label source, numeric value)` after validating the
+/// sample's name, optional label set, and value. The label source is retained
+/// as text because the family-level assertions only need to verify that the
+/// histogram has its required `le` label.
+fn parse_sample(line: &str, line_number: usize) -> (&str, &str, &str) {
+    let separator = line
+        .find(|character: char| character.is_ascii_whitespace())
+        .unwrap_or_else(|| panic!("sample has no value at line {line_number}: {line}"));
+    let head = &line[..separator];
+    let value = line[separator..].trim_start();
+    let mut value_parts = value.split_whitespace();
+    let numeric = value_parts.next().unwrap_or_default();
+    assert!(
+        numeric.parse::<f64>().is_ok() || matches!(numeric, "NaN" | "+Inf" | "-Inf"),
+        "invalid sample value {numeric:?} at line {line_number}"
+    );
+    assert!(
+        value_parts.next().is_none(),
+        "unexpected extra sample fields at line {line_number}: {line}"
+    );
+
+    let (name, labels) = match head.split_once('{') {
+        Some((name, labels)) => {
+            assert!(
+                labels.ends_with('}'),
+                "unterminated labels at line {line_number}: {line}"
+            );
+            let labels = &labels[..labels.len() - 1];
+            assert_labels(labels, line_number);
+            (name, labels)
+        }
+        None => (head, ""),
+    };
+    assert_metric_name(name, line_number);
+    (name, labels, numeric)
+}
+
+fn assert_labels(labels: &str, line_number: usize) {
+    if labels.is_empty() {
+        return;
+    }
+    let bytes = labels.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        let name_start = at;
+        while at < bytes.len() && bytes[at] != b'=' {
+            at += 1;
+        }
+        assert!(at > name_start, "empty label name at line {line_number}");
+        assert_metric_name(&labels[name_start..at], line_number);
+        assert!(
+            at + 1 < bytes.len() && bytes[at + 1] == b'"',
+            "label value must start with a quote at line {line_number}"
+        );
+        at += 2;
+        let mut closed = false;
+        while at < bytes.len() {
+            match bytes[at] {
+                b'\\' => {
+                    at += 1;
+                    assert!(
+                        at < bytes.len(),
+                        "trailing label escape at line {line_number}"
+                    );
+                    assert!(
+                        matches!(bytes[at], b'\\' | b'n' | b'"'),
+                        "invalid label escape at line {line_number}"
+                    );
+                    at += 1;
+                }
+                b'"' => {
+                    at += 1;
+                    closed = true;
+                    break;
+                }
+                _ => at += 1,
+            }
+        }
+        assert!(closed, "unterminated label value at line {line_number}");
+        if at < bytes.len() {
+            assert_eq!(
+                bytes[at], b',',
+                "labels must be comma-separated at line {line_number}"
+            );
+            at += 1;
+        }
+    }
 }
 
 /// `pdftract serve --metrics 0` opens a second listener that serves the
@@ -276,7 +506,9 @@ fn serve_metrics_listener_serves_openmetrics_on_a_second_port() {
     assert_eq!(ready_body["unready"], serde_json::json!([]));
     // The main port must NOT serve /metrics (endpoint policy), while
     // still serving its own routes.
-    let main_metrics = client.get(format!("http://127.0.0.1:{main}/metrics")).send();
+    let main_metrics = client
+        .get(format!("http://127.0.0.1:{main}/metrics"))
+        .send();
     match main_metrics {
         Ok(response) => assert_eq!(
             response.status(),
@@ -446,7 +678,9 @@ fn an_already_bound_metrics_port_fails_startup_cleanly() {
 
     // The failure is a clean startup error, not a panic.
     wait_for(Duration::from_secs(5), || {
-        server.stderr_dump().contains("Failed to bind metrics listener")
+        server
+            .stderr_dump()
+            .contains("Failed to bind metrics listener")
     });
     let stderr = server.stderr_dump();
     assert!(
@@ -526,5 +760,439 @@ fn metrics_listener_shuts_down_with_the_server_process() {
             .send()
             .is_err()),
         "metrics listener should stop when the server process exits"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Alert-rule coverage: every name and label selector the shipped rules
+// reference must be served by the live exposition.
+// ---------------------------------------------------------------------------
+
+/// The shipped alert rules, relative to this crate's manifest dir (the
+/// file cargo runs test binaries from), so the check works regardless
+/// of the caller's working directory.
+fn alert_rules_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/operations/prometheus-rules.yaml")
+}
+
+/// Collect the value of every `expr` key anywhere in the parsed rules
+/// document — the PromQL of the rules. Group names (`name:
+/// pdftract_serve`) and annotation prose never reach the metric-name
+/// scan, and YAML comments — like the note about metrics that are
+/// deliberately NOT shipped — are dropped by the parser entirely.
+fn expr_strings(value: &serde_yaml::Value, out: &mut Vec<String>) {
+    match value {
+        serde_yaml::Value::Mapping(map) => {
+            for (key, item) in map {
+                if key.as_str() == Some("expr") {
+                    if let serde_yaml::Value::String(text) = item {
+                        out.push(text.clone());
+                    }
+                }
+                expr_strings(item, out);
+            }
+        }
+        serde_yaml::Value::Sequence(items) => {
+            for item in items {
+                expr_strings(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Every `pdftract_*` metric name in `text`: scan for the prefix and
+/// take the longest following run of `[a-z0-9_]`. PromQL identifiers
+/// end at `{`, `[`, whitespace or operators, so this yields exactly the
+/// series names an expression references.
+fn pdftract_names_in(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let bytes = text.as_bytes();
+    let mut searched = 0;
+    while let Some(found) = text[searched..].find("pdftract_") {
+        let start = searched + found;
+        let mut end = start + "pdftract_".len();
+        while end < bytes.len()
+            && (bytes[end].is_ascii_lowercase()
+                || bytes[end].is_ascii_digit()
+                || bytes[end] == b'_')
+        {
+            end += 1;
+        }
+        names.push(text[start..end].to_string());
+        searched = end;
+    }
+    names
+}
+
+/// Label names `name` is selected by in `text`: for every `{...}`
+/// selector attached to the metric, the identifiers directly followed
+/// by `="` or `=~"` (`pdftract_http_requests_total{status=~"5.."}` →
+/// `["status"]`). `by (le, ...)` grouping carries no `=`, so it never
+/// matches — grouping labels are Prometheus-side, not exposition-side.
+fn selector_labels_in(text: &str, name: &str) -> Vec<String> {
+    let mut labels = Vec::new();
+    let prefix = format!("{name}{{");
+    let mut searched = 0;
+    while let Some(found) = text[searched..].find(&prefix) {
+        let open = searched + found + prefix.len() - 1; // at the '{'
+        let close = text[open..]
+            .find('}')
+            .map(|c| open + c)
+            .unwrap_or(text.len());
+        let selector = &text[open..close];
+        let bytes = selector.as_bytes();
+        let mut at = 0;
+        while at < bytes.len() {
+            if bytes[at].is_ascii_lowercase() || bytes[at] == b'_' {
+                let start = at;
+                while at < bytes.len()
+                    && (bytes[at].is_ascii_lowercase()
+                        || bytes[at].is_ascii_digit()
+                        || bytes[at] == b'_')
+                {
+                    at += 1;
+                }
+                let rest = &selector[at..];
+                if rest.starts_with("=~\"") || rest.starts_with("=\"") {
+                    labels.push(selector[start..at].to_string());
+                }
+            } else {
+                at += 1;
+            }
+        }
+        searched = close;
+    }
+    labels
+}
+
+/// The family behind a rules-file series name: counters are referenced
+/// with their `_total` sample suffix and histogram series as
+/// `_bucket`/`_sum`/`_count`, while `# TYPE` metadata carries the bare
+/// family name.
+fn family_of(name: &str) -> &str {
+    for suffix in ["_total", "_bucket", "_sum", "_count"] {
+        if let Some(base) = name.strip_suffix(suffix) {
+            return base;
+        }
+    }
+    name
+}
+
+/// Whether the exposition serves `name` — as a sample line (labeled or
+/// plain) or as its family's `# TYPE` metadata.
+fn exposition_has_name(body: &str, name: &str) -> bool {
+    body.contains(&format!("\n{name} "))
+        || body.contains(&format!("\n{name}{{"))
+        || body.contains(&format!("\n# TYPE {} ", family_of(name)))
+}
+
+/// Whether the exposition carries at least one sample of `name` whose
+/// label set includes `label` — what a rules-file selector like
+/// `severity="error"` actually matches against.
+fn exposition_serves_label(body: &str, name: &str, label: &str) -> bool {
+    let marker = format!("{label}=\"");
+    body.lines().any(|line| {
+        line.starts_with(name)
+            && matches!(
+                line.get(name.len()..).and_then(|rest| rest.chars().next()),
+                Some('{') | Some(' ')
+            )
+            && line.contains(&marker)
+    })
+}
+
+/// POST one multipart upload of bytes that pass the %PDF- magic check
+/// but cannot parse; the request completes the extraction path and
+/// records labeled `error` samples (extractions, http requests,
+/// diagnostics). Returns the response status code.
+fn post_unparseable_pdf(client: &Client, main: u16) -> reqwest::StatusCode {
+    let mut not_a_pdf = b"%PDF-1.4\n".to_vec();
+    not_a_pdf.extend_from_slice(b"this file has no xref, no pages, and no trailer");
+    let form = reqwest::blocking::multipart::Form::new().part(
+        "pdf",
+        reqwest::blocking::multipart::Part::bytes(not_a_pdf).file_name("not-a-pdf.pdf"),
+    );
+    let response = client
+        .post(format!("http://127.0.0.1:{main}/extract"))
+        .multipart(form)
+        .send()
+        .expect("POST /extract with malformed pdf");
+    let status = response.status();
+    assert!(
+        !status.is_success(),
+        "garbage input must not extract successfully"
+    );
+    status
+}
+
+/// The names and label selectors the shipped alert rules reference are
+/// the exposition's real contract: a rule naming a metric the listener
+/// does not serve could never fire. This test parses
+/// `docs/operations/prometheus-rules.yaml` (not a hard-coded copy) and
+/// checks every referenced `pdftract_*` series — and every label
+/// selected on it — against the live exposition of a serve instance
+/// after real traffic, so the check tracks the rules file as it
+/// evolves.
+#[test]
+fn exposition_serves_every_metric_and_label_the_alert_rules_use() {
+    // Derive the contract from the shipped rules file.
+    let rules_path = alert_rules_path();
+    let rules_text = fs::read_to_string(&rules_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", rules_path.display()));
+    let parsed: serde_yaml::Value =
+        serde_yaml::from_str(&rules_text).unwrap_or_else(|error| panic!("parse rules: {error}"));
+    let mut exprs_parts = Vec::new();
+    expr_strings(&parsed, &mut exprs_parts);
+    let exprs = exprs_parts.join("\n");
+    assert!(
+        !exprs.is_empty(),
+        "no expr strings found in {} — the file's shape changed",
+        rules_path.display()
+    );
+
+    let names: BTreeSet<String> = pdftract_names_in(&exprs).into_iter().collect();
+    // Guard against a silent vacuous pass: these series are what the
+    // current rules reference, so a file restructure that hides them
+    // from the scan must fail here, not pass.
+    for expected in [
+        "pdftract_extraction_duration_seconds_bucket",
+        "pdftract_http_requests_total",
+        "pdftract_cache_hits_total",
+        "pdftract_cache_misses_total",
+        "pdftract_rayon_pool_utilization",
+        "pdftract_cache_size_bytes",
+        "pdftract_diagnostic_emitted_total",
+    ] {
+        assert!(
+            names.contains(expected),
+            "alert rules no longer reference {expected}; update this test's expected list"
+        );
+    }
+    let labeled: Vec<(String, String)> = names
+        .iter()
+        .flat_map(|name| {
+            selector_labels_in(&exprs, name)
+                .into_iter()
+                .map(|label| (name.clone(), label))
+        })
+        .collect();
+    // The current rules select `status` on http requests and
+    // `severity` on diagnostics; both need real samples after traffic.
+    assert!(
+        labeled.contains(&(
+            "pdftract_http_requests_total".to_string(),
+            "status".to_string()
+        )),
+        "rules no longer select a status label; update this test"
+    );
+    assert!(
+        labeled.contains(&(
+            "pdftract_diagnostic_emitted_total".to_string(),
+            "severity".to_string()
+        )),
+        "rules no longer select a severity label; update this test"
+    );
+
+    // A serve instance WITH a cache, so the healthy readiness path also
+    // runs its real writability probe against a live directory.
+    let cache = tempfile::tempdir().expect("cache tempdir");
+    let main = free_port();
+    let server = Server::spawn(&[
+        "serve",
+        "--bind",
+        &format!("127.0.0.1:{main}"),
+        "--cache-dir",
+        cache.path().to_str().expect("cache path is UTF-8"),
+        "--metrics",
+        "0",
+    ]);
+    let client = client();
+
+    wait_until_healthy(&client, main);
+    let metrics_url = server.metrics_url();
+
+    // Healthy readiness with a real (writable) cache location.
+    let ready = client
+        .get(format!("{metrics_url}/ready"))
+        .send()
+        .expect("GET /ready");
+    assert_eq!(
+        ready.status(),
+        reqwest::StatusCode::OK,
+        "writable cache + idle pool is ready"
+    );
+
+    // Real traffic so labeled families gain samples.
+    let failure_status = post_unparseable_pdf(&client, main);
+    assert!(
+        failure_status.as_u16() >= 400,
+        "garbage upload must fail 4xx/5xx, got {failure_status}"
+    );
+
+    let body = assert_exposition(&client, &metrics_url);
+
+    // Every referenced series is served, as samples or family metadata.
+    for name in &names {
+        assert!(
+            exposition_has_name(&body, name),
+            "alert rule references {name} but the exposition does not serve it:\n{body}"
+        );
+    }
+    // Every selected label has a matching labeled sample.
+    for (name, label) in &labeled {
+        assert!(
+            exposition_serves_label(&body, name, label),
+            "alert rule selects {label} on {name} but no sample carries it:\n{body}"
+        );
+    }
+    // histogram_quantile needs the bucket series with le labels,
+    // including the mandatory +Inf bucket.
+    assert!(
+        exposition_serves_label(&body, "pdftract_extraction_duration_seconds_bucket", "le"),
+        "histogram buckets must carry le labels:\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_extraction_duration_seconds_bucket{le=\"+Inf\"}"),
+        "the mandatory le=\"+Inf\" bucket is missing:\n{body}"
+    );
+    // The error-rate rule divides by all http traffic and matches
+    // status=~"5..": the status label values must be bare 3-digit codes.
+    let statuses: Vec<&str> = body
+        .lines()
+        .filter(|line| line.starts_with("pdftract_http_requests_total{"))
+        .filter_map(|line| line.split("status=\"").nth(1))
+        .map(|rest| &rest[..rest.find('"').unwrap_or(rest.len())])
+        .collect();
+    assert!(
+        !statuses.is_empty(),
+        "no http request samples after real traffic:\n{body}"
+    );
+    for status in statuses {
+        assert_eq!(
+            status.len(),
+            3,
+            "status label values must be bare 3-digit codes for the status=~\"5..\" matcher, got {status:?}:\n{body}"
+        );
+        assert!(
+            status.chars().all(|c| c.is_ascii_digit()),
+            "status label values must be numeric, got {status:?}:\n{body}"
+        );
+    }
+
+    // Readiness probing leaves nothing behind: repeated probes (the
+    // ready GET above) must not leave probe files in the cache dir.
+    let leftovers: Vec<_> = fs::read_dir(cache.path())
+        .expect("read cache dir")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .map(|name| name.starts_with(".pdftract-ready-probe"))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "readiness probes must not leave files in the cache dir: {leftovers:?}"
+    );
+}
+
+/// Restores a directory's mode when dropped, so a panic between the
+/// chmod and the end of the test cannot leave the tempdir read-only.
+struct RestoreMode {
+    path: PathBuf,
+    mode: u32,
+}
+
+impl Drop for RestoreMode {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));
+    }
+}
+
+/// End-to-end readiness failure: a serve instance whose cache location
+/// exists but cannot be written (mode 0555) reports 503 from GET /ready
+/// with the body naming the cache — while GET /health on the main port
+/// stays 200, because an unready server is still alive and must not be
+/// restarted by a liveness probe.
+///
+/// Skips when permission bits are advisory (running as root), exactly
+/// like the in-process `probe_rejects_a_readonly_directory...` test.
+#[test]
+fn ready_is_503_with_an_unwritable_cache_while_health_stays_200() {
+    let cache = tempfile::tempdir().expect("cache tempdir");
+    let original = fs::metadata(cache.path())
+        .expect("cache dir metadata")
+        .permissions()
+        .mode();
+    // Declared after `cache`, dropped before it: the mode is restored
+    // while the directory is still there, then TempDir removes it.
+    let _restore = RestoreMode {
+        path: cache.path().to_path_buf(),
+        mode: original,
+    };
+    fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555))
+        .expect("chmod 0555 the cache dir");
+
+    // The write attempt must actually fail for this uid, or there is
+    // nothing to observe (root ignores the mode bits).
+    let advisory = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(cache.path().join("advisory-check"))
+        .is_ok();
+    if advisory {
+        fs::remove_file(cache.path().join("advisory-check")).expect("remove advisory check");
+        eprintln!("skipping: permission bits are advisory here (uid 0)");
+        return;
+    }
+
+    let main = free_port();
+    let server = Server::spawn(&[
+        "serve",
+        "--bind",
+        &format!("127.0.0.1:{main}"),
+        "--cache-dir",
+        cache.path().to_str().expect("cache path is UTF-8"),
+        "--metrics",
+        "0",
+    ]);
+    let client = client();
+
+    // The main port comes up and reports healthy in the unready state —
+    // liveness first, and the wait itself asserts /health answers 200.
+    wait_until_healthy(&client, main);
+    let metrics_url = server.metrics_url();
+
+    let ready = client
+        .get(format!("{metrics_url}/ready"))
+        .send()
+        .expect("GET /ready with an unwritable cache");
+    assert_eq!(
+        ready.status(),
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "an unwritable cache location must make /ready 503"
+    );
+    let body: serde_json::Value = ready.json().expect("/ready JSON body");
+    assert_eq!(body["status"], "unready", "got: {body}");
+    assert_eq!(
+        body["unready"],
+        serde_json::json!(["cache_unwritable"]),
+        "the body must name the cache and nothing else: {body}"
+    );
+    assert_eq!(body["cache_writable"], false, "got: {body}");
+
+    // And /health stays 200 — the failure case must not turn a busy or
+    // degraded-but-alive server into a restart.
+    let health = client
+        .get(format!("http://127.0.0.1:{main}/health"))
+        .send()
+        .expect("GET /health while unready");
+    assert_eq!(
+        health.status(),
+        reqwest::StatusCode::OK,
+        "/health is liveness and stays 200 while /ready is 503"
     );
 }
