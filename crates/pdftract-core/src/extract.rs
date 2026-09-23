@@ -3797,6 +3797,74 @@ startxref
     }
 
     #[test]
+    fn test_extraction_result_assert_exit_code_with_multiple_errors() {
+        // Multiple errors still map to the single error exit code 1
+        let result = ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 2,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                diagnostics_detailed: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
+
+        assert!(result.assert_exit_code(1).is_ok());
+        let error = result.assert_exit_code(0).unwrap_err();
+        assert_eq!(error.actual, 1);
+    }
+
+    #[test]
+    fn test_extraction_result_assert_exit_code_out_of_domain() {
+        // Expected exit codes outside {0, 1} should return an error, not panic
+        let result = ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count: 0,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                diagnostics_detailed: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
+
+        let error = result.assert_exit_code(2).unwrap_err();
+        assert_eq!(error.expected, 2);
+        assert_eq!(error.actual, 0);
+    }
+
+    #[test]
     fn test_extraction_result_assert_exit_code_error_message() {
         // Test that assert_exit_code returns an error with a useful message when exit code does not match
         // Create an ExtractionResult with exit code 1 (error_count > 0)
