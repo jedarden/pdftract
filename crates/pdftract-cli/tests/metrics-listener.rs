@@ -262,6 +262,18 @@ fn serve_metrics_listener_serves_openmetrics_on_a_second_port() {
 
     // The exposition on the second listener: full surface, right type.
     assert_exposition(&client, &metrics_url);
+    let ready = client
+        .get(format!("{metrics_url}/ready"))
+        .send()
+        .expect("GET /ready on the metrics listener");
+    assert_eq!(
+        ready.status(),
+        reqwest::StatusCode::OK,
+        "a serve instance without a cache is ready while the pool is idle"
+    );
+    let ready_body: serde_json::Value = ready.json().expect("/ready JSON body");
+    assert_eq!(ready_body["status"], "ready", "got: {ready_body}");
+    assert_eq!(ready_body["unready"], serde_json::json!([]));
     // The main port must NOT serve /metrics (endpoint policy), while
     // still serving its own routes.
     let main_metrics = client.get(format!("http://127.0.0.1:{main}/metrics")).send();
@@ -485,5 +497,34 @@ fn metrics_with_stdio_transport_is_rejected_as_a_usage_error() {
     assert!(
         !stderr.contains(METRICS_BANNER),
         "no listener may open in stdio mode; stderr:\n{stderr}"
+    );
+}
+
+/// The metrics listener shares the server process lifetime: stopping the
+/// primary server must also release the ephemeral metrics port.
+#[test]
+fn metrics_listener_shuts_down_with_the_server_process() {
+    let main = free_port();
+    let server = Server::spawn(&[
+        "serve",
+        "--bind",
+        &format!("127.0.0.1:{main}"),
+        "--metrics",
+        "0",
+    ]);
+    let client = client();
+
+    wait_until_healthy(&client, main);
+    let metrics_url = server.metrics_url();
+    assert_exposition(&client, &metrics_url);
+
+    drop(server);
+
+    assert!(
+        wait_for(Duration::from_secs(5), || client
+            .get(format!("{metrics_url}/metrics"))
+            .send()
+            .is_err()),
+        "metrics listener should stop when the server process exits"
     );
 }
