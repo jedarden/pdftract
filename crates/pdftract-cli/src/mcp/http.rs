@@ -44,7 +44,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 
@@ -336,6 +336,61 @@ fn tool_call_name(request: &Request) -> Option<String> {
         .map(str::to_string)
 }
 
+/// MCP tools that execute the core extraction pipeline. These calls share
+/// the same extraction metrics as the serve handlers, even though the MCP
+/// transport returns a tool-shaped JSON result.
+#[cfg(feature = "metrics")]
+fn is_extraction_tool(tool: &str) -> bool {
+    matches!(tool, "extract" | "extract_text" | "extract_markdown")
+}
+
+/// Report the OCR build capability using the same contract as the serve
+/// handlers. The MCP tool currently accepts the `ocr` argument but the core
+/// extraction options do not expose per-request OCR usage to this layer.
+#[cfg(feature = "metrics")]
+fn extraction_ocr_enabled() -> bool {
+    cfg!(feature = "ocr")
+}
+
+/// Count pages represented by an MCP extraction result. The full `extract`
+/// tool returns `pages`; the fallback to `metadata.page_count` also supports
+/// future text/markdown response enrichments without changing their current
+/// response shape.
+#[cfg(feature = "metrics")]
+fn response_page_count(response: &Response) -> u64 {
+    let Some(result) = response.get_result() else {
+        return 0;
+    };
+    if let Some(pages) = result.get("pages").and_then(Value::as_array) {
+        return pages.len() as u64;
+    }
+    result
+        .get("metadata")
+        .and_then(|metadata| metadata.get("page_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+/// Record the extraction portion of one MCP tool call. The caller owns the
+/// surrounding request counter and diagnostics recording; keeping this helper
+/// focused makes it harder to count a tool response twice.
+#[cfg(feature = "metrics")]
+fn record_mcp_extraction(
+    metrics: &crate::metrics::Registry,
+    started: Instant,
+    ocr: bool,
+    response: &Response,
+) {
+    metrics.dec_inflight_extractions();
+    metrics.observe_extraction_duration(started.elapsed().as_secs_f64());
+    if response.is_success() {
+        metrics.inc_extraction("success", ocr);
+        metrics.add_pages_extracted(response_page_count(response));
+    } else {
+        metrics.inc_extraction("error", ocr);
+    }
+}
+
 /// Count the diagnostics an mcp tool result reports (`metrics` feature).
 ///
 /// Extraction tools embed the document's structured diagnostics in their
@@ -361,7 +416,23 @@ fn record_response_diagnostics(metrics: &crate::metrics::Registry, response: &Re
         return;
     };
     for diagnostic in &diagnostics {
-        metrics.inc_diagnostic(&diagnostic.code, &diagnostic.severity);
+        metrics.inc_diagnostic(
+            &diagnostic.code,
+            diagnostic_metric_severity_name(&diagnostic.severity),
+        );
+    }
+}
+
+/// Keep diagnostic labels within the documented `info|warn|error` set. Core's
+/// JSON representation calls the warning and fatal levels `warning` and
+/// `fatal`; Prometheus consumers should not need a second vocabulary.
+#[cfg(feature = "metrics")]
+fn diagnostic_metric_severity_name(severity: &str) -> &'static str {
+    match severity {
+        "info" => "info",
+        "warn" | "warning" => "warn",
+        "error" | "fatal" => "error",
+        _ => "error",
     }
 }
 
@@ -412,12 +483,28 @@ async fn handle_post_request(
     let root = state.root.as_deref();
 
     for request in requests {
+        #[cfg(feature = "metrics")]
+        let extraction = tool_call_name(&request).filter(|tool| is_extraction_tool(tool));
+
         // Count the tool invocation (`metrics` feature).
         #[cfg(feature = "metrics")]
         if let Some(tool_name) = tool_call_name(&request) {
             state.metrics.inc_mcp_request(&tool_name);
         }
+
+        #[cfg(feature = "metrics")]
+        let extraction_started = extraction.as_deref().map(|_| {
+            state.metrics.inc_inflight_extractions();
+            (Instant::now(), extraction_ocr_enabled())
+        });
+
         let response = handle_request(request, registry, root);
+
+        #[cfg(feature = "metrics")]
+        if let Some((started, ocr)) = extraction_started {
+            record_mcp_extraction(&state.metrics, started, ocr, &response);
+        }
+
         // Count diagnostics the tool reported (`metrics` feature).
         #[cfg(feature = "metrics")]
         record_response_diagnostics(&state.metrics, &response);
@@ -1208,6 +1295,79 @@ mod tests {
         );
     }
 
+    /// Metrics: a real MCP extraction updates the shared extraction
+    /// lifecycle metrics in addition to the tool and HTTP request counters.
+    /// The JSON response remains the normal `extract` result; metrics are
+    /// derived from it after dispatch and are never added to the response.
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn test_metrics_registry_counts_mcp_extraction_lifecycle() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+
+        let state = McpServerState::new(None, None, None, None);
+        let metrics = state.metrics().clone();
+        let app = build_router(state).layer(axum::extract::connect_info::MockConnectInfo(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 4242)),
+        ));
+
+        let pdf_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/test-minimal.pdf"
+        );
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "extract",
+                "arguments": {"path": pdf_path, "ocr": false}
+            }
+        });
+        let request = AxumRequest::builder()
+            .method("POST")
+            .uri("/")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response_body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let response_json: Value = serde_json::from_slice(&response_body).unwrap();
+        assert_eq!(
+            response_json["result"]["pages"].as_array().unwrap().len(),
+            1
+        );
+
+        let text = metrics.render();
+        assert!(
+            text.contains("pdftract_mcp_requests_total{tool=\"extract\"} 1\n"),
+            "missing mcp extraction counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extractions_total{result=\"success\",ocr=\"false\"} 1\n"),
+            "missing extraction result counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_pages_extracted_total 1\n"),
+            "missing extracted pages counter:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_extraction_duration_seconds_count 1\n"),
+            "missing extraction duration observation:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_inflight_extractions 0\n"),
+            "in-flight extraction gauge did not settle:\n{text}"
+        );
+        assert!(
+            text.contains("pdftract_http_requests_total{endpoint=\"/\",status=\"200\"} 1\n"),
+            "missing MCP HTTP response counter:\n{text}"
+        );
+    }
+
     /// Metrics: the diagnostics an mcp tool result reports at
     /// `metadata.diagnostics_detailed` feed
     /// `pdftract_diagnostic_emitted_total` with code/severity labels;
@@ -1224,7 +1384,7 @@ mod tests {
                 "metadata": {
                     "diagnostics_detailed": [
                         {"code": "STREAM_BOMB", "message": "m", "severity": "error"},
-                        {"code": "STRUCT_MISSING_KEY", "message": "m", "severity": "warn"}
+                        {"code": "STRUCT_MISSING_KEY", "message": "m", "severity": "warning"}
                     ]
                 }
             }),

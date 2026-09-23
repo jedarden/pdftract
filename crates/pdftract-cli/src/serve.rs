@@ -666,6 +666,7 @@ fn record_extraction(
     pages: u64,
     cache_status: Option<&str>,
     diagnostics_detailed: &[pdftract_core::schema::DiagnosticJson],
+    extraction_diagnostic: Option<DiagCode>,
 ) {
     metrics.observe_extraction_duration(elapsed_seconds);
     metrics.inc_extraction(result_label, OCR_PATH_ENABLED);
@@ -675,8 +676,40 @@ fn record_extraction(
         Some("miss") => metrics.inc_cache_miss(),
         _ => {}
     }
+    if let Some(code) = extraction_diagnostic {
+        metrics.inc_diagnostic(code.name(), diagnostic_metric_severity(code.severity()));
+    }
     for diagnostic in diagnostics_detailed {
-        metrics.inc_diagnostic(&diagnostic.code, &diagnostic.severity);
+        metrics.inc_diagnostic(
+            &diagnostic.code,
+            diagnostic_metric_severity_name(&diagnostic.severity),
+        );
+    }
+}
+
+/// Map core diagnostic severities to the labels documented by the metrics
+/// surface. Core uses the more descriptive `warning` and `fatal` values in
+/// JSON, while the Prometheus contract deliberately has three bounded values:
+/// `info`, `warn`, and `error`.
+#[cfg(feature = "metrics")]
+fn diagnostic_metric_severity(severity: pdftract_core::diagnostics::Severity) -> &'static str {
+    match severity {
+        pdftract_core::diagnostics::Severity::Info => "info",
+        pdftract_core::diagnostics::Severity::Warning => "warn",
+        pdftract_core::diagnostics::Severity::Error
+        | pdftract_core::diagnostics::Severity::Fatal => "error",
+    }
+}
+
+#[cfg(feature = "metrics")]
+fn diagnostic_metric_severity_name(severity: &str) -> &'static str {
+    match severity {
+        "info" => "info",
+        "warn" | "warning" => "warn",
+        "error" | "fatal" => "error",
+        // DiagnosticJson is produced by core, but keep the metric label
+        // bounded if a future producer supplies an unexpected value.
+        _ => "error",
     }
 }
 
@@ -803,6 +836,10 @@ async fn extract_handler(
                 &[] as &[pdftract_core::schema::DiagnosticJson],
             ),
         };
+        let extraction_diagnostic = match &extracted {
+            Ok(Err(AxumError::Extraction(_, code))) => *code,
+            _ => None,
+        };
         record_extraction(
             &request_metrics,
             extraction_started.elapsed().as_secs_f64(),
@@ -810,6 +847,7 @@ async fn extract_handler(
             pages,
             cache_status_label,
             diagnostics_detailed,
+            extraction_diagnostic,
         );
     }
 
@@ -933,6 +971,10 @@ async fn extract_text_handler(
                 &[] as &[pdftract_core::schema::DiagnosticJson],
             ),
         };
+        let extraction_diagnostic = match &extracted {
+            Ok(Err(AxumError::Extraction(_, code))) => *code,
+            _ => None,
+        };
         record_extraction(
             &request_metrics,
             extraction_started.elapsed().as_secs_f64(),
@@ -940,6 +982,7 @@ async fn extract_text_handler(
             pages,
             cache_status_label,
             diagnostics_detailed,
+            extraction_diagnostic,
         );
     }
 
