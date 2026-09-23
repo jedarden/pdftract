@@ -2,6 +2,65 @@
 
 This manifest tracks the generation, modification, and verification status of all hybrid PDF fixtures in this directory.
 
+## Provenance (root-level `hybrid-0NN` corpus)
+
+The ten `hybrid-0NN*.pdf` files at the top level of this directory are the
+Phase 5.5 hybrid classification corpus (KU-2, `docs/plan/plan.md`). This
+section covers them; the subdirectory fixtures below (`receipt-overtext` …
+`complex-overlap`) are an earlier placeholder generation — see the
+annotations in "Generation Summary" and "Generation Script".
+
+**Canonical generator: `tools/generate_hybrid_fixtures.py`** (repo root).
+Stdlib-only Python 3 — no reportlab / Pillow / img2pdf — and deterministic:
+no wall-clock timestamps in the emitted bytes unless one is injected via
+`--date`.
+
+```
+python3 tools/generate_hybrid_fixtures.py [--out-dir DIR] [--fixture NAME ...]
+```
+
+History: each sidecar's `source.generation_method` cites a
+`hybrid-NNN-generator.py` (and, for hybrid-010, a
+`hybrid-010-generator-enhanced.py` variant) that lived in this directory
+until those scripts were removed as generator debris in commit `2014ee74`
+(bead bf-24po9b). `tools/generate_hybrid_fixtures.py` is a stdlib-only
+reimplementation built from the sidecar specs (`source.generation_method`
+and `hybrid_behavior` per fixture). `README.md` and the sidecars still cite
+the removed scripts; those citations are historical records, not pointers
+to in-tree files.
+
+**Byte-identity is NOT preserved.** Regenerated PDFs are structurally
+equivalent, not byte-identical: each contains one 1-bit grayscale
+(DeviceGray, 1 bpc, FlateDecode) image XObject as the scanned layer plus
+vector text operators, with the per-fixture vector features its sidecar
+describes (underline rectangles and red checkbox strokes for hybrid-002,
+45° CTM-rotated watermark for hybrid-004, Bezier-circle stamp for
+hybrid-006, multi-angle CTM-rotated overlays for hybrid-008, ExtGState
+`ca`/`CA` 0.5/0.7 for hybrid-009, 12-curveto circles / rectangles / lines
+and a transparency layer for hybrid-010). The committed corpus has NOT been
+regenerated; do not expect hashes to match.
+
+Known deviations from the originals (the originals' sidecars describe
+simulated scan patterns, so the same class of approximation applies to
+them):
+
+- The scanned layer is a synthetic dark-run line pattern ("horizontal line
+  pattern simulating scanned text"), not rendered text. Background imagery
+  the sidecars describe in prose (e.g. hybrid-002's "employee information
+  form layout", hybrid-007's tax-form dividers) is approximated by the
+  generic pattern plus divider lines.
+- Label/stamp wording is representative, not identical to the originals.
+- Rotated text uses `q`/`cm`/`Q` CTM transforms — the hybrid-008 sidecar's
+  "CTM transformations". The removed originals emitted malformed `Tm`
+  operators instead (e.g. `-45 -25 Tm`, two operands).
+- Verification at HEAD (2026-09): all ten fixtures regenerate
+  byte-identically across runs and parse (`pdftract extract` / `pdftract
+  hash`, rc=0). Eight of ten yield their vector text to `pdftract extract`;
+  hybrid-004 and hybrid-008 carry genuinely rotated text, which trips a
+  pre-existing extractor panic (`layout/line.rs:374` `Option::unwrap()`).
+  That panic is reproducible from the committed corpus itself — the
+  committed `hybrid-008-rotated-vector.pdf` triggers it at HEAD.
+
 ## Fixture Metadata
 
 Each hybrid fixture entry includes:
@@ -138,6 +197,14 @@ Each hybrid fixture entry includes:
 
 **Note**: All fixtures have been generated as placeholder PDFs with ground truth .txt files and specification READMEs. For production-quality hybrid PDFs with proper vector+scan overlap, install `reportlab`/`Pillow`/`img2pdf` and run `generate_hybrid_fixtures.py`.
 
+> **[Provenance update, 2026-09]** This note and the "Generation Script"
+> section below apply only to the ten *subdirectory* placeholder fixtures
+> (`receipt-overtext` … `complex-overlap`), which remain placeholders. The
+> in-directory `generate_hybrid_fixtures.py` they cite was removed in
+> commit `2014ee74` and has not been restored. The root-level `hybrid-0NN`
+> corpus does **not** depend on reportlab; it is regenerated with
+> `tools/generate_hybrid_fixtures.py` — see "Provenance" above.
+
 ## Generation Script
 
 Run `python3 generate_hybrid_fixtures.py` to generate all pending fixtures.
@@ -148,6 +215,13 @@ The script will:
 3. Combine vector + scanned content per fixture specifications
 4. Apply strategic overlap per fixture design
 5. Output PDF + .txt ground truth for each fixture
+
+> **[Provenance update, 2026-09]** This section is stale as written: it
+> describes the removed in-directory `generate_hybrid_fixtures.py` (deleted
+> in `2014ee74`), and reportlab is unavailable on the build machine. For
+> the root-level `hybrid-0NN` corpus use
+> `python3 tools/generate_hybrid_fixtures.py` (stdlib-only — see
+> "Provenance").
 
 ## Verification Checklist
 
@@ -192,7 +266,7 @@ This fixture suite covers:
 
 ## Related Documentation
 
-- `README.md`: Usage and test scenario documentation
-- `generate_hybrid_fixtures.py`: Generation script
+- `README.md`: Usage and test scenario documentation (its `hybrid-NNN-generator.py` citations are historical — see "Provenance")
+- `tools/generate_hybrid_fixtures.py`: Canonical generator for the root-level `hybrid-0NN` corpus
 - `docs/plan/plan.md` KU-2: Known Unknown this fixture suite resolves
 - Phase 5.5: Page classifier tuning using these fixtures
