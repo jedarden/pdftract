@@ -34,7 +34,9 @@ use std::path::{Path, PathBuf};
 ///
 /// # Returns
 ///
-/// A normalized `PathBuf` with all relative components resolved.
+/// A normalized `PathBuf` with all relative components resolved. If the
+/// process cannot determine its current directory, a relative input is
+/// returned unchanged as the final fallback.
 pub fn normalize_path(path: &Path) -> PathBuf {
     // Try to canonicalize the path first (resolves symlinks and .)
     // If that fails (e.g., path doesn't exist), fall back to component-based normalization
@@ -173,6 +175,16 @@ impl FixtureInfo {
     /// `description` (e.g. when annotating a fixture from an external
     /// manifest). To derive both from a path, use [`FixtureInfo::from_path`].
     ///
+    /// # Arguments
+    ///
+    /// * `path` — filesystem path for the fixture.
+    /// * `name` — short, human-readable fixture identifier.
+    /// * `description` — prose describing what the fixture represents.
+    ///
+    /// # Returns
+    ///
+    /// A `FixtureInfo` containing the supplied values without modifying them.
+    ///
     /// # Example
     ///
     /// ```rust,ignore
@@ -195,6 +207,15 @@ impl FixtureInfo {
     ///
     /// The `path` is stored unchanged, so callers should pass the same
     /// normalized, absolute paths produced by the discovery functions.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` — filesystem path from which to derive the fixture metadata.
+    ///
+    /// # Returns
+    ///
+    /// A `FixtureInfo` whose `name` is the path's file stem and whose
+    /// `description` is derived from the path's fixture category.
     pub fn from_path<P: Into<PathBuf>>(path: P) -> Self {
         let path = path.into();
         let name = path
@@ -211,6 +232,14 @@ impl std::fmt::Display for FixtureInfo {
     /// Formats as `"<name> (<path>)"` — a compact, single-line rendering for
     /// human-readable test output. The full structured view (including
     /// `description`) is available via the derived [`Debug`] impl.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` — formatter receiving the rendered fixture information.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when formatting succeeds, or the formatter's error.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({})", self.name, self.path.display())
     }
@@ -223,6 +252,15 @@ impl std::fmt::Display for FixtureInfo {
 /// sitting directly in the root are described as `"root-level fixture"`, and
 /// paths that cannot be related to the fixtures root fall back to the generic
 /// `"PDF fixture"`.
+///
+/// # Arguments
+///
+/// * `path` — fixture path to classify relative to [`fixtures_root`].
+///
+/// # Returns
+///
+/// A category-specific description, `"root-level fixture"`, or the generic
+/// `"PDF fixture"` when the path is outside the fixtures tree.
 pub fn fixture_description(path: &Path) -> String {
     let root = fixtures_root();
     // Canonicalize the root so it matches the canonical paths produced by the
@@ -296,6 +334,15 @@ pub enum FixtureDiscoveryError {
 }
 
 impl std::fmt::Display for FixtureDiscoveryError {
+    /// Formats the error with its variant-specific path or source details.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` — formatter receiving the human-readable error.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when formatting succeeds, or the formatter's error.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::RootMissing(p) => {
@@ -313,6 +360,12 @@ impl std::fmt::Display for FixtureDiscoveryError {
 }
 
 impl std::error::Error for FixtureDiscoveryError {
+    /// Returns the underlying glob or I/O error, when this error wraps one.
+    ///
+    /// # Returns
+    ///
+    /// The wrapped [`glob::PatternError`] or [`std::io::Error`] for errors
+    /// with a source, otherwise `None`.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Pattern(e) => Some(e),
@@ -323,6 +376,15 @@ impl std::error::Error for FixtureDiscoveryError {
 }
 
 impl From<glob::PatternError> for FixtureDiscoveryError {
+    /// Converts a glob parser error into the corresponding discovery error.
+    ///
+    /// # Arguments
+    ///
+    /// * `e` — parser error returned by [`glob`] while compiling a pattern.
+    ///
+    /// # Returns
+    ///
+    /// [`FixtureDiscoveryError::Pattern`] containing `e`.
     fn from(e: glob::PatternError) -> Self {
         Self::Pattern(e)
     }
@@ -344,6 +406,10 @@ impl From<glob::PatternError> for FixtureDiscoveryError {
 /// - [`FixtureDiscoveryError::NoFixtures`] — the root exists but holds no PDFs.
 /// - [`FixtureDiscoveryError::Glob`] — a matched entry could not be read.
 /// - [`FixtureDiscoveryError::Pattern`] — the computed glob pattern is invalid.
+///
+/// # Returns
+///
+/// A sorted, duplicate-free vector of fixture records on success.
 ///
 /// # Example
 ///
@@ -379,6 +445,10 @@ pub fn discover_all_fixture_infos_result() -> Result<Vec<FixtureInfo>, FixtureDi
 /// # Errors
 ///
 /// See [`discover_all_fixture_infos_result`].
+///
+/// # Returns
+///
+/// A sorted, duplicate-free vector of fixture records on success.
 pub fn discover_fixture_infos_result_in(
     root: &Path,
 ) -> Result<Vec<FixtureInfo>, FixtureDiscoveryError> {
@@ -421,6 +491,14 @@ pub fn discover_fixture_infos_result_in(
 /// which `glob` follows but a `follow_links(false)` walk (the
 /// `discover_all_fixtures` family) would not. Ported from the standalone
 /// `tests/test_glob_discovery.rs` helper of the same name.
+///
+/// # Arguments
+///
+/// * `path` — candidate fixture path whose directory ancestors are inspected.
+///
+/// # Returns
+///
+/// `true` if a directory ancestor is a symlink; otherwise `false`.
 pub fn ancestor_is_symlink(mut path: &Path) -> bool {
     while let Some(parent) = path.parent() {
         if parent.as_os_str().is_empty() {

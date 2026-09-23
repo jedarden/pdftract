@@ -67,6 +67,8 @@ use walkdir::WalkDir;
 // module (`forms_integration`, `cli_invocation_fixtures`, via
 // `mod fixture_discovery;`) keep their existing `fixture_discovery::` import
 // paths working unchanged.
+/// Re-export the shared, fallible fixture-discovery API for existing consumers
+/// of this standalone integration-test module.
 pub use common::fixture_discovery::{
     ancestor_is_symlink, discover_all_fixture_infos_result, discover_fixture_infos_result_in,
     fixtures_root, normalize_path, FixtureDiscoveryError, FixtureInfo,
