@@ -125,44 +125,51 @@ fn extract_mcid_from_props(
     diagnostics: Option<&mut Vec<Diagnostic>>,
     resolver: Option<&XrefResolver>,
 ) -> Option<u32> {
+    let resolved = resolve_property_object(props, resources, resolver, diagnostics)?;
+
+    match resolved {
+        PdfObject::Dict(dict) => extract_mcid_from_dict(&dict),
+        _ => None,
+    }
+}
+
+/// Resolve a BDC properties operand to its property dictionary.
+///
+/// Inline dictionaries are returned directly. Property names are looked up in
+/// the page resources and indirect references are resolved when a resolver is
+/// available. Invalid resource values and resolution failures emit the same
+/// diagnostic used by the MCID extraction path.
+fn resolve_property_object(
+    props: &PdfObject,
+    resources: &ResourceDict,
+    resolver: Option<&XrefResolver>,
+    diagnostics: Option<&mut Vec<Diagnostic>>,
+) -> Option<PdfObject> {
     match props {
-        PdfObject::Dict(dict) => {
-            // Inline property dict - read /MCID directly
-            extract_mcid_from_dict(dict)
-        }
+        PdfObject::Dict(dict) => Some(PdfObject::Dict(dict.clone())),
         PdfObject::Name(name) => {
-            // Property resource name - look up in /Properties
             let name_str: &str = name.as_ref();
             let name_str = name_str.strip_prefix('/').unwrap_or(name_str);
 
             match resources.lookup_properties(name_str) {
-                // Direct inline property dict - no resolution needed at all
-                Some(PdfObject::Dict(dict)) => extract_mcid_from_dict(dict),
+                Some(PdfObject::Dict(dict)) => Some(PdfObject::Dict(dict.clone())),
                 Some(PdfObject::Ref(obj_ref)) => {
-                    // Indirect reference - resolve it if we have a resolver
                     if let Some(resolver) = resolver {
                         match resolver.resolve(*obj_ref) {
-                            Ok(resolved_obj) => {
-                                // Extract MCID from the resolved object
-                                match resolved_obj {
-                                    PdfObject::Dict(dict) => extract_mcid_from_dict(&dict),
-                                    _ => {
-                                        // Resolved object is not a dictionary
-                                        if let Some(diags) = diagnostics {
-                                            diags.push(Diagnostic::with_dynamic_no_offset(
-                                                DiagCode::StructInvalidBdcOperand,
-                                                format!(
-                                                    "BDC property '{}' resolved to non-dict object",
-                                                    name_str
-                                                ),
-                                            ));
-                                        }
-                                        None
-                                    }
+                            Ok(PdfObject::Dict(dict)) => Some(PdfObject::Dict(dict)),
+                            Ok(_) => {
+                                if let Some(diags) = diagnostics {
+                                    diags.push(Diagnostic::with_dynamic_no_offset(
+                                        DiagCode::StructInvalidBdcOperand,
+                                        format!(
+                                            "BDC property '{}' resolved to non-dict object",
+                                            name_str
+                                        ),
+                                    ));
                                 }
+                                None
                             }
                             Err(e) => {
-                                // Failed to resolve the reference
                                 if let Some(diags) = diagnostics {
                                     diags.push(Diagnostic::with_dynamic_no_offset(
                                         DiagCode::StructInvalidBdcOperand,
@@ -176,7 +183,6 @@ fn extract_mcid_from_props(
                             }
                         }
                     } else {
-                        // No resolver available - emit diagnostic and return None
                         if let Some(diags) = diagnostics {
                             diags.push(Diagnostic::with_dynamic_no_offset(
                                 DiagCode::StructInvalidBdcOperand,
@@ -190,7 +196,6 @@ fn extract_mcid_from_props(
                     }
                 }
                 Some(_) => {
-                    // Stored value is neither a property dict nor a reference to one
                     if let Some(diags) = diagnostics {
                         diags.push(Diagnostic::with_dynamic_no_offset(
                             DiagCode::StructInvalidBdcOperand,
@@ -200,7 +205,6 @@ fn extract_mcid_from_props(
                     None
                 }
                 None => {
-                    // Unknown property name - emit diagnostic but continue
                     if let Some(diags) = diagnostics {
                         emit_unknown_property_name(diags, name_str);
                     }
@@ -208,10 +212,7 @@ fn extract_mcid_from_props(
                 }
             }
         }
-        _ => {
-            // Invalid BDC operand - emit diagnostic via caller
-            None
-        }
+        _ => None,
     }
 }
 
@@ -290,44 +291,10 @@ fn extract_ocg_ref_from_props(
     resources: &ResourceDict,
     resolver: Option<&XrefResolver>,
 ) -> Option<crate::parser::object::ObjRef> {
-    match props {
-        PdfObject::Dict(dict) => {
-            // Inline property dict - check for /OCG key
-            prop_dict_get(dict, "/OCG").and_then(|obj| obj.as_ref())
-        }
-        PdfObject::Name(name) => {
-            // Property resource name - look up in /Properties
-            let name_str: &str = name.as_ref();
-            let name_str = name_str.strip_prefix('/').unwrap_or(name_str);
+    let resolved = resolve_property_object(props, resources, resolver, None)?;
 
-            match resources.lookup_properties(name_str) {
-                // Direct inline property dict - no resolution needed at all
-                Some(PdfObject::Dict(dict)) => {
-                    prop_dict_get(dict, "/OCG").and_then(|obj| obj.as_ref())
-                }
-                Some(PdfObject::Ref(obj_ref)) => {
-                    // Indirect reference - resolve the property dict, then read /OCG
-                    if let Some(resolver) = resolver {
-                        match resolver.resolve(*obj_ref) {
-                            Ok(resolved_obj) => match resolved_obj {
-                                PdfObject::Dict(dict) => {
-                                    // Extract /OCG from the resolved dictionary
-                                    prop_dict_get(&dict, "/OCG").and_then(|obj| obj.as_ref())
-                                }
-                                _ => None,
-                            },
-                            Err(_) => None,
-                        }
-                    } else {
-                        // No resolver available
-                        None
-                    }
-                }
-                // Neither a property dict nor a reference to one
-                Some(_) => None,
-                None => None,
-            }
-        }
+    match resolved {
+        PdfObject::Dict(dict) => prop_dict_get(&dict, "/OCG").and_then(|obj| obj.as_ref()),
         _ => None,
     }
 }
