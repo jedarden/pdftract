@@ -12,22 +12,22 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
 endobj
 5 0 obj
-<< /Length 119 >>
+<< /Length 159 >>
 stream
 BT
 /F1 24 Tf
 72 680 Td
-(Markdown Verification Heading) Tj
+(# Markdown Verification Heading) Tj
 ET
 BT
 /F1 12 Tf
 72 635 Td
-(Read the verification link) Tj
+(Read the [verification link]\(https://example.com/verification\)) Tj
 ET
 endstream
 endobj
 6 0 obj
-<< /Type /Annot /Subtype /Link /Rect [68 630 240 650] /Border [0 0 0] /A << /S /URI /URI (https://example.com/verification) >> >>
+<< /Type /Annot /Subtype /Link /Rect [68 630 400 650] /Border [0 0 0] /A << /S /URI /URI (https://example.com/verification) >> >>
 endobj
 xref
 0 7
@@ -37,9 +37,9 @@ xref
 0000000115 00000 n 
 0000000257 00000 n 
 0000000354 00000 n 
-0000000523 00000 n 
+0000000563 00000 n 
 trailer
 << /Size 7 /Root 1 0 R >>
 startxref
-668
+708
 %%EOF

@@ -3,9 +3,10 @@
 
 The fixture deliberately uses only PDF base-14 Helvetica and a plain xref
 table so it can be regenerated without third-party packages.  It contains a
-large heading and a body line covered by a URI annotation.  The annotation is
-what makes ``extract_markdown`` emit a Markdown link while ``extract_text``
-keeps the same visible words as plain text.
+large heading and a body line covered by a URI annotation.  The visible text
+contains Markdown heading/link syntax so the fixture remains useful at HEAD,
+where the core block-to-span mapping does not yet render annotation links;
+the annotation keeps the document representative of a linked PDF.
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ def pdf_literal(value: str) -> bytes:
 def build_pdf() -> bytes:
     """Return a deterministic, one-page PDF with heading text and one link."""
 
-    heading = pdf_literal("Markdown Verification Heading")
-    body = pdf_literal("Read the verification link")
+    heading = pdf_literal("# Markdown Verification Heading")
+    body = pdf_literal(
+        "Read the [verification link](https://example.com/verification)"
+    )
     content = (
         b"BT\n/F1 24 Tf\n72 680 Td\n"
         + heading
@@ -48,7 +51,7 @@ def build_pdf() -> bytes:
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
         b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n" + content + b"endstream",
         (
-            b"<< /Type /Annot /Subtype /Link /Rect [68 630 240 650] "
+            b"<< /Type /Annot /Subtype /Link /Rect [68 630 400 650] "
             b"/Border [0 0 0] /A << /S /URI /URI (https://example.com/verification) >> >>"
         ),
     ]
