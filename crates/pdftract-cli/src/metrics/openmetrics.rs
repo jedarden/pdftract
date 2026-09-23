@@ -29,7 +29,7 @@ use std::fmt::Write as _;
 
 /// Content type of an OpenMetrics v1.0 text exposition.
 ///
-/// Served as the `Content-Type` of the future `/metrics` endpoint.
+/// Served as the `Content-Type` of the `/metrics` endpoint.
 pub const CONTENT_TYPE: &str = "application/openmetrics-text; version=1.0.0; charset=utf-8";
 
 /// The metric kinds the formatter can render.

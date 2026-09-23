@@ -1,6 +1,6 @@
 //! Integration tests for the `--metrics PORT` exposition listener shared
 //! by `pdftract serve` and `pdftract mcp --bind` (plan "Monitoring and
-//! Alerting", bead pdftract-c20c44c1).
+//! Alerting", bead pdftract-c2447bd8).
 //!
 //! These spawn the real binary so the second listener is observed on the
 //! wire, not just in-process:
@@ -546,6 +546,7 @@ fn serve_metrics_listener_serves_openmetrics_on_a_second_port() {
         .multipart(form)
         .send()
         .expect("POST /extract with malformed pdf");
+    let extract_status = extract.status().as_u16();
     assert!(
         !extract.status().is_success(),
         "garbage input must not extract successfully"
@@ -567,6 +568,24 @@ fn serve_metrics_listener_serves_openmetrics_on_a_second_port() {
         body.contains("\npdftract_http_requests_total{"),
         "served requests must record pdftract_http_requests_total samples; body:\n{body}"
     );
+    assert!(
+        body.contains(&format!(
+            "pdftract_http_requests_total{{endpoint=\"/extract\",status=\"{extract_status}\"}}"
+        )),
+        "the malformed service request must carry its registered endpoint and status labels; body:\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_http_requests_total{endpoint=\"/health\",status=\"200\"}"),
+        "the liveness request must carry its endpoint and status labels; body:\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_http_requests_total{endpoint=\"/metrics\",status=\"200\"}"),
+        "metrics-listener traffic must carry the /metrics endpoint and status labels; body:\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_http_requests_total{endpoint=\"/ready\",status=\"200\"}"),
+        "readiness traffic must carry the /ready endpoint and status labels; body:\n{body}"
+    );
 }
 
 /// `pdftract mcp --bind ... --metrics 0` gets the same second listener:
@@ -586,9 +605,32 @@ fn mcp_metrics_listener_serves_openmetrics_on_a_second_port() {
     wait_until_healthy(&client, main);
     let metrics_url = server.metrics_url();
 
-    assert_exposition(&client, &metrics_url);
+    let before = assert_exposition(&client, &metrics_url);
+    let before_mcp_requests =
+        sample_value(&before, "pdftract_mcp_requests_total{tool=\"classify\"}").unwrap_or(0.0);
 
-    // The second listener serves /metrics and nothing else.
+    // A real HTTP MCP tools/call request must be counted by its tool name,
+    // even when the selected Phase 5.6 stub returns an application error.
+    let call = client
+        .post(format!("http://127.0.0.1:{main}/"))
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "classify",
+                "arguments": {"path": "unused.pdf"}
+            }
+        }))
+        .send()
+        .expect("POST MCP tools/call");
+    assert_eq!(call.status(), reqwest::StatusCode::OK);
+    let call_body: serde_json::Value = call.json().expect("MCP response JSON");
+    assert_eq!(call_body["jsonrpc"], "2.0");
+    assert_eq!(call_body["id"], 1);
+
+    // Both the metrics listener and the main MCP listener count unmatched
+    // paths with a bounded label rather than exposing a raw request path.
     let response = client
         .get(format!("{metrics_url}/health"))
         .send()
@@ -596,10 +638,8 @@ fn mcp_metrics_listener_serves_openmetrics_on_a_second_port() {
     assert_eq!(
         response.status(),
         reqwest::StatusCode::NOT_FOUND,
-        "the metrics listener must serve only /metrics"
+        "the metrics listener must not serve the main liveness route"
     );
-
-    // And the main MCP port must NOT serve /metrics (endpoint policy).
     let response = client
         .get(format!("http://127.0.0.1:{main}/metrics"))
         .send()
@@ -607,7 +647,27 @@ fn mcp_metrics_listener_serves_openmetrics_on_a_second_port() {
     assert_eq!(
         response.status(),
         reqwest::StatusCode::NOT_FOUND,
-        "/metrics must never be routed on the main mcp port"
+        "the main MCP listener must not serve /metrics"
+    );
+
+    let body = assert_exposition(&client, &metrics_url);
+    let after_mcp_requests = sample_value(&body, "pdftract_mcp_requests_total{tool=\"classify\"}")
+        .expect("tools/call must create a labeled MCP request sample");
+    assert!(
+        after_mcp_requests > before_mcp_requests,
+        "MCP tool counter must increase: before={before_mcp_requests}, after={after_mcp_requests}\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_http_requests_total{endpoint=\"/\",status=\"200\"}"),
+        "the MCP service request must carry endpoint and status labels; body:\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_http_requests_total{endpoint=\"/metrics\",status=\"200\"}"),
+        "metrics-listener traffic must carry the /metrics endpoint and status labels; body:\n{body}"
+    );
+    assert!(
+        body.contains("pdftract_http_requests_total{endpoint=\"unmatched\",status=\"404\"}"),
+        "the metrics listener's unmatched route traffic must be bounded and labeled; body:\n{body}"
     );
 }
 

@@ -1,3 +1,7 @@
+# The separate `--metrics PORT` listener serves `/metrics` as OpenMetrics v1.0
+# text with Content-Type `application/openmetrics-text; version=1.0.0;
+# charset=utf-8`. The complete emitted metric-family contract is documented
+# in docs/operations/metrics.md; keep rule expressions limited to those names.
 groups:
   - name: pdftract_serve
     interval: 30s
@@ -65,14 +69,6 @@ groups:
             above 80% threshold for 5 minutes. The service is at risk of becoming
             unresponsive under load.
           runbook: "https://github.com/jedarden/pdftract/blob/main/docs/plan/plan.md#monitoring-and-alerting"
-
-      # NOTE: no memory/RSS alert. An earlier revision of this file alerted on
-      # `process_resident_memory_bytes` and `pdftract_max_decompress_bytes`;
-      # neither is part of pdftract's shipped metric surface (the 13 families
-      # in docs/plan/plan.md "Monitoring and Alerting" — the hand-rolled
-      # OpenMetrics formatter emits no process collector and no
-      # decompression-ceiling gauge), so that rule could never fire. Re-add a
-      # memory alert only together with a metric that is actually emitted.
 
       # Additional alert from plan recommendations
       - alert: PdftractCacheSizeGrowingUnchecked

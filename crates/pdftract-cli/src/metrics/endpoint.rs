@@ -41,8 +41,9 @@
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::State,
+    extract::{Request, State},
     http::StatusCode,
+    middleware::{from_fn_with_state, Next},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -239,6 +240,13 @@ fn metrics_router(registry: Registry, readiness: Readiness) -> Router {
     Router::new()
         .route("/metrics", get(exposition))
         .route("/ready", get(ready))
+        // Count the monitoring listener itself in the shared HTTP counter.
+        // This is deliberately outside the two handlers so 404s on unknown
+        // monitoring paths are counted as `endpoint="unmatched"` too.
+        .layer(from_fn_with_state(
+            registry.clone(),
+            metrics_http_middleware,
+        ))
         .with_state(MetricsState {
             registry,
             readiness,
@@ -282,16 +290,43 @@ async fn ready(State(state): State<MetricsState>) -> Response {
     }
 }
 
+/// Map a metrics-listener path to its bounded endpoint label.
+fn endpoint_label(path: &str) -> &'static str {
+    match path {
+        "/metrics" => "/metrics",
+        "/ready" => "/ready",
+        _ => "unmatched",
+    }
+}
+
+/// Count one response served by the separate metrics/readiness listener.
+async fn metrics_http_middleware(
+    State(registry): State<Registry>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let endpoint = endpoint_label(request.uri().path());
+    let response = next.run(request).await;
+    registry.inc_http_request(endpoint, response.status().as_u16());
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn listener_addr_keeps_the_host_and_swaps_the_port() {
-        assert_eq!(listener_addr("127.0.0.1:8080", 9100).unwrap(), "127.0.0.1:9100");
+        assert_eq!(
+            listener_addr("127.0.0.1:8080", 9100).unwrap(),
+            "127.0.0.1:9100"
+        );
         assert_eq!(listener_addr("0.0.0.0:3000", 9090).unwrap(), "0.0.0.0:9090");
         assert_eq!(listener_addr("[::1]:9000", 9100).unwrap(), "[::1]:9100");
-        assert_eq!(listener_addr("localhost:8080", 9100).unwrap(), "localhost:9100");
+        assert_eq!(
+            listener_addr("localhost:8080", 9100).unwrap(),
+            "localhost:9100"
+        );
     }
 
     #[test]
@@ -317,7 +352,9 @@ mod tests {
         match result {
             Ok(_) => panic!("binding a held port must fail"),
             Err(error) => assert!(
-                error.to_string().contains("Failed to bind metrics listener"),
+                error
+                    .to_string()
+                    .contains("Failed to bind metrics listener"),
                 "unexpected error: {error:#}"
             ),
         }
@@ -341,7 +378,10 @@ mod tests {
                 .contains(&format!("content-type: {}", crate::metrics::CONTENT_TYPE)),
             "content-type must be exactly the OpenMetrics type, got: {raw}"
         );
-        assert!(raw.ends_with("# EOF\n"), "response must end in # EOF:\\n, got: {raw}");
+        assert!(
+            raw.ends_with("# EOF\n"),
+            "response must end in # EOF:\\n, got: {raw}"
+        );
         let body = raw.split("\r\n\r\n").nth(1).unwrap_or_default();
         assert!(
             body.contains("pdftract_build_info"),
@@ -353,13 +393,21 @@ mod tests {
     /// HTTP/1.1 response text.
     async fn http_get(bound: SocketAddr, path: &str) -> String {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let mut stream = tokio::net::TcpStream::connect(bound).await.expect("connect");
+        let mut stream = tokio::net::TcpStream::connect(bound)
+            .await
+            .expect("connect");
         stream
-            .write_all(format!("GET {path} HTTP/1.1\r\nHost: metrics\r\nConnection: close\r\n\r\n").as_bytes())
+            .write_all(
+                format!("GET {path} HTTP/1.1\r\nHost: metrics\r\nConnection: close\r\n\r\n")
+                    .as_bytes(),
+            )
             .await
             .expect("write request");
         let mut raw = String::new();
-        stream.read_to_string(&mut raw).await.expect("read response");
+        stream
+            .read_to_string(&mut raw)
+            .await
+            .expect("read response");
         raw
     }
 
@@ -496,9 +544,7 @@ mod tests {
     fn probe_accepts_a_writable_directory_and_leaves_nothing_behind() {
         let dir = tempfile::tempdir().expect("tempdir");
         assert!(probe_cache_writable(dir.path()));
-        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
-            .expect("read_dir")
-            .collect();
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path()).expect("read_dir").collect();
         assert!(
             leftovers.is_empty(),
             "probe must not leave files behind: {leftovers:?}"
@@ -533,7 +579,9 @@ mod tests {
         // assert: if the probe still succeeded (running as root), the
         // directory is empty anyway and there is nothing to assert about
         // rejection.
-        let mut restored = std::fs::metadata(dir.path()).expect("metadata").permissions();
+        let mut restored = std::fs::metadata(dir.path())
+            .expect("metadata")
+            .permissions();
         restored.set_mode(0o755);
         std::fs::set_permissions(dir.path(), restored).expect("chmod back");
 
@@ -542,9 +590,7 @@ mod tests {
             return;
         }
         assert!(!writable);
-        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
-            .expect("read_dir")
-            .collect();
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path()).expect("read_dir").collect();
         assert!(
             leftovers.is_empty(),
             "failed probe must not leave files behind: {leftovers:?}"
