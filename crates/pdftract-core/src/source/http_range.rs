@@ -514,7 +514,24 @@ impl PdfSource for HttpRangeSource {
 
         // Batch fetch each contiguous run of missing blocks
         for (run_start, run_end) in missing_runs {
-            let _ = self.fetch_range(run_start, run_end);
+            // Best-effort by contract: a failed prefetch fetch only means the
+            // next read_range over this span falls back to a synchronous
+            // fetch — a performance hint lost, never correctness — so the
+            // error is deliberately swallowed rather than propagated.
+            // Logged at trace level so a silently failing prefetch (which
+            // would otherwise degrade every later read in the span with no
+            // record anywhere) is observable when debugging, mirroring the
+            // MmapSource::prefetch madvise handling.
+            if let Err(e) = self.fetch_range(run_start, run_end) {
+                // Structured fields so a persistently failing run is
+                // diagnosable and queryable from the log line alone.
+                tracing::trace!(
+                    run_start,
+                    run_end,
+                    error = %e,
+                    "range prefetch fetch failed; continuing without warmed cache"
+                );
+            }
         }
     }
 }
@@ -814,6 +831,7 @@ pub fn download_to_temp_and_mmap_with_hook(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_block_size_constants() {
@@ -914,6 +932,10 @@ mod tests {
         shutdown: Arc<std::sync::atomic::AtomicBool>,
         finished: Arc<std::sync::atomic::AtomicBool>,
         url: String,
+        /// Failure injection: when set, every range GET fails with 500 while
+        /// the HEAD probe stays healthy — a flaky origin for exercising
+        /// error paths without touching server startup. Defaults to false.
+        fail_range_get: Arc<std::sync::atomic::AtomicBool>,
     }
 
     #[cfg(feature = "remote")]
@@ -929,11 +951,13 @@ mod tests {
             let body = Arc::new(body);
             let shutdown = Arc::new(AtomicBool::new(false));
             let finished = Arc::new(AtomicBool::new(false));
+            let fail_range_get = Arc::new(AtomicBool::new(false));
 
             let thread_listener = listener.try_clone()?;
             let thread_body = body;
             let thread_shutdown = shutdown.clone();
             let thread_finished = finished.clone();
+            let thread_fail_range_get = fail_range_get.clone();
 
             std::thread::spawn(move || {
                 loop {
@@ -968,37 +992,45 @@ mod tests {
                                     b"\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
                                 );
                             } else if method == "GET" {
-                                let (start, end) = request
-                                    .lines()
-                                    .find_map(|l| l.strip_prefix("Range: bytes="))
-                                    .and_then(|v| v.split_once('-'))
-                                    .map(|(s, e)| {
-                                        (
-                                            s.trim().parse::<usize>().unwrap_or(0),
-                                            e.trim()
-                                                .parse::<usize>()
-                                                .unwrap_or(thread_body.len() - 1),
+                                if thread_fail_range_get.load(Ordering::Relaxed) {
+                                    response.extend_from_slice(
+                                        b"HTTP/1.1 500 Internal Server Error\r\n\
+                                          Content-Length: 0\r\n\
+                                          Connection: close\r\n\r\n",
+                                    );
+                                } else {
+                                    let (start, end) = request
+                                        .lines()
+                                        .find_map(|l| l.strip_prefix("Range: bytes="))
+                                        .and_then(|v| v.split_once('-'))
+                                        .map(|(s, e)| {
+                                            (
+                                                s.trim().parse::<usize>().unwrap_or(0),
+                                                e.trim()
+                                                    .parse::<usize>()
+                                                    .unwrap_or(thread_body.len() - 1),
+                                            )
+                                        })
+                                        .unwrap_or((0, thread_body.len() - 1));
+                                    let end = end.min(thread_body.len() - 1);
+                                    let data = &thread_body[start..=end];
+                                    response.extend_from_slice(b"HTTP/1.1 206 Partial Content\r\n");
+                                    response.extend_from_slice(
+                                        format!(
+                                            "Content-Range: bytes {}-{}/{}\r\n",
+                                            start,
+                                            end,
+                                            thread_body.len()
                                         )
-                                    })
-                                    .unwrap_or((0, thread_body.len() - 1));
-                                let end = end.min(thread_body.len() - 1);
-                                let data = &thread_body[start..=end];
-                                response.extend_from_slice(b"HTTP/1.1 206 Partial Content\r\n");
-                                response.extend_from_slice(
-                                    format!(
-                                        "Content-Range: bytes {}-{}/{}\r\n",
-                                        start,
-                                        end,
-                                        thread_body.len()
-                                    )
-                                    .as_bytes(),
-                                );
-                                response.extend_from_slice(b"Content-Length: ");
-                                response.extend_from_slice(data.len().to_string().as_bytes());
-                                response.extend_from_slice(
-                                    b"\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
-                                );
-                                response.extend_from_slice(data);
+                                        .as_bytes(),
+                                    );
+                                    response.extend_from_slice(b"Content-Length: ");
+                                    response.extend_from_slice(data.len().to_string().as_bytes());
+                                    response.extend_from_slice(
+                                        b"\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                                    );
+                                    response.extend_from_slice(data);
+                                }
                             } else {
                                 response.extend_from_slice(
                                     b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n",
@@ -1020,6 +1052,7 @@ mod tests {
                 shutdown,
                 finished,
                 url,
+                fail_range_get,
             })
         }
     }
@@ -1074,6 +1107,190 @@ mod tests {
             seen.load(std::sync::atomic::Ordering::Relaxed),
             body.len() as u64,
             "cleared hook must not observe"
+        );
+    }
+
+    /// A captured copy of a `tracing` event, its fields stringified so
+    /// assertions can address them by name. Mirrored from the mmap.rs test
+    /// module, which established this capture pattern; extract both into a
+    /// shared cfg(test) helper if a third caller appears.
+    #[derive(Debug)]
+    struct CapturedEvent {
+        target: String,
+        level: tracing::Level,
+        fields: BTreeMap<String, String>,
+    }
+
+    impl CapturedEvent {
+        fn field(&self, name: &str) -> Option<&str> {
+            self.fields.get(name).map(String::as_str)
+        }
+    }
+
+    /// Field visitor that stringifies every value it sees. A `%`-sigil field
+    /// (`error = %e`) arrives as a `DisplayValue`, whose `Debug` impl
+    /// delegates to `Display`, so `record_debug` already captures the
+    /// rendered message; the typed `record_*` overrides keep plain integers
+    /// readable instead of routed through the `format_args!` fallback.
+    struct FieldRecorder(BTreeMap<String, String>);
+
+    impl tracing::field::Visit for FieldRecorder {
+        fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+            self.0.insert(field.name().to_owned(), value.to_string());
+        }
+
+        fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+            self.0.insert(field.name().to_owned(), value.to_string());
+        }
+
+        fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+            self.0.insert(field.name().to_owned(), value.to_string());
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.0.insert(field.name().to_owned(), value.to_owned());
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.insert(field.name().to_owned(), format!("{value:?}"));
+        }
+    }
+
+    /// Minimal subscriber collecting emitted events into a shared buffer.
+    ///
+    /// Same shape as the mmap.rs capture harness: hand-rolled rather than
+    /// adding `tracing-subscriber` as a dev-dependency, and installed via the
+    /// scoped dispatcher (`with_default`) so it sets nothing global and
+    /// cannot conflict with a default subscriber another test in this binary
+    /// may have set. Like the mmap harness it answers `Interest::sometimes`
+    /// so it can never be the source of a cached `Interest::never`.
+    #[derive(Default)]
+    struct CapturingSubscriber {
+        events: Arc<std::sync::Mutex<Vec<CapturedEvent>>>,
+    }
+
+    impl tracing::Subscriber for CapturingSubscriber {
+        fn register_callsite(
+            &self,
+            _metadata: &tracing::Metadata<'static>,
+        ) -> tracing::subscriber::Interest {
+            tracing::subscriber::Interest::sometimes()
+        }
+
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            metadata.level() == &tracing::Level::TRACE
+        }
+
+        fn new_span(&self, _attrs: &tracing::span::Attributes<'_>) -> tracing::Id {
+            tracing::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &tracing::Id, _values: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &tracing::Id, _follows: &tracing::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut recorder = FieldRecorder(BTreeMap::new());
+            event.record(&mut recorder);
+            self.events.lock().unwrap().push(CapturedEvent {
+                target: event.metadata().target().to_owned(),
+                level: *event.metadata().level(),
+                fields: recorder.0,
+            });
+        }
+
+        fn enter(&self, _span: &tracing::Id) {}
+
+        fn exit(&self, _span: &tracing::Id) {}
+    }
+
+    /// A failed fetch_range inside prefetch must be recorded at trace level
+    /// with the run_start/run_end/error fields, while prefetch itself stays
+    /// infallible — it returns () and does not panic. Mirrors
+    /// `test_prefetch_madvise_failure_is_traced` in mmap.rs.
+    #[cfg(feature = "remote")]
+    #[test]
+    fn test_prefetch_fetch_failure_is_traced() {
+        use std::sync::atomic::Ordering;
+        use std::sync::Mutex;
+
+        // Two blocks: block 0 can be warmed while block 1 fails.
+        let body = vec![0x41u8; 2 * BLOCK_SIZE as usize];
+        let server = HookLoopbackServer::spawn(body).expect("bind loopback server on :0");
+        let source = HttpRangeSource::open(&server.url).expect("open against loopback server");
+        assert!(
+            source.supports_range(),
+            "HEAD probe must grant range support"
+        );
+
+        // One capture round: reset the server to healthy, warm block 0 (must
+        // stay silent — the event signals a dropped prefetch, not routine
+        // operation), flip the server to failing, prefetch block 1, and hand
+        // back the shared event buffer. Scoped dispatcher, so any default
+        // subscriber another test in this binary set is left untouched.
+        let capture = |source: &HttpRangeSource, server: &HookLoopbackServer| {
+            let subscriber = CapturingSubscriber::default();
+            let captured = Arc::clone(&subscriber.events);
+            tracing::subscriber::with_default(subscriber, || {
+                server.fail_range_get.store(false, Ordering::Relaxed);
+                source.prefetch(0, 10);
+                assert!(
+                    captured.lock().unwrap().is_empty(),
+                    "successful prefetch must not emit a trace event"
+                );
+
+                server.fail_range_get.store(true, Ordering::Relaxed);
+                // fetch_range now fails; prefetch must still return ()
+                // without propagating or panicking.
+                source.prefetch(BLOCK_SIZE, 10);
+            });
+            captured
+        };
+
+        let mut captured = capture(&source, &server);
+        // The capture can legitimately come back empty once, without the
+        // production code having changed: a `tracing` callsite's cached
+        // interest is computed lazily at its *first* evaluation, and when
+        // that first evaluation lands on a bare thread (no dispatcher), the
+        // callsite caches `Interest::never` and short-circuits before the
+        // scoped dispatcher is consulted. mmap.rs carries the full analysis.
+        // One bounded retry closes the race deterministically, without
+        // sleeps: after the first round the callsite is registered, and
+        // entering a fresh `with_default` rebuilds its interest through the
+        // dispatcher registry. A genuinely missing `trace!` fails identically
+        // on the retry, so no assertion is weakened.
+        if captured.lock().unwrap().is_empty() {
+            captured = capture(&source, &server);
+        }
+
+        let events = captured.lock().unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "expected exactly one trace event: {events:?}"
+        );
+        let event = &events[0];
+        assert_eq!(event.level, tracing::Level::TRACE);
+        assert!(
+            event.target.starts_with("pdftract_core::source"),
+            "event came from an unexpected target: {}",
+            event.target
+        );
+        // Each field is asserted on its own so dropping any one of them from
+        // the trace! call fails here rather than passing vacuously. The run
+        // fields are BLOCK indices, matching the missing_runs accounting.
+        assert_eq!(event.field("run_start"), Some("1"));
+        assert_eq!(event.field("run_end"), Some("1"));
+        let error = event.field("error").unwrap_or_default();
+        assert!(!error.is_empty(), "error field must carry a message");
+        // The injected failure is a 500, classified by classify_http_error;
+        // this also proves the %-sigil Display rendering reached the visitor
+        // intact.
+        assert!(error.contains("HTTP 500"), "unexpected error text: {error}");
+        let message = event.field("message").unwrap_or_default();
+        assert!(
+            message.contains("prefetch"),
+            "message should name the failed operation: {message}"
         );
     }
 }
