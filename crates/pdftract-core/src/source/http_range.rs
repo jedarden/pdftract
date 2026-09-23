@@ -1084,7 +1084,7 @@ mod tests {
         let seen = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let seen_writer = seen.clone();
         let hook: BytesDownloadedHook = Arc::new(move |bytes| {
-            seen_writer.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed)
+            seen_writer.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
         });
 
         let mut source =
