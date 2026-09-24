@@ -97,7 +97,7 @@ pub trait PdfSource: Read + Seek + Send + Sync {
     /// ```
     fn read_range(&self, offset: u64, length: usize) -> io::Result<Bytes>;
 
-    /// Optional hint to pre-fetch a range.
+    /// Advisory hint to pre-fetch a range.
     ///
     /// For local sources (MmapSource, FileSource), this is a no-op since the
     /// OS manages paging via the page cache.
@@ -105,7 +105,16 @@ pub trait PdfSource: Read + Seek + Send + Sync {
     /// For remote HTTP sources (HttpRangeSource, Phase 1.8), this issues a
     /// speculative Range request to warm the cache for upcoming reads.
     ///
-    /// The default implementation is a no-op.
+    /// Prefetch must never fail the caller or change read correctness. A failed
+    /// prefetch degrades readahead performance only; the subsequent read must
+    /// still obtain the requested bytes normally. Failures SHOULD remain
+    /// observable through a structured `tracing` event: use `trace` for local
+    /// kernel hints such as `madvise`, and `debug` for network fetches. The
+    /// reference implementations are `MmapSource::prefetch` and
+    /// `HttpRangeSource::prefetch`.
+    ///
+    /// The default implementation is a deliberate no-op for sources with
+    /// nothing to warm.
     fn prefetch(&self, _offset: u64, _length: usize) {}
 
     /// Check if this is a remote source (HTTP/HTTPS).
