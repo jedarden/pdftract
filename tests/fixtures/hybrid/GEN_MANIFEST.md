@@ -103,9 +103,16 @@ Each hybrid fixture entry includes:
 - `test_focus`: What aspect of the hybrid pipeline this tests
 - `generation_date`: When the fixture was generated
 - `verification_status`: pending | verified | failed
+- `corpus_status`: `superseded-by-primary` for legacy placeholders retained outside the Phase 5.5 corpus
 - `notes`: Any additional context
 
 ## Fixtures
+
+The ten subdirectory fixtures in this section are retained for provenance and
+history only. They are reportlab-dependent placeholders that were never
+validated. Each is marked `superseded-by-primary`; Phase 5.5 must consume the
+validated root-level `hybrid-001` through `hybrid-010` corpus in the section
+above instead.
 
 ### receipt-overtext
 - **description**: Scanned receipt body with vector price overlay text
@@ -116,6 +123,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Merge rule with overlapping vector/OCR on price区域; vector confidence priority
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Classic e-receipt format where receipt is scanned but totals are overlaid as vector for machine readability. **Placeholder PDF created - requires reportlab for full hybrid generation.**
 
 ### letterhead-image
@@ -127,6 +135,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Header extraction precision; OCR on body only; non-overlapping merge
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Common business letter format; tests that vector header doesn't trigger OCR on header cells
 
 ### form-mixed
@@ -138,6 +147,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Scattered vector extraction through cell-level OCR; complex merge patterns
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Simulates PDF forms where the layout is scanned but fillable fields are vector overlays
 
 ### invoice-stamp
@@ -149,6 +159,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: High-confidence vector vs OCR merge; stamp region OCR priority
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Tests that high-confidence vector content is not replaced by OCR of overlapping stamp/signature
 
 ### document-annotation
@@ -160,6 +171,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: OCR priority for underlying content vs vector annotations; annotation preservation
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Simulates annotated academic papers; tests that OCR captures text under highlights while preserving annotation spans
 
 ### figure-caption
@@ -171,6 +183,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Precise caption extraction; figure OCR accuracy; minimal cell coverage
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Tests hybrid detection on low-hybrid-cell-count pages (8 cells = 12.5%, just below 15% threshold if miscounted)
 
 ### sidebar-image
@@ -182,6 +195,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Column-aware hybrid cell detection; side-by-side merge without conflicts
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Tests column detection with hybrid content; verifies OCR runs only on sidebar columns
 
 ### watermark
@@ -193,6 +207,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Vector confidence vs OCR with low-contrast background; maximum hybrid cell count
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Worst-case for hybrid cell count (100% cells); tests that vector text is extracted despite watermark background
 
 ### multi-column-scan
@@ -204,6 +219,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Column detection + hybrid cell grid alignment; multi-column OCR
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Newsletter/magazine format; tests that column detection works correctly when columns are hybrid
 
 ### complex-overlap
@@ -215,6 +231,7 @@ Each hybrid fixture entry includes:
 - **test_focus**: Worst-case merge rule performance; complex bbox overlap calculation
 - **generation_date**: 2024-08-03
 - **verification_status**: pending
+- **corpus_status**: `superseded-by-primary` — use the validated root-level `hybrid-001`–`hybrid-010` corpus for Phase 5.5; this placeholder remains unverified.
 - **notes**: Stress test for merge algorithm; 32 vector spans + 32 OCR regions with alternating pattern
 
 ## Generation Summary

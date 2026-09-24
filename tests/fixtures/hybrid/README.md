@@ -2,6 +2,55 @@
 
 This directory contains hybrid PDF fixtures with mixed vector text and scanned image content for testing the PageClass::Hybrid classifier and hybrid extraction pipeline (Phase 5.2.4).
 
+## Observed classification at HEAD
+
+The table below transcribes the `validation` fields in the ten primary fixture
+sidecars. The observations were recorded at validation HEAD
+`69df04ca292c5e27ef80a7f8d4484dafcf7b0f98` (2026-09-24) by the targeted
+`hybrid_corpus` test. The status is the sidecar's `validation_status`; it is
+not a claim that the observed class matches the expected `Hybrid` class.
+
+| Fixture | Observed PageClass | Hybrid cells | Status |
+|---|---|---:|---|
+| `hybrid-001-vector-header-over-scan.pdf` | Vector | 8/64 (12.50%) | failed |
+| `hybrid-002-vector-form-over-scan.pdf` | Hybrid | 48/64 (75.00%) | verified |
+| `hybrid-003-mixed-column-layout.pdf` | Vector | 0/64 (0.00%) | failed |
+| `hybrid-004-watermark-over-scan.pdf` | Scanned | 64/64 (100.00%) | failed |
+| `hybrid-005-vector-footer-over-scan.pdf` | Vector | 8/64 (12.50%) | failed |
+| `hybrid-006-stamp-annotation.pdf` | Hybrid | 12/64 (18.75%) | verified |
+| `hybrid-007-textbox-overlay.pdf` | Hybrid | 28/64 (43.75%) | verified |
+| `hybrid-008-rotated-vector.pdf` | Hybrid | 24/64 (37.50%) | verified |
+| `hybrid-009-transparent-vector.pdf` | Hybrid | 20/64 (31.25%) | verified |
+| `hybrid-010-complex-layered.pdf` | Scanned | 56/64 (87.50%) | failed |
+
+## Phase 5.5 tuning inputs
+
+These are the routing decisions exercised by the validated primary corpus.
+The percentages below are the observed sidecar values above, not estimates
+from the fixture artwork.
+
+| Fixture | Routing decision exercised |
+|---|---|
+| `hybrid-001` | Threshold boundary: clean header/body separation at 12.50%, below the 15% hybrid-cell threshold; currently routes to Vector. |
+| `hybrid-002` | Scattered vector overlays across a scanned form: accumulation of distributed overlap cells; currently routes to Hybrid at 75.00%. |
+| `hybrid-003` | Page-level-only hybrid: vector and scan coexist with 0.00% overlap cells, so page-level mixed-content detection must route to Hybrid; currently routes to Vector. |
+| `hybrid-004` | Full overlap: a page-wide watermark produces 100.00% overlap cells; tune full-page overlay handling so it is not routed to Scanned. |
+| `hybrid-005` | Threshold boundary and vertical symmetry: footer overlay at 12.50%, below the 15% threshold; currently routes to Vector. |
+| `hybrid-006` | Localized corner stamp: shape/color-aware detection just above the threshold at 18.75%; currently routes to Hybrid. |
+| `hybrid-007` | Distributed textbox overlays: accumulate scattered form regions at 43.75% and avoid duplicate vector/OCR content; currently routes to Hybrid. |
+| `hybrid-008` | Rotated vector content crossing grid boundaries at multiple angles (37.50%); preserve Hybrid routing for non-axis-aligned overlays. |
+| `hybrid-009` | Transparent vector overlays with reduced opacity (31.25%); preserve Hybrid routing when the vector layer is visually diminished. |
+| `hybrid-010` | Complex layered content and geometric shapes at high coverage (87.50%); tune upper-bound routing so layered hybrid content is not routed to Scanned. |
+
+## Corpus layout
+
+Phase 5.5 consumes the ten validated primary fixtures at the directory root,
+`hybrid-001` through `hybrid-010`, together with their metadata sidecars.
+The ten named subdirectories are legacy reportlab-dependent placeholder
+fixtures retained for provenance and history. They were never validated and
+must not be treated as equivalent corpus members; `GEN_MANIFEST.md` marks each
+one `superseded-by-primary` and points consumers to the root-level corpus.
+
 ## Primary Fixtures (Fixtures 1-3)
 
 ### hybrid-001: Vector Header Over Scan
