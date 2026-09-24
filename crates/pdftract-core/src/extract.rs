@@ -173,6 +173,13 @@ fn decode_page_content_streams(
     })
 }
 
+fn attach_page_context(mut diagnostic: Diagnostic, page_index: usize) -> Diagnostic {
+    if diagnostic.page_index.is_none() {
+        diagnostic = diagnostic.with_page_index(page_index);
+    }
+    diagnostic
+}
+
 /// Process a page's content streams to produce glyph::Glyph structs.
 ///
 /// This function implements Phase 3 content stream processing with proper
@@ -193,22 +200,21 @@ fn decode_page_content_streams(
 ///
 /// # Returns
 ///
-/// A `Result` containing a vector of Glyph structs, or an error if processing fails.
+/// A `Result` containing recovered Glyph structs and typed diagnostics, or an
+/// error if glyph conversion fails.
 ///
 /// # Errors
 ///
-/// Returns `PageExtractionError` if:
-/// - Content stream processing fails
-/// - Resources are invalid or missing
-/// - Font resolution fails
+/// The content processor itself is recovery-oriented: diagnostics do not
+/// discard glyphs that were successfully recovered from the page.
 fn process_content_stream_to_glyphs(
     decoded_streams: &[u8],
     page: &crate::parser::pages::PageDict,
     resolver: &crate::parser::xref::XrefResolver,
     page_index: usize,
     default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
-) -> Result<Vec<Glyph>, PageExtractionError> {
-    use crate::content_stream::{process_with_mode, ProcessingMode};
+) -> Result<(Vec<Glyph>, Vec<Diagnostic>), PageExtractionError> {
+    use crate::content_stream::{process_with_mode_and_diagnostics, ProcessingMode};
     use crate::font::UnicodeSource;
     use crate::graphics_state::Color;
 
@@ -217,18 +223,20 @@ fn process_content_stream_to_glyphs(
     // The PageDict already has resources merged during page tree traversal
     // Resources are always present as Arc<ResourceDict> (no need for is_none check)
 
-    let content_glyphs = process_with_mode(
+    let processed = process_with_mode_and_diagnostics(
         decoded_streams,
         &page.resources,
         ProcessingMode::Normal,
         None,
         default_off_ocgs,
         Some(resolver),
-    )
-    .map_err(|e| PageExtractionError::GlyphExtractionFailed {
-        page_index,
-        message: format!("Content stream processing failed: {:?}", e),
-    })?;
+    );
+    let content_diagnostics = processed
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| attach_page_context(diagnostic, page_index))
+        .collect();
+    let content_glyphs = processed.glyphs;
 
     // Convert content_stream::Glyph to glyph::Glyph
     let mut glyphs = Vec::with_capacity(content_glyphs.len());
@@ -283,7 +291,7 @@ fn process_content_stream_to_glyphs(
         glyphs.push(glyph);
     }
 
-    Ok(glyphs)
+    Ok((glyphs, content_diagnostics))
 }
 
 /// Result of a PDF extraction operation.
@@ -748,7 +756,12 @@ pub fn extract_pdf(
                 all_pages.push(page_dict);
             }
             Some(Err(diags)) => {
-                page_diagnostics.extend(diags);
+                let page_index = all_pages.len();
+                page_diagnostics.extend(
+                    diags
+                        .into_iter()
+                        .map(|diagnostic| attach_page_context(diagnostic, page_index)),
+                );
                 break;
             }
             None => {
@@ -1866,7 +1879,12 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 all_pages.push(page_dict);
             }
             Some(Err(diags)) => {
-                page_diagnostics.extend(diags);
+                let page_index = all_pages.len();
+                page_diagnostics.extend(
+                    diags
+                        .into_iter()
+                        .map(|diagnostic| attach_page_context(diagnostic, page_index)),
+                );
                 break;
             }
             None => break,
@@ -2234,7 +2252,11 @@ where
                     .first()
                     .map(|d| d.message.to_string())
                     .unwrap_or_else(|| "unknown error".to_string());
-                extraction_diagnostics.extend(diagnostics);
+                extraction_diagnostics.extend(
+                    diagnostics
+                        .into_iter()
+                        .map(|diagnostic| attach_page_context(diagnostic, page_count)),
+                );
                 error_count += 1;
                 let error_page = PageResult {
                     index: page_count,
@@ -2532,7 +2554,9 @@ fn extract_page_from_dict(
     // This implements the complete glyph→span→line→block→reading_order flow
 
     // Step 1: Extract glyphs from content streams (Phase 3)
-    let glyphs = if let (Some(content), Some(res)) = (decoded_streams.as_ref(), resolver) {
+    let (glyphs, mut content_diagnostics) = if let (Some(content), Some(res)) =
+        (decoded_streams.as_ref(), resolver)
+    {
         process_content_stream_to_glyphs(
             &content.bytes,
             page,
@@ -2541,7 +2565,7 @@ fn extract_page_from_dict(
             default_off_ocgs,
         )?
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
 
     // OCG visibility (plan EC-16): glyphs inside a default-off optional content
@@ -2798,6 +2822,12 @@ fn extract_page_from_dict(
         });
     }
 
+    let mut diagnostics = decoded_streams
+        .as_ref()
+        .map(|content| content.diagnostics.clone())
+        .unwrap_or_default();
+    diagnostics.append(&mut content_diagnostics);
+
     Ok(PageResultInternal {
         index: page_index,
         spans: json_spans,
@@ -2805,10 +2835,7 @@ fn extract_page_from_dict(
         tables,
         annotations: vec![],
         error: None,
-        diagnostics: decoded_streams
-            .as_ref()
-            .map(|content| content.diagnostics.clone())
-            .unwrap_or_default(),
+        diagnostics,
         page_height,
     })
 }

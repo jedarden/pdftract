@@ -441,6 +441,16 @@ impl Default for TextMatrix {
     }
 }
 
+/// Result of processing a content stream with recovery enabled.
+#[derive(Debug, Default)]
+pub struct ProcessResult {
+    /// Glyphs recovered from the content stream, including glyphs emitted
+    /// before or alongside recoverable diagnostics.
+    pub glyphs: Vec<Glyph>,
+    /// Diagnostics emitted while processing the content stream.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 /// Process a PDF content stream and extract glyphs.
 ///
 /// This is the main entry point for Phase 3 content stream processing.
@@ -463,7 +473,7 @@ impl Default for TextMatrix {
 ///
 /// # Returns
 ///
-/// A vector of glyphs extracted from the content stream, or diagnostics if parsing fails.
+/// A [`ProcessResult`] containing glyphs and any recoverable diagnostics.
 ///
 /// # Example
 ///
@@ -484,14 +494,19 @@ impl Default for TextMatrix {
 /// let off_ocgs = HashSet::new();
 /// let glyphs_with_ocg = process_with_mode(content, &resources, ProcessingMode::Normal, None, Some(&off_ocgs), None);
 /// ```
-pub fn process_with_mode(
+/// Process a content stream while retaining recoverable glyphs and diagnostics.
+///
+/// Unlike [`process_with_mode`], this API does not discard glyphs when one or
+/// more content operators produce diagnostics. Extraction uses it to preserve
+/// page-level recovery output alongside the typed diagnostic contract.
+pub fn process_with_mode_and_diagnostics(
     content: &[u8],
     resources: &ResourceDict,
     mode: ProcessingMode,
     marked_content_stack: Option<&MarkedContentStack>,
     default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
     resolver: Option<&crate::parser::xref::XrefResolver>,
-) -> Result<Vec<Glyph>, Vec<Diagnostic>> {
+) -> ProcessResult {
     let mut glyphs = Vec::new();
     let mut diagnostics = Vec::new();
     let mut text_matrix = TextMatrix::new();
@@ -819,10 +834,37 @@ pub fn process_with_mode(
         }
     }
 
-    if diagnostics.is_empty() {
-        Ok(glyphs)
+    ProcessResult {
+        glyphs,
+        diagnostics,
+    }
+}
+
+/// Process a content stream, preserving the historical error-shaped result.
+///
+/// Call [`process_with_mode_and_diagnostics`] when callers need to retain
+/// glyphs while also emitting recoverable diagnostics.
+pub fn process_with_mode(
+    content: &[u8],
+    resources: &ResourceDict,
+    mode: ProcessingMode,
+    marked_content_stack: Option<&MarkedContentStack>,
+    default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
+    resolver: Option<&crate::parser::xref::XrefResolver>,
+) -> Result<Vec<Glyph>, Vec<Diagnostic>> {
+    let result = process_with_mode_and_diagnostics(
+        content,
+        resources,
+        mode,
+        marked_content_stack,
+        default_off_ocgs,
+        resolver,
+    );
+
+    if result.diagnostics.is_empty() {
+        Ok(result.glyphs)
     } else {
-        Err(diagnostics)
+        Err(result.diagnostics)
     }
 }
 

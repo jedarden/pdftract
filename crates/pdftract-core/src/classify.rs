@@ -25,6 +25,7 @@
 //! 4. After all signals run: tally votes weighted by strength; pick highest-weight class
 //! 5. If no signal voted, default to Vector with confidence 0.5
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 // serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -1176,6 +1177,10 @@ pub fn page_type_string(
 /// - Without `ocr` feature: emits `BROKENVECTOR_OCR_UNAVAILABLE` diagnostic
 ///   and sets page_type = "broken_vector" in output (no re-extraction)
 ///
+/// This compatibility wrapper preserves the historical return-only API. Use
+/// [`apply_broken_vector_escalation_with_diagnostics`] when the diagnostic
+/// must be retained by the caller.
+///
 /// # Examples
 ///
 /// ```
@@ -1206,6 +1211,25 @@ pub fn apply_broken_vector_escalation(
     readability_score: f32,
     page_index: usize,
 ) -> PageClass {
+    let mut diagnostics = Vec::new();
+    apply_broken_vector_escalation_with_diagnostics(
+        current_class,
+        readability_score,
+        page_index,
+        &mut diagnostics,
+    )
+}
+
+/// Apply BrokenVector escalation and append any emitted diagnostic.
+pub fn apply_broken_vector_escalation_with_diagnostics(
+    current_class: PageClass,
+    readability_score: f32,
+    page_index: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> PageClass {
+    #[cfg(feature = "ocr")]
+    let _ = diagnostics;
+
     // Escalation only applies to Vector pages
     if !current_class.can_escalate_to_broken_vector() {
         return current_class;
@@ -1223,16 +1247,15 @@ pub fn apply_broken_vector_escalation(
         #[cfg(not(feature = "ocr"))]
         {
             // Emit diagnostic when OCR feature is unavailable
-            use crate::diagnostics::{DiagCode, Diagnostic};
-
-            // Emit diagnostic via a thread-local or callback mechanism
-            // For now, we escalate to BrokenVector which will be reflected in output
-            Diagnostic::with_dynamic_no_offset(
-                DiagCode::OcrBrokenVectorUnavailable,
-                format!(
-                    "Page {} readability {:.2} < 0.5 on Vector page; OCR feature unavailable",
-                    page_index, readability_score
-                ),
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::OcrBrokenVectorUnavailable,
+                    format!(
+                        "Page {} readability {:.2} < 0.5 on Vector page; OCR feature unavailable",
+                        page_index, readability_score
+                    ),
+                )
+                .with_page_index(page_index),
             );
         }
 
@@ -2953,6 +2976,32 @@ mod tests {
         let result = apply_broken_vector_escalation(current_class, readability_score, page_index);
 
         assert_eq!(result, PageClass::BrokenVector);
+    }
+
+    #[cfg(not(feature = "ocr"))]
+    #[test]
+    fn test_broken_vector_escalation_emits_page_context() {
+        let mut diagnostics = Vec::new();
+
+        let result = apply_broken_vector_escalation_with_diagnostics(
+            PageClass::Vector,
+            0.3,
+            7,
+            &mut diagnostics,
+        );
+
+        assert_eq!(result, PageClass::BrokenVector);
+        let diagnostic = diagnostics
+            .first()
+            .expect("low-readability escalation should emit a diagnostic");
+        assert_eq!(diagnostic.code, DiagCode::OcrBrokenVectorUnavailable);
+        assert_eq!(diagnostic.page_index, Some(7));
+        assert_eq!(diagnostic.severity(), crate::diagnostics::Severity::Warning);
+        assert_eq!(
+            diagnostic.hint(),
+            DiagCode::OcrBrokenVectorUnavailable.policy().hint
+        );
+        assert!(diagnostic.message.contains("Page 7"));
     }
 
     #[test]
