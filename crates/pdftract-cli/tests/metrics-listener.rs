@@ -159,6 +159,9 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
+        // Keep cleanup bounded even if a test assertion panics.  In
+        // particular, do not fall back to `Child::wait`, which can wedge the
+        // whole test process when a server ignores the termination request.
         let _ = self.child.kill();
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
@@ -168,9 +171,9 @@ impl Drop for Server {
                 Err(_) => break,
             }
         }
-        // SIGKILL plus a 5s grace has always reaped by here; this is the
-        // backstop that guarantees no zombie survives the test process.
-        let _ = self.child.wait();
+        // SIGKILL should have reaped the short-lived test server.  If the OS
+        // still refuses to report exit, return from Drop rather than blocking
+        // indefinitely; the bounded cleanup is the important test contract.
     }
 }
 
