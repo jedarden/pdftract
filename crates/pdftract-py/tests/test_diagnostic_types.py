@@ -1,4 +1,19 @@
-from pdftract.types import Diagnostic, DiagnosticLocation, Document, Metadata
+import importlib.util
+from pathlib import Path
+import sys
+
+
+_TYPES_PATH = Path(__file__).parents[1] / "python" / "pdftract" / "types.py"
+_TYPES_SPEC = importlib.util.spec_from_file_location("pdftract_types_under_test", _TYPES_PATH)
+_TYPES = importlib.util.module_from_spec(_TYPES_SPEC)
+assert _TYPES_SPEC.loader is not None
+sys.modules[_TYPES_SPEC.name] = _TYPES
+_TYPES_SPEC.loader.exec_module(_TYPES)
+
+Diagnostic = _TYPES.Diagnostic
+DiagnosticLocation = _TYPES.DiagnosticLocation
+Document = _TYPES.Document
+Metadata = _TYPES.Metadata
 
 
 def test_structured_diagnostic_preserves_canonical_fields_and_legacy_messages():
