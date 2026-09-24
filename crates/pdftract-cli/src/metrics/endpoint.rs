@@ -438,17 +438,35 @@ mod tests {
     }
 
     /// Criterion 2: injected utilization above 0.90 → 503 naming the
-    /// pool, and only the pool.
+    /// pool, and only the pool. The input changes during the test so the
+    /// live listener proves the complete ready → unready → ready transition.
     #[tokio::test]
     async fn ready_is_503_naming_the_pool_when_utilization_exceeds_the_threshold() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let saturated = std::sync::Arc::new(AtomicBool::new(false));
+        let saturated_input = std::sync::Arc::clone(&saturated);
         let bound = bind_and_spawn(
             "127.0.0.1:0",
             Registry::new(),
-            Readiness::with_inputs(|| 0.95, || true),
+            Readiness::with_inputs(
+                move || {
+                    if saturated_input.load(Ordering::Relaxed) {
+                        0.95
+                    } else {
+                        0.0
+                    }
+                },
+                || true,
+            ),
         )
         .await
         .expect("metrics listener binds on :0");
 
+        let healthy = http_get(bound, "/ready").await;
+        assert!(healthy.starts_with("HTTP/1.1 200 OK\r\n"), "got: {healthy}");
+
+        saturated.store(true, Ordering::Relaxed);
         let raw = http_get(bound, "/ready").await;
         assert!(raw.starts_with("HTTP/1.1 503"), "got: {raw}");
 
@@ -458,6 +476,13 @@ mod tests {
             body["unready"],
             serde_json::json!(["pool_saturated"]),
             "body must name pool saturation and nothing else: {body}"
+        );
+
+        saturated.store(false, Ordering::Relaxed);
+        let recovered = http_get(bound, "/ready").await;
+        assert!(
+            recovered.starts_with("HTTP/1.1 200 OK\r\n"),
+            "readiness did not recover after utilization fell: {recovered}"
         );
     }
 

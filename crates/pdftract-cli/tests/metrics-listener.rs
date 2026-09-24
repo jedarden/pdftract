@@ -37,7 +37,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -255,6 +254,13 @@ fn assert_exposition(client: &Client, metrics_url: &str) -> String {
         assert!(
             as_sample || as_metadata,
             "documented metric {documented} absent from the exposition:\n{body}"
+        );
+    }
+    for suffix in ["_bucket", "_sum", "_count"] {
+        let series = format!("pdftract_extraction_duration_seconds{suffix}");
+        assert!(
+            body.lines().any(|line| line.starts_with(&series)),
+            "histogram series {series} absent from the /metrics exposition:\n{body}"
         );
     }
     assert!(
@@ -608,6 +614,29 @@ fn mcp_metrics_listener_serves_openmetrics_on_a_second_port() {
     let before = assert_exposition(&client, &metrics_url);
     let before_mcp_requests =
         sample_value(&before, "pdftract_mcp_requests_total{tool=\"classify\"}").unwrap_or(0.0);
+
+    let ready = client
+        .get(format!("{metrics_url}/ready"))
+        .send()
+        .expect("GET /ready on the MCP metrics listener");
+    assert_eq!(
+        ready.status(),
+        reqwest::StatusCode::OK,
+        "an idle MCP server without a cache is ready"
+    );
+    let ready_body: serde_json::Value = ready.json().expect("MCP /ready JSON body");
+    assert_eq!(ready_body["status"], "ready", "got: {ready_body}");
+    assert_eq!(ready_body["unready"], serde_json::json!([]));
+
+    let health = client
+        .get(format!("http://127.0.0.1:{main}/health"))
+        .send()
+        .expect("GET /health on the MCP main listener");
+    assert_eq!(
+        health.status(),
+        reqwest::StatusCode::OK,
+        "MCP /health remains a 200 liveness check"
+    );
 
     // A real HTTP MCP tools/call request must be counted by its tool name,
     // even when the selected Phase 5.6 stub returns an application error.
@@ -1178,55 +1207,16 @@ fn exposition_serves_every_metric_and_label_the_alert_rules_use() {
     );
 }
 
-/// Restores a directory's mode when dropped, so a panic between the
-/// chmod and the end of the test cannot leave the tempdir read-only.
-struct RestoreMode {
-    path: PathBuf,
-    mode: u32,
-}
-
-impl Drop for RestoreMode {
-    fn drop(&mut self) {
-        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));
-    }
-}
-
-/// End-to-end readiness failure: a serve instance whose cache location
-/// exists but cannot be written (mode 0555) reports 503 from GET /ready
-/// with the body naming the cache — while GET /health on the main port
-/// stays 200, because an unready server is still alive and must not be
-/// restarted by a liveness probe.
-///
-/// Skips when permission bits are advisory (running as root), exactly
-/// like the in-process `probe_rejects_a_readonly_directory...` test.
+/// End-to-end readiness failure: a serve instance whose cache location is
+/// not a directory reports 503 from GET /ready with the body naming the
+/// cache — while GET /health on the main port stays 200, because an unready
+/// server is still alive and must not be restarted by a liveness probe.
 #[test]
 fn ready_is_503_with_an_unwritable_cache_while_health_stays_200() {
-    let cache = tempfile::tempdir().expect("cache tempdir");
-    let original = fs::metadata(cache.path())
-        .expect("cache dir metadata")
-        .permissions()
-        .mode();
-    // Declared after `cache`, dropped before it: the mode is restored
-    // while the directory is still there, then TempDir removes it.
-    let _restore = RestoreMode {
-        path: cache.path().to_path_buf(),
-        mode: original,
-    };
-    fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555))
-        .expect("chmod 0555 the cache dir");
-
-    // The write attempt must actually fail for this uid, or there is
-    // nothing to observe (root ignores the mode bits).
-    let advisory = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(cache.path().join("advisory-check"))
-        .is_ok();
-    if advisory {
-        fs::remove_file(cache.path().join("advisory-check")).expect("remove advisory check");
-        eprintln!("skipping: permission bits are advisory here (uid 0)");
-        return;
-    }
+    // A regular file is never a writable cache directory. This avoids
+    // permission-bit behavior varying with the uid running the test while
+    // still exercising the production cache writability probe.
+    let cache = tempfile::NamedTempFile::new().expect("cache sentinel file");
 
     let main = free_port();
     let server = Server::spawn(&[
