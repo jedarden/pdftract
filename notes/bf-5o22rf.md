@@ -78,8 +78,9 @@ PASS verdict.
 
 ## Final committed-HEAD checks
 
-The mandatory clean extraction was made from final `HEAD=c1872f3d` at
-`/home/coding/scratch/pdftract-adda71a4-final-dod.6kfPdM`. The repository has no
+The mandatory clean extraction was made from verification commit `c1872f3d` at
+`/home/coding/scratch/pdftract-adda71a4-final-dod.6kfPdM`; the subsequent
+note-only commit `340d9b95` changes no source or tests. The repository has no
 `scripts/definition-of-done.sh`, so the default definition was used:
 `cargo build --all-targets && cargo test`. The build passed (exit 0), but the
 full test command exited 101 after 354 passed and 7 unrelated
