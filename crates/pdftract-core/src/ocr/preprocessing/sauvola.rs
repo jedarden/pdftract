@@ -29,8 +29,8 @@
 //! - ~500 ms for a 1080p image on a typical CPU
 //! - Significantly slower than Otsu, but necessary for scans with uneven lighting
 
-use crate::diagnostics::{DiagCode, Diagnostic};
-use image::{GrayImage, Luma};
+use crate::diagnostics::Diagnostic;
+use image::GrayImage;
 
 /// Default window size for Sauvola binarization.
 ///
@@ -256,6 +256,7 @@ pub fn sauvola_binarize_default(image: &GrayImage) -> GrayImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::Luma;
 
     /// Test: Sauvola on a scanned-like page with uneven lighting produces clean binary
     ///
