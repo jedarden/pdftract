@@ -558,8 +558,9 @@ mod tests {
     #[test]
     fn test_prefetch_madvise_failure_is_traced() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        // 10 bytes, so file_len == 10 and prefetch(0, 100) is past EOF.
-        temp_file.write_all(b"0123456789").unwrap();
+        // Four bytes, so prefetch(0, 4) is valid while prefetch(0, 100) is
+        // past EOF.
+        temp_file.write_all(b"test").unwrap();
         let source = MmapSource::open(temp_file.path()).unwrap();
 
         // One capture round: install the capturing subscriber as a scoped
@@ -573,7 +574,7 @@ mod tests {
             tracing::subscriber::with_default(subscriber, || {
                 // In-range prefetch must stay silent — the event signals a
                 // dropped readahead hint, not routine operation.
-                source.prefetch(0, 10);
+                source.prefetch(0, 4);
                 assert!(
                     captured.lock().unwrap().is_empty(),
                     "in-range prefetch must not emit a madvise-failure event"
@@ -583,6 +584,10 @@ mod tests {
                 // prefetch has an error to log while still returning ()
                 // without panicking.
                 source.prefetch(0, 100);
+
+                // An overflowing range takes the other failure path and
+                // must remain observable as well.
+                source.prefetch(u64::MAX, 10);
             });
             captured
         };
@@ -596,10 +601,10 @@ mod tests {
         // than that registered dispatch. `test_prefetch_past_eof` evaluates
         // this same callsite on a bare thread (no dispatcher installed); if
         // that first evaluation lands between this test's `with_default`
-        // entry and its own `prefetch(0, 100)`, the callsite caches
+        // entry and its own failing prefetch calls, the callsite caches
         // `Interest::never` (the no-subscriber default) and the past-EOF
-        // `trace!` is short-circuited before the scoped dispatcher is ever
-        // consulted — zero events captured.
+        // and overflow `trace!` calls are short-circuited before the scoped
+        // dispatcher is ever consulted — zero events captured.
         //
         // One bounded retry closes the race deterministically, without sleeps
         // or timing assumptions: after the first round the callsite is
@@ -609,13 +614,26 @@ mod tests {
         // interest through the dispatcher registry — where this subscriber is
         // visible and answers "ask me per event". A genuinely missing `trace!`
         // fails identically on the retry, so no assertion is weakened.
-        if captured.lock().unwrap().is_empty() {
+        if captured.lock().unwrap().len() < 2 {
             captured = capture(&source);
         }
 
         let events = captured.lock().unwrap();
-        assert_eq!(events.len(), 1, "expected exactly one trace event: {events:?}");
-        let event = &events[0];
+        assert_eq!(
+            events.len(),
+            2,
+            "expected exactly one event for each failing prefetch: {events:?}"
+        );
+        assert_prefetch_failure_event(&events[0], 0, 100, 4);
+        assert_prefetch_failure_event(&events[1], u64::MAX, 10, 4);
+    }
+
+    fn assert_prefetch_failure_event(
+        event: &CapturedEvent,
+        expected_offset: u64,
+        expected_length: usize,
+        expected_file_len: u64,
+    ) {
         assert_eq!(event.level, tracing::Level::TRACE);
         assert!(
             event.target.starts_with("pdftract_core::source"),
@@ -624,19 +642,18 @@ mod tests {
         );
         // Each field is asserted on its own so dropping any one of them from
         // the trace! call fails here rather than passing vacuously.
-        assert_eq!(event.field("offset"), Some("0"));
-        assert_eq!(event.field("length"), Some("100"));
-        assert_eq!(event.field("file_len"), Some("10"));
+        let expected_offset = expected_offset.to_string();
+        let expected_length = expected_length.to_string();
+        let expected_file_len = expected_file_len.to_string();
+        assert_eq!(event.field("offset"), Some(expected_offset.as_str()));
+        assert_eq!(event.field("length"), Some(expected_length.as_str()));
+        assert_eq!(event.field("file_len"), Some(expected_file_len.as_str()));
         let error = event.field("error").unwrap_or_default();
         assert!(!error.is_empty(), "error field must carry a message");
-        // The guaranteed failure mode here is the past-EOF range rejection,
-        // so the rendered io::Error must say so — this also proves the
-        // %-sigil Display rendering reached the visitor intact.
-        assert!(error.contains("EOF"), "unexpected error text: {error}");
         let message = event.field("message").unwrap_or_default();
         assert!(
-            message.contains("madvise"),
-            "message should name the failed call: {message}"
+            message.contains("madvise") && message.contains("MADV_SEQUENTIAL"),
+            "message should name the failed madvise operation: {message}"
         );
     }
 
