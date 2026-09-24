@@ -9,7 +9,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use pdftract_core::diagnostics::{DiagCode, DiagInfo, Diagnostic, DIAGNOSTIC_CATALOG};
+use pdftract_core::diagnostics::{DiagCode, DiagInfo, Diagnostic, ObjRef, DIAGNOSTIC_CATALOG};
+use pdftract_core::diagnostics_compat::to_legacy_string;
 use pdftract_core::schema::DiagnosticJson;
 
 const SRC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
@@ -594,22 +595,12 @@ fn category_severity_classification_is_stable() {
 
 #[test]
 fn actionable_catalog_codes_have_structured_hints() {
-    let mut actionable = 0;
-
     for info in DIAGNOSTIC_CATALOG {
         assert!(
             !info.suggested_action.trim().is_empty(),
             "{} has an empty catalog action",
             info.code.name()
         );
-
-        // Entries beginning with "None" explicitly tell the caller that no
-        // remediation is needed. Every other catalog entry is user-actionable
-        // and must carry that action through the structured JSON envelope.
-        if info.suggested_action.starts_with("None") {
-            continue;
-        }
-        actionable += 1;
 
         let diagnostic = Diagnostic::with_static_no_offset(info.code, "test diagnostic");
         let structured = DiagnosticJson::from(&diagnostic);
@@ -620,11 +611,100 @@ fn actionable_catalog_codes_have_structured_hints() {
             info.code.name()
         );
     }
+}
 
-    assert!(
-        actionable > 0,
-        "the catalog has no actionable diagnostics to test"
-    );
+#[test]
+fn every_documented_code_round_trips_its_published_contract() {
+    let catalog = catalog_by_ident();
+
+    for row in doc_rows_by_code().values() {
+        if row.feature.as_deref().and_then(feature_enabled) == Some(false) {
+            continue;
+        }
+
+        let info = catalog
+            .values()
+            .find(|info| info.code.name() == row.code)
+            .unwrap_or_else(|| panic!("{} has no catalog entry", row.code));
+        let expected_severity = row.severity.to_ascii_lowercase();
+        assert_eq!(
+            info.code.severity().to_string(),
+            expected_severity,
+            "{}: documented severity must match the typed code",
+            row.code
+        );
+
+        // First verify the documented document-level shape: code, message,
+        // severity, and catalog hint are retained, while page/location are
+        // omitted when the emission site has no such context.
+        let message = format!("documented message for {}", row.code);
+        let document_level = Diagnostic::with_dynamic_no_offset(info.code, message.clone());
+        let structured = DiagnosticJson::from(&document_level);
+        assert_eq!(structured.code, row.code, "{} code round-trip", row.code);
+        assert_eq!(
+            structured.message, message,
+            "{} message round-trip",
+            row.code
+        );
+        assert_eq!(
+            structured.severity, expected_severity,
+            "{} severity",
+            row.code
+        );
+        assert_eq!(
+            structured.hint.as_deref(),
+            Some(info.suggested_action),
+            "{} hint policy must come from DIAGNOSTIC_CATALOG",
+            row.code
+        );
+        assert_eq!(structured.page_index, None, "{} page policy", row.code);
+        assert_eq!(structured.location, None, "{} location policy", row.code);
+
+        let wire = serde_json::to_value(&structured)
+            .unwrap_or_else(|error| panic!("{} does not serialize: {error}", row.code));
+        let decoded: DiagnosticJson = serde_json::from_value(wire.clone())
+            .unwrap_or_else(|error| panic!("{} does not deserialize: {error}", row.code));
+        assert_eq!(decoded, structured, "{} JSON round-trip", row.code);
+        assert!(
+            wire.get("page_index").is_none(),
+            "{} page_index must be omitted",
+            row.code
+        );
+        assert!(
+            wire.get("location").is_none(),
+            "{} location must be omitted",
+            row.code
+        );
+
+        // Then verify that the same documented code retains both optional
+        // location fields when the typed emission supplies them. The legacy
+        // adapter remains message-only in either case.
+        let contextual = document_level
+            .with_object_ref(ObjRef::new(12, 3))
+            .with_page_index(7);
+        let contextual_json = DiagnosticJson::from(&contextual);
+        assert_eq!(
+            contextual_json.page_index,
+            Some(7),
+            "{} page round-trip",
+            row.code
+        );
+        assert_eq!(
+            contextual_json
+                .location
+                .as_ref()
+                .map(|location| { (location.object_number, location.generation_number) }),
+            Some((12, 3)),
+            "{} object location round-trip",
+            row.code
+        );
+        assert_eq!(
+            to_legacy_string(&contextual),
+            message,
+            "{} legacy compatibility must preserve only the message",
+            row.code
+        );
+    }
 }
 
 #[test]

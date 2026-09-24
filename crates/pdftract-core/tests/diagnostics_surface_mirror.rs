@@ -1,14 +1,17 @@
 //! Enforce the string↔structured diagnostics mirror across all three output
 //! surfaces.
 //!
-//! `docs/errors-array-format.md` and `docs/integrations/diagnostics-codes.md`
-//! specify the public contract pinned here:
+//! `docs/errors-array-format.md`, `docs/integrations/diagnostics-codes.md`,
+//! and the `pdftract_core::diagnostics_compat` module docs specify the public
+//! contract pinned here:
 //!
-//! 1. `metadata.diagnostics` (legacy string form — `Diagnostic`'s `Display`,
-//!    `CODE: message (byte offset N)? [obj gen R]?`) and
+//! 1. `metadata.diagnostics` (legacy string form — the diagnostic's
+//!    `message` verbatim, via `diagnostics_compat::to_legacy_strings`) and
 //!    `metadata.diagnostics_detailed` (structured `DiagnosticJson` form)
-//!    mirror one-to-one: same length, same order, and each string entry's
-//!    `CODE:` prefix equals the structured entry's `code` at the same index.
+//!    mirror one-to-one: same length, same order, and each string entry
+//!    equals the structured entry's `message` at the same index. The legacy
+//!    surface carries no code — two diagnostics differing only in code
+//!    render identical strings, by design.
 //! 2. Both fields are omitted entirely from serialized output when empty
 //!    (`skip_serializing_if = "Vec::is_empty"` on each).
 //! 3. The top-level `errors` array of the full JSON output and the NDJSON
@@ -17,13 +20,14 @@
 //!    failure entries.
 //!
 //! The existing `diagnostics_catalog_drift` suite covers doc-catalog vs
-//! emitted-code drift and `diagnostics_serialization_format.rs` pins the
-//! per-field serialization shape; nothing else fails when the two in-result
-//! arrays stop agreeing per-index — which would silently break
-//! line-oriented consumers that key on the `CODE:` prefix.
+//! emitted-code drift, `diagnostics_serialization_format.rs` pins the
+//! per-field serialization shape, and `diagnostics_compat`'s own tests pin
+//! the legacy bytes; nothing else fails when the two in-result arrays stop
+//! agreeing per-index — which would silently break consumers pairing the
+//! arrays by index.
 //!
 //! Results are assembled directly (populated exactly as the producers in
-//! `extract.rs` populate them: `ToString::to_string` for the string array,
+//! `extract.rs` populate them: `to_legacy_strings` for the string array,
 //! `DiagnosticJson::from` for the structured array) rather than via
 //! `extract_pdf`, because the extraction path is currently broken tree-wide
 //! on every fixture. `extraction_driven_end_to_end_mirror` runs the same
@@ -40,10 +44,10 @@ use pdftract_core::schema::DiagnosticJson;
 use pdftract_core::ExtractionMetadata;
 
 /// Assert the one-to-one mirror between the legacy string array and the
-/// structured array: equal length, and element `i` of the string array starts
-/// with `"{structured[i].code}: "` — its remainder in turn starts with the
-/// structured message, because the `Display` grammar appends only the
-/// optional `(byte offset N)` / `[obj gen R]` suffixes after the message.
+/// structured array: equal length, and element `i` of the string array is
+/// exactly `structured[i].message` — the legacy surface carries the bare
+/// message verbatim (no `CODE:` prefix, no offset/location suffix), per the
+/// `diagnostics_compat` module contract.
 fn assert_mirror(diagnostics: &[String], detailed: &[DiagnosticJson], context: &str) {
     assert_eq!(
         diagnostics.len(),
@@ -52,17 +56,12 @@ fn assert_mirror(diagnostics: &[String], detailed: &[DiagnosticJson], context: &
          (strings: {diagnostics:?}, structured: {detailed:?})"
     );
     for (index, (string_entry, structured)) in diagnostics.iter().zip(detailed).enumerate() {
-        let prefix = format!("{}: ", structured.code);
-        assert!(
-            string_entry.starts_with(&prefix),
-            "{context}: string entry {index} ({string_entry:?}) must start with the \
-             structured entry's code prefix ({prefix:?})"
-        );
-        assert!(
-            string_entry[prefix.len()..].starts_with(structured.message.as_str()),
-            "{context}: string entry {index} remainder ({:?}) must start with the \
-             structured message ({:?})",
-            &string_entry[prefix.len()..],
+        assert_eq!(
+            string_entry.as_str(),
+            structured.message.as_str(),
+            "{context}: string entry {index} ({string_entry:?}) must equal the \
+             structured entry's message verbatim ({:?}) — the legacy surface is \
+             the bare message, not `Display`'s \"CODE: ...\" form",
             structured.message
         );
     }
@@ -71,8 +70,9 @@ fn assert_mirror(diagnostics: &[String], detailed: &[DiagnosticJson], context: &
 /// A set of typed diagnostics chosen to stress the per-index pairing: every
 /// severity, document-level and page-level entries, optional fields present
 /// and absent, a message containing `": "`, and two diagnostics whose
-/// messages are identical but whose codes differ (so multiset comparison of
-/// strings cannot fake a match — only true index pairing passes).
+/// messages are identical but whose codes differ (which the legacy surface
+/// renders identically — the documented lossiness; only the structured side
+/// still distinguishes them).
 fn sample_typed_diagnostics() -> Vec<Diagnostic> {
     vec![
         Diagnostic::with_static_no_offset(DiagCode::XrefRepaired, "Xref rebuilt via forward scan"),
@@ -127,23 +127,27 @@ fn empty_result() -> ExtractionResult {
 fn populated_result() -> ExtractionResult {
     let mut result = empty_result();
     let typed = sample_typed_diagnostics();
-    result.metadata.diagnostics = typed.iter().map(ToString::to_string).collect();
+    result.metadata.diagnostics = pdftract_core::diagnostics_compat::to_legacy_strings(&typed);
     result.metadata.diagnostics_detailed = typed.iter().map(DiagnosticJson::from).collect();
     result
 }
 
-// --- Display grammar: the string form's `CODE:` prefix -------------------
+// --- Display impl grammar: the internal rendering, not the legacy surface ---
 
 #[test]
 fn display_prefix_carries_code_for_every_catalog_code() {
+    // `Display`'s grammar (code prefix, message verbatim after it) is the
+    // internal rendering that the `diagnostics_compat` module docs contrast
+    // the legacy surface against — pinned here so that contrast stays
+    // accurate for every catalog code.
     for info in DIAGNOSTIC_CATALOG {
         let diagnostic = Diagnostic::with_static_no_offset(info.code, "sample message");
         let rendered = diagnostic.to_string();
         let prefix = format!("{}: ", info.code.name());
         assert!(
             rendered.starts_with(&prefix),
-            "code {}: Display rendered {rendered:?}, which does not start with the \
-             documented \"{}: \" prefix (docs/errors-array-format.md)",
+            "code {}: Display rendered {rendered:?}, which does not start with \
+             the \"{}: \" prefix",
             info.code.name(),
             info.code.name()
         );
@@ -151,6 +155,16 @@ fn display_prefix_carries_code_for_every_catalog_code() {
             &rendered[prefix.len()..],
             "sample message",
             "code {}: Display must render the message verbatim after the prefix",
+            info.code.name()
+        );
+
+        // The legacy surface of the same diagnostic is the bare message —
+        // deliberately NOT Display's prefixed form.
+        assert_eq!(
+            pdftract_core::diagnostics_compat::to_legacy_string(&diagnostic),
+            "sample message",
+            "code {}: legacy conversion must return the message verbatim, \
+             not the Display form",
             info.code.name()
         );
 
@@ -165,8 +179,11 @@ fn display_prefix_carries_code_for_every_catalog_code() {
 
 #[test]
 fn display_grammar_matches_documented_format() {
-    // `{CODE}: {message} (byte offset {offset})? [obj gen R]?` — the optional
-    // suffixes are pinned in both presence and order.
+    // `Display` renders `{CODE}: {message} (byte offset {offset})?
+    // [obj gen R]?` — the optional suffixes are pinned in both presence and
+    // order. This is the internal rendering the `diagnostics_compat` docs
+    // contrast the legacy surface against; the legacy surface itself never
+    // carries it.
     let bare = Diagnostic::with_static_no_offset(DiagCode::FontGlyphUnmapped, "glyph unmapped");
     assert_eq!(bare.to_string(), "FONT_GLYPH_UNMAPPED: glyph unmapped");
 
@@ -185,6 +202,23 @@ fn display_grammar_matches_documented_format() {
     assert_eq!(
         both.to_string(),
         "STRUCT_INVALID_NAME: bad name (byte offset 99) [7 0 R]"
+    );
+}
+
+#[test]
+fn legacy_conversion_preserves_order_and_duplicate_messages() {
+    let diagnostics = vec![
+        Diagnostic::with_static(DiagCode::StreamDecodeError, 7, "same message")
+            .with_object_ref(ObjRef::new(12, 3))
+            .with_page_index(4),
+        Diagnostic::with_static_no_offset(DiagCode::StructInvalidName, "same message"),
+        Diagnostic::with_static_no_offset(DiagCode::XrefRepaired, "different message"),
+    ];
+
+    assert_eq!(
+        pdftract_core::diagnostics_compat::to_legacy_strings(&diagnostics),
+        vec!["same message", "same message", "different message"],
+        "legacy conversion must retain message bytes, order, and duplicates while dropping typed context"
     );
 }
 
@@ -211,11 +245,15 @@ fn string_and_structured_arrays_mirror_one_to_one() {
     );
 
     // Index pairing specifically: entries 3 and 4 share a message but differ
-    // in code, so each string must prefix-match its own index's code.
-    assert!(
-        result.metadata.diagnostics[3].starts_with(&format!("{}: ", detailed[3].code))
-            && result.metadata.diagnostics[4].starts_with(&format!("{}: ", detailed[4].code)),
-        "string entries 3/4 must pair with their own index's structured code"
+    // in code — the legacy surface renders them identically (the documented
+    // lossiness), and only the structured side still distinguishes them.
+    assert_eq!(
+        result.metadata.diagnostics[3], result.metadata.diagnostics[4],
+        "diagnostics differing only in code must render identical legacy strings"
+    );
+    assert_ne!(
+        detailed[3].code, detailed[4].code,
+        "the structured side keeps the codes distinct"
     );
 }
 
@@ -281,9 +319,9 @@ fn compact_json_metadata_arrays_mirror_one_to_one() {
         assert!(
             wire_strings[index]
                 .as_str()
-                .is_some_and(|s| s.starts_with(&format!("{}: ", detailed[index].code))),
-            "metadata.diagnostics[{index}] must start with the code of \
-             diagnostics_detailed[{index}]"
+                .is_some_and(|s| s == detailed[index].message.as_str()),
+            "metadata.diagnostics[{index}] must equal the message of \
+             diagnostics_detailed[{index}] verbatim"
         );
     }
 }

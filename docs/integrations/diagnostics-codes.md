@@ -1,21 +1,24 @@
 # pdftract Diagnostic Codes
 
-This document catalogs all diagnostic codes emitted by pdftract during PDF extraction. Each diagnostic has a stable SCREAMING_SNAKE_CASE identifier, a severity level, and suggested user action.
+This document catalogs all diagnostic codes emitted by pdftract during PDF extraction. The canonical machine-readable surface is the typed diagnostic object: each entry has a stable SCREAMING_SNAKE_CASE identifier, a severity level, and a catalog hint. The legacy string array remains available for compatibility.
 
 ## Diagnostic Format
 
-All diagnostics follow this structure (shown with every field populated):
+The canonical JSON/NDJSON diagnostic object follows this structure (shown with
+every optional field populated):
 
 ```json
 {
-  "code": "DIAGNOSTIC_CODE",
-  "message": "Human-readable description",
-  "severity": "info|warning|error|fatal",
-  "page_index": 0,
-  "location": {"object_number": N, "generation_number": G},
-  "hint": "Suggested action"
+  "code": "STREAM_DECODE_ERROR",
+  "message": "zlib stream truncated mid-inflation",
+  "severity": "warning",
+  "page_index": 3,
+  "location": {"object_number": 12, "generation_number": 0},
+  "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
 }
 ```
+
+The `severity` value is one of `info`, `warning`, `error`, or `fatal`.
 
 `code`, `message`, and `severity` are always present. `page_index`,
 `location`, and `hint` are **omitted, never serialized as `null`**, when they
@@ -23,7 +26,7 @@ do not apply: `page_index` for document-level diagnostics, `location` when no
 object reference is known, and `hint` when the code's catalog entry carries
 no suggested action. Every catalog entry currently carries an action, so
 emitted diagnostics include a hint today — consumers should nonetheless
-tolerate its absence. This rule (and the severity enum) is pinned by
+tolerate its absence. These field rules and the severity enum are pinned by
 `crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
 
 ### Where structured diagnostics appear
@@ -43,11 +46,26 @@ nothing was emitted. An NDJSON page frame carries `errors` only when that
 page failed. See
 [`docs/errors-array-format.md`](../errors-array-format.md#location).
 
-The legacy string form documented in `docs/errors-array-format.md`
-(`CODE: message (byte offset N)? [obj G R]?`) is still emitted as
-`metadata.diagnostics` for line-oriented consumers. Each entry is the
-internal `Diagnostic`'s `Display`, so its `CODE:` prefix always matches the
-`code` of the structured entry at the same index.
+The legacy string form is still emitted as `metadata.diagnostics` for
+existing callers: one plain string per diagnostic, in emission order, each
+**the diagnostic's `message` verbatim** — no code prefix, no byte-offset or
+object-location suffix. This is the compatibility surface defined by
+`pdftract_core::diagnostics_compat` and pinned byte-for-byte by its golden
+test; the structured objects above are the canonical form. Because the
+legacy entries carry no code, identify a diagnostic through
+`diagnostics_detailed`, which mirrors the string array one-to-one by index
+(see [`docs/errors-array-format.md`](../errors-array-format.md)).
+
+The compatibility guarantee is intentionally narrow: legacy entries preserve
+message bytes, emission order, length, and duplicates. Code, severity, page,
+location, and hint are available only on the canonical structured entry; new
+diagnostic information is added there without changing the legacy strings.
+
+An NDJSON footer carries the same canonical objects in its `errors` array:
+
+```ndjson
+{"frame":"footer","extraction_quality":{"overall_quality":"medium","ocr_fraction":0.0},"errors":[{"code":"STREAM_DECODE_ERROR","message":"zlib stream truncated mid-inflation","severity":"warning","page_index":3,"location":{"object_number":12,"generation_number":0},"hint":"Partial output returned for this stream; consider re-saving the PDF through a normalising tool"}]}
+```
 
 ## Code Categories
 

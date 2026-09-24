@@ -9,8 +9,9 @@
 //!    the canonical, searchable form; `output::unmapped::scan_value` reads
 //!    the same field.
 //! 2. **`metadata.diagnostics`** — the legacy string array serialized from
-//!    `ExtractionMetadata::diagnostics`. Entries carry the documented
-//!    `CODE: message (byte offset N)?` form (`Diagnostic`'s `Display`, per
+//!    `ExtractionMetadata::diagnostics`. Entries are the diagnostic's bare
+//!    `message` verbatim (the compatibility surface defined by
+//!    `pdftract_core::diagnostics_compat` — no code prefix; see
 //!    `docs/errors-array-format.md`), and the field is
 //!    `skip_serializing_if = "Vec::is_empty"`, so it is absent from clean
 //!    extractions. Prefer the object-form `errors` array
@@ -54,8 +55,8 @@ use serde_json::Value;
 /// string-form entries by substring.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
-    /// Diagnostic code (object form) or the full prefixed string (string
-    /// form, e.g. `"FONT_NOT_FOUND: no font for /F1"`).
+    /// Diagnostic code (object form) or the whole entry string (string form,
+    /// i.e. the bare message, e.g. `"no font for /F1"`).
     pub code: String,
     /// Human-readable message, when the entry carries one separately.
     pub message: Option<String>,
@@ -217,8 +218,8 @@ pub fn diagnostics_from_str(
 
 /// Iterate over every entry whose `code` equals `code` exactly.
 ///
-/// For string-form entries the "code" is the whole prefixed string
-/// (`CODE: message ...`), so exact matching only hits object-form entries;
+/// For string-form entries the "code" is the whole entry string (the bare
+/// message), so exact matching intentionally only hits object-form entries;
 /// use [`any_code_contains`] for substring searches over string-form entries.
 pub fn find_by_code<'a>(
     diagnostics: &'a [Diagnostic],
@@ -239,12 +240,14 @@ pub fn count_by_code(diagnostics: &[Diagnostic], code: &str) -> usize {
 
 /// Whether any entry's `code` contains `needle` (substring, case-sensitive).
 ///
-/// This is the search that reaches string-form entries: their `code` is the
-/// full prefixed string (`CODE: message ...`), so both a code
-/// (`any_code_contains(&diags, "FONT_GLYPH_UNMAPPED")`) and a message
-/// fragment (`any_code_contains(&diags, "could not be resolved to Unicode")`)
-/// find a diagnostic emitted as
-/// `"FONT_GLYPH_UNMAPPED: Character code 01 could not be resolved to Unicode ..."`.
+/// This is the search that reaches string-form entries: their `code` holds
+/// the bare message, so only a message fragment matches — e.g.
+/// `any_code_contains(&diags, "could not be resolved to Unicode")` finds a
+/// diagnostic whose message is
+/// `"Character code 01 could not be resolved to Unicode ..."`. A code like
+/// `"FONT_GLYPH_UNMAPPED"` does **not** reach string-form entries (the
+/// message carries no code); search the object-form `errors` array for
+/// codes.
 pub fn any_code_contains(diagnostics: &[Diagnostic], needle: &str) -> bool {
     diagnostics.iter().any(|d| d.code.contains(needle))
 }

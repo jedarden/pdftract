@@ -1,6 +1,6 @@
 # Errors Array Format and Test Integration Guide
 
-This document explains the complete structure of the errors/diagnostics array in pdftract extraction results and how to integrate assertions in tests.
+This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The structured diagnostic object is canonical; the string array is a message-only compatibility surface.
 
 ## Overview
 
@@ -53,8 +53,10 @@ one-to-one (same length, same order, same diagnostics):
 
 - **String form — `ExtractionResult.metadata.diagnostics`**
   - **Type**: `Vec<String>`
-  - **Description**: Diagnostic strings in the `CODE: message` form described
-    below; each is the internal `Diagnostic`'s `Display`.
+  - **Description**: One plain string per diagnostic, in emission order —
+    each entry is the diagnostic's `message` verbatim. This is the
+    compatibility surface defined by `pdftract_core::diagnostics_compat`
+    (see [String Format](#string-format)).
 - **Structured form — `ExtractionResult.metadata.diagnostics_detailed`**
   - **Type**: `Vec<DiagnosticJson>` (see [Structured Object Form](#structured-object-form))
   - **Description**: The same diagnostics as objects with `code`, `message`,
@@ -65,6 +67,11 @@ In the full JSON output (`schema_version` 1.0 document), the structured form is
 additionally the top-level `errors` array; in NDJSON streaming output the
 footer frame's `errors` array carries the same objects (page failures first,
 then document diagnostics).
+
+The compatibility guarantee for `metadata.diagnostics` is limited to the
+message bytes, emission order, length, and duplicates. Code, severity,
+page/location context, and hints are intentionally available only in the
+structured entry; adding that information must not change legacy strings.
 
 Empty-array behavior differs by surface:
 
@@ -77,22 +84,30 @@ Empty-array behavior differs by surface:
 
 ### String Format
 
-Each entry of `metadata.diagnostics` follows this format:
+Each entry of `metadata.diagnostics` is exactly the corresponding
+diagnostic's `message`:
 
 ```
-{DIAGNOSTIC_CODE}: {Human-readable message} (byte offset {offset})? [obj gen R]?
+{Human-readable message}
 ```
 
-The `CODE:` prefix is always present (diagnostics are never emitted as bare
-messages), as is the human-readable message. The byte offset and object
-location suffixes are optional.
+There is no `CODE:` prefix and no byte-offset / object-location suffix: the
+legacy surface carries the message and nothing else. (The internal
+`Diagnostic`'s `Display` does render a richer
+`CODE: message (byte offset N)? [obj G R]?` form, but that is *not* what
+`metadata.diagnostics` contains — the conversion is
+`pdftract_core::diagnostics_compat::to_legacy_strings`, pinned
+byte-for-byte by its golden test.)
 
-**Examples:**
-- `STREAM_DECODE_ERROR: zlib stream truncated mid-inflation (byte offset 12345)`
-- `STRUCT_INVALID_NAME: Name object exceeds 127-byte limit (byte offset 67890)`
-- `FONT_GLYPH_UNMAPPED: Glyph could not be mapped to Unicode`
-- `XREF_REPAIRED: Xref was reconstructed via forward scan`
-- `STREAM_DECODE_ERROR: corrupt flate data (byte offset 4096) [12 0 R]`
+**Examples** (bare messages, as emitted):
+- `zlib stream truncated mid-inflation`
+- `Name object exceeds 127-byte limit`
+- `Glyph could not be mapped to Unicode`
+- `Xref was reconstructed via forward scan`
+- `corrupt flate data`
+
+Because the entries carry no code, identify a diagnostic through the
+structured array below, which mirrors the string array one-to-one by index.
 
 ## Structured Object Form
 
@@ -112,8 +127,8 @@ output) holds one object per diagnostic, as documented in
 
 | Field | Always present? | Meaning |
 |-------|-----------------|---------|
-| `code` | yes | Stable `SCREAMING_SNAKE_CASE` identifier; the string form's prefix |
-| `message` | yes | Human-readable description; the string form's remainder |
+| `code` | yes | Stable `SCREAMING_SNAKE_CASE` identifier |
+| `message` | yes | Human-readable description; the legacy string entry at the same index is exactly this text |
 | `severity` | yes | `info`, `warning`, `error`, or `fatal` — from the typed code, not a substring guess |
 | `page_index` | no | 0-based page the diagnostic applies to; omitted for document-level diagnostics |
 | `location` | no | `{"object_number": N, "generation_number": G}` when known |
@@ -124,16 +139,11 @@ omitted, not `null`. Because `severity`, `page_index`, and `location` come
 from the typed diagnostic itself, prefer the structured form whenever a
 consumer needs more than a substring search.
 
-### Components
+In NDJSON streaming output, the footer uses the same structured object shape:
 
-1. **Diagnostic Code** (e.g., `STREAM_DECODE_ERROR`):
-   - Identifies the type of diagnostic (any of the four severities)
-   - Follows naming convention: `CATEGORY_SPECIFIC_ISSUE`
-   - Categories: `STRUCT_*`, `STREAM_*`, `XREF_*`, `ENCRYPTION_*`, `PAGE_*`, `FONT_*`, `OCR_*`, `REMOTE_*`, `GSTATE_*`, `LAYOUT_*`, `MCP_*`, `CACHE_*`, etc.
-
-2. **Message**: Human-readable description of what occurred
-
-3. **Byte Offset** (optional): Location in the PDF file where the error occurred
+```ndjson
+{"frame":"footer","extraction_quality":{"overall_quality":"medium","ocr_fraction":0.0},"errors":[{"code":"STREAM_DECODE_ERROR","message":"zlib stream truncated mid-inflation","severity":"warning","page_index":3,"location":{"object_number":12,"generation_number":0},"hint":"Partial output returned for this stream; consider re-saving the PDF through a normalising tool"}]}
+```
 
 ## Accessing Error Information
 
@@ -158,18 +168,23 @@ for diagnostic in diagnostics {
 
 ### Checking for Specific Errors
 
+The legacy string entries carry the message only — no code — so key checks
+by code on the structured array:
+
 ```rust
+let detailed = &result.metadata.diagnostics_detailed;
+
 // Check if any stream decode errors occurred
-let has_stream_errors = diagnostics.iter()
-    .any(|d| d.contains("STREAM_DECODE_ERROR"));
+let has_stream_errors = detailed.iter()
+    .any(|d| d.code == "STREAM_DECODE_ERROR");
 
 // Check for encryption errors
-let has_encryption_errors = diagnostics.iter()
-    .any(|d| d.contains("ENCRYPTION"));
+let has_encryption_errors = detailed.iter()
+    .any(|d| d.code.starts_with("ENCRYPTION"));
 
 // Count specific error types
-let glyph_unmapped_count = diagnostics.iter()
-    .filter(|d| d.contains("FONT_GLYPH_UNMAPPED"))
+let glyph_unmapped_count = detailed.iter()
+    .filter(|d| d.code == "FONT_GLYPH_UNMAPPED")
     .count();
 ```
 
@@ -188,12 +203,12 @@ let page_problems = result.metadata.diagnostics_detailed.iter()
     .filter(|d| d.page_index == Some(3))
     .map(|d| (d.code.as_str(), d.hint.as_deref()));
 
-// The string form's prefix always equals the structured code at the same
+// The string entry is exactly the structured entry's message at the same
 // index — the two arrays mirror each other one-to-one.
 for (s, d) in result.metadata.diagnostics.iter()
     .zip(&result.metadata.diagnostics_detailed)
 {
-    assert!(s.starts_with(&format!("{}: ", d.code)));
+    assert_eq!(s.as_str(), d.message.as_str());
 }
 ```
 
@@ -275,14 +290,15 @@ fn test_truncated_stream_emits_decode_error() {
     let result = extract_pdf("tests/fixtures/truncated.pdf", &Default::default())
         .expect("Extraction should succeed (with recovery)");
     
-    // Check for STREAM_DECODE_ERROR diagnostic
-    let has_decode_error = result.metadata.diagnostics.iter()
-        .any(|d| d.contains("STREAM_DECODE_ERROR"));
-    
+    // Check for STREAM_DECODE_ERROR diagnostic (by code, on the
+    // structured array)
+    let has_decode_error = result.metadata.diagnostics_detailed.iter()
+        .any(|d| d.code == "STREAM_DECODE_ERROR");
+
     assert!(
         has_decode_error,
         "Expected STREAM_DECODE_ERROR diagnostic, got: {:?}",
-        result.metadata.diagnostics
+        result.metadata.diagnostics_detailed
     );
 }
 ```
@@ -295,21 +311,22 @@ fn test_malformed_pdf_emits_multiple_warnings() {
     let result = extract_pdf("tests/fixtures/malformed.pdf", &Default::default())
         .expect("Extraction should succeed (with recovery)");
     
-    // Check for multiple expected diagnostics
-    let diagnostics = &result.metadata.diagnostics;
-    
+    // Check for multiple expected diagnostics (by code, on the
+    // structured array)
+    let detailed = &result.metadata.diagnostics_detailed;
+
     assert!(
-        diagnostics.iter().any(|d| d.contains("STRUCT_INVALID_NAME")),
+        detailed.iter().any(|d| d.code == "STRUCT_INVALID_NAME"),
         "Expected STRUCT_INVALID_NAME"
     );
-    
+
     assert!(
-        diagnostics.iter().any(|d| d.contains("STREAM_DECODE_ERROR")),
+        detailed.iter().any(|d| d.code == "STREAM_DECODE_ERROR"),
         "Expected STREAM_DECODE_ERROR"
     );
-    
+
     assert!(
-        diagnostics.iter().any(|d| d.contains("XREF_REPAIRED")),
+        detailed.iter().any(|d| d.code == "XREF_REPAIRED"),
         "Expected XREF_REPAIRED"
     );
 }
@@ -324,8 +341,8 @@ fn test_pdf_with_unmapped_glyphs() {
         .expect("Extraction should succeed");
     
     // Count unmapped glyph diagnostics
-    let unmapped_count = result.metadata.diagnostics.iter()
-        .filter(|d| d.contains("FONT_GLYPH_UNMAPPED"))
+    let unmapped_count = result.metadata.diagnostics_detailed.iter()
+        .filter(|d| d.code == "FONT_GLYPH_UNMAPPED")
         .count();
     
     assert!(
@@ -346,14 +363,14 @@ fn test_encryption_error_message() {
         .expect("Should produce error result");
     
     // Find the encryption error diagnostic
-    let encryption_diag = result.metadata.diagnostics.iter()
-        .find(|d| d.contains("ENCRYPTION_UNSUPPORTED"))
+    let encryption_diag = result.metadata.diagnostics_detailed.iter()
+        .find(|d| d.code == "ENCRYPTION_UNSUPPORTED")
         .expect("Expected ENCRYPTION_UNSUPPORTED diagnostic");
-    
+
     // Verify message contains expected text
     assert!(
-        encryption_diag.contains("no password supplied") || 
-        encryption_diag.contains("Unsupported encryption"),
+        encryption_diag.message.contains("no password supplied") ||
+        encryption_diag.message.contains("Unsupported encryption"),
         "Encryption error message should mention password or unsupported algorithm"
     );
 }
@@ -368,8 +385,8 @@ fn test_partial_extraction_error_count() {
         .expect("Extraction should succeed");
     
     // Verify error_count field matches actual diagnostics
-    let actual_error_count = result.metadata.diagnostics.iter()
-        .filter(|d| d.contains("ERROR") || d.contains("FATAL"))
+    let actual_error_count = result.metadata.diagnostics_detailed.iter()
+        .filter(|d| d.severity == "error" || d.severity == "fatal")
         .count();
     
     assert_eq!(
@@ -388,19 +405,15 @@ fn test_extraction_has_no_fatal_errors() {
     let result = extract_pdf("tests/fixtures/complex.pdf", &Default::default())
         .expect("Extraction should succeed");
     
-    // Ensure no fatal-level diagnostics were emitted
-    let has_fatal = result.metadata.diagnostics.iter()
-        .any(|d| {
-            // Fatal codes include ENCRYPTION_UNSUPPORTED, REMOTE_TLS_FAILED, etc.
-            d.contains("ENCRYPTION_UNSUPPORTED") ||
-            d.contains("REMOTE_TLS_FAILED") ||
-            d.contains("REMOTE_DNS_FAILED")
-        });
-    
+    // Ensure no fatal-level diagnostics were emitted (by typed severity,
+    // never by substring)
+    let has_fatal = result.metadata.diagnostics_detailed.iter()
+        .any(|d| d.severity == "fatal");
+
     assert!(
         !has_fatal,
         "Extraction should not have fatal errors: {:?}",
-        result.metadata.diagnostics
+        result.metadata.diagnostics_detailed
     );
 }
 ```
@@ -435,24 +448,25 @@ fn test_truncated_flate_stream_recovery() {
     let result = extract_pdf(fixture_path, &Default::default())
         .expect("Extraction should succeed with recovery");
     
-    // Should have emitted STREAM_DECODE_ERROR
-    let has_stream_error = result.metadata.diagnostics.iter()
-        .any(|d| d.contains("STREAM_DECODE_ERROR") || d.contains("STREAM_TRUNCATED"));
-    
-    assert!(has_stream_error, 
+    // Should have emitted a stream decode error (by code, on the
+    // structured array)
+    let has_stream_error = result.metadata.diagnostics_detailed.iter()
+        .any(|d| d.code == "STREAM_DECODE_ERROR" || d.code == "STREAM_TRUNCATED");
+
+    assert!(has_stream_error,
         "Expected stream decode error for truncated-flate.pdf");
-    
+
     // Should still produce some output (recovery)
-    assert!(!result.pages.is_empty(), 
+    assert!(!result.pages.is_empty(),
         "Should produce at least one page despite stream error");
-    
+
     // Verify the error message mentions truncation
-    let error_msg = result.metadata.diagnostics.iter()
-        .find(|d| d.contains("STREAM"))
+    let error_msg = result.metadata.diagnostics_detailed.iter()
+        .find(|d| d.code.starts_with("STREAM"))
         .expect("Should have stream-related diagnostic");
-    
-    assert!(error_msg.to_lowercase().contains("truncat") ||
-            error_msg.to_lowercase().contains("incomplete"),
+
+    assert!(error_msg.message.to_lowercase().contains("truncat") ||
+            error_msg.message.to_lowercase().contains("incomplete"),
         "Stream error message should mention truncation or incomplete data");
 }
 ```
@@ -488,8 +502,8 @@ fn test_custom_font_with_unmapped_glyphs() {
         .expect("Extraction should succeed");
     
     // Should have FONT_GLYPH_UNMAPPED diagnostics
-    let unmapped_diagnostics: Vec<_> = result.metadata.diagnostics.iter()
-        .filter(|d| d.contains("FONT_GLYPH_UNMAPPED"))
+    let unmapped_diagnostics: Vec<_> = result.metadata.diagnostics_detailed.iter()
+        .filter(|d| d.code == "FONT_GLYPH_UNMAPPED")
         .collect();
     
     assert!(!unmapped_diagnostics.is_empty(),
@@ -522,10 +536,10 @@ fn test_custom_font_with_unmapped_glyphs() {
 /// Assert that extraction produces a specific diagnostic code
 pub fn assert_has_diagnostic(result: &ExtractionResult, code: &str) {
     assert!(
-        result.metadata.diagnostics.iter().any(|d| d.contains(code)),
-        "Expected diagnostic containing '{}', got: {:?}",
+        result.metadata.diagnostics_detailed.iter().any(|d| d.code == code),
+        "Expected diagnostic with code '{}', got: {:?}",
         code,
-        result.metadata.diagnostics
+        result.metadata.diagnostics_detailed
     );
 }
 
@@ -538,17 +552,17 @@ pub fn assert_no_diagnostics(result: &ExtractionResult) {
     );
 }
 
-/// Count diagnostics containing a specific code
+/// Count diagnostics with a specific code
 pub fn count_diagnostics(result: &ExtractionResult, code: &str) -> usize {
-    result.metadata.diagnostics.iter()
-        .filter(|d| d.contains(code))
+    result.metadata.diagnostics_detailed.iter()
+        .filter(|d| d.code == code)
         .count()
 }
 
-/// Get all diagnostics containing a specific code
-pub fn get_diagnostics(result: &ExtractionResult, code: &str) -> Vec<&String> {
-    result.metadata.diagnostics.iter()
-        .filter(|d| d.contains(code))
+/// Get the structured diagnostics with a specific code
+pub fn get_diagnostics(result: &ExtractionResult, code: &str) -> Vec<&DiagnosticJson> {
+    result.metadata.diagnostics_detailed.iter()
+        .filter(|d| d.code == code)
         .collect()
 }
 ```
@@ -557,7 +571,7 @@ pub fn get_diagnostics(result: &ExtractionResult, code: &str) -> Vec<&String> {
 
 The errors array provides comprehensive visibility into the PDF extraction process:
 
-- **String form**: `result.metadata.diagnostics` — `Vec<String>`, each entry `CODE: message (byte offset N)? [obj G R]?`
+- **String form**: `result.metadata.diagnostics` — `Vec<String>`, each entry the diagnostic's message verbatim (compatibility surface; see `pdftract_core::diagnostics_compat`)
 - **Structured form**: `result.metadata.diagnostics_detailed` — `Vec<DiagnosticJson>` with `code` / `message` / `severity` / `page_index`? / `location`? / `hint`?; mirrors the string array one-to-one and is the top-level `errors` array of the full JSON output
 - **Access**: `result.metadata.diagnostics` and `result.metadata.diagnostics_detailed`
 - **Error Count**: `result.metadata.error_count`

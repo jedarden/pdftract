@@ -30,13 +30,63 @@ use std::fs;
 use pdftract_core::diagnostics::{DiagCode, Diagnostic, DIAGNOSTIC_CATALOG};
 use pdftract_core::extract::{result_to_json, ExtractionResult};
 use pdftract_core::output::json::result_to_output;
-use pdftract_core::output::ndjson::frames::{FooterFrame, PageFrame};
+use pdftract_core::output::ndjson::frames::{FooterFrame, NdjsonFrame, PageFrame};
 use pdftract_core::schema::{DiagnosticJson, ObjectLocationJson};
 
 const DIAGNOSTICS_DOC: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../docs/integrations/diagnostics-codes.md"
 );
+const ERRORS_DOC: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/errors-array-format.md"
+);
+
+fn fenced_blocks(document: &str, language: &str) -> Vec<String> {
+    let opening = format!("```{language}");
+    let mut blocks = Vec::new();
+    let mut current = None;
+
+    for line in document.lines() {
+        if current.is_none() {
+            if line.trim() == opening {
+                current = Some(Vec::new());
+            }
+            continue;
+        }
+
+        if line.trim() == "```" {
+            blocks.push(current.take().expect("a block is open").join("\n"));
+        } else if let Some(lines) = &mut current {
+            lines.push(line.to_string());
+        }
+    }
+
+    assert!(
+        current.is_none(),
+        "unterminated ```{language} fenced block in documentation"
+    );
+    blocks
+}
+
+fn assert_documented_diagnostic(value: &serde_json::Value, context: &str) {
+    assert_no_nulls(value);
+    let diagnostic: DiagnosticJson = serde_json::from_value(value.clone())
+        .unwrap_or_else(|error| panic!("{context} is not a DiagnosticJson: {error}"));
+    assert!(!diagnostic.code.is_empty(), "{context} has an empty code");
+    assert!(
+        !diagnostic.message.is_empty(),
+        "{context} has an empty message"
+    );
+    assert!(
+        matches!(
+            diagnostic.severity.as_str(),
+            "info" | "warning" | "error" | "fatal"
+        ),
+        "{context} has an undocumented severity: {}",
+        diagnostic.severity
+    );
+}
 
 /// A minimal result with no diagnostics and no content, for the empty and
 /// populated serialization cases below.
@@ -124,7 +174,10 @@ fn optional_fields_are_omitted_not_null() {
         "location serializes as an object when known"
     );
     assert_eq!(value["location"]["generation_number"], 0);
-    assert_eq!(value["hint"], "Inspect the source PDF for corrupt stream data");
+    assert_eq!(
+        value["hint"],
+        "Inspect the source PDF for corrupt stream data"
+    );
 
     // A document-level diagnostic with no location and no hint: the optional
     // keys must be absent entirely, never `"key": null`.
@@ -168,7 +221,8 @@ fn catalog_entries_populate_the_documented_envelope() {
         let value = serde_json::to_value(&envelope_for(info)).unwrap();
         assert_no_nulls(&value);
         assert_eq!(
-            value["hint"], info.suggested_action,
+            value["hint"],
+            info.suggested_action,
             "{}: hint must come from the catalog entry",
             info.code.name()
         );
@@ -178,19 +232,14 @@ fn catalog_entries_populate_the_documented_envelope() {
 #[test]
 fn emitted_severities_match_documented_enum() {
     let doc = fs::read_to_string(DIAGNOSTICS_DOC).unwrap();
-    // The format block declares the enum on a single line:
-    //   "severity": "info|warning|error|fatal",
-    let line = doc
-        .lines()
-        .find(|l| l.trim().starts_with("\"severity\":"))
-        .expect("diagnostics-codes.md format block must declare the severity enum");
-    let documented: BTreeSet<String> = line
-        .rsplit('"')
-        .nth(1)
-        .expect("severity enum line must quote the enum values")
-        .split('|')
+    let documented: BTreeSet<String> = ["info", "warning", "error", "fatal"]
+        .into_iter()
         .map(str::to_string)
         .collect();
+    assert!(
+        doc.contains("`info`, `warning`, `error`, or `fatal`"),
+        "diagnostics-codes.md must document the complete severity enum"
+    );
     assert!(
         documented.contains("fatal"),
         "the documented enum must include every severity level, got: {documented:?}"
@@ -206,9 +255,12 @@ fn emitted_severities_match_documented_enum() {
             info.code.name()
         );
         let value = serde_json::to_value(&envelope_for(info)).unwrap();
-        let severity = value["severity"]
-            .as_str()
-            .unwrap_or_else(|| panic!("{}: severity must serialize as a string, got: {value}", info.code.name()));
+        let severity = value["severity"].as_str().unwrap_or_else(|| {
+            panic!(
+                "{}: severity must serialize as a string, got: {value}",
+                info.code.name()
+            )
+        });
         assert!(
             documented.contains(severity),
             "{}: emitted severity {severity:?} is outside the documented enum {documented:?}",
@@ -226,6 +278,55 @@ fn emitted_severities_match_documented_enum() {
 }
 
 #[test]
+fn published_json_and_ndjson_examples_match_wire_shapes() {
+    let diagnostics_doc = fs::read_to_string(DIAGNOSTICS_DOC).unwrap();
+    let errors_doc = fs::read_to_string(ERRORS_DOC).unwrap();
+
+    for (path, document) in [
+        (DIAGNOSTICS_DOC, diagnostics_doc.as_str()),
+        (ERRORS_DOC, errors_doc.as_str()),
+    ] {
+        let blocks = fenced_blocks(document, "json");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "{path} should have exactly one JSON diagnostic example"
+        );
+        let value: serde_json::Value = serde_json::from_str(&blocks[0])
+            .unwrap_or_else(|error| panic!("{path} JSON example is invalid: {error}"));
+        assert_documented_diagnostic(&value, path);
+
+        let ndjson_blocks = fenced_blocks(document, "ndjson");
+        assert_eq!(
+            ndjson_blocks.len(),
+            1,
+            "{path} should have exactly one NDJSON footer example"
+        );
+        let lines: Vec<&str> = ndjson_blocks[0]
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "{path} NDJSON example must contain one line"
+        );
+        let frame: NdjsonFrame = serde_json::from_str(lines[0])
+            .unwrap_or_else(|error| panic!("{path} NDJSON example is invalid: {error}"));
+        let NdjsonFrame::Footer(footer) = frame else {
+            panic!("{path} NDJSON example must be a footer frame");
+        };
+        assert!(
+            !footer.errors.is_empty(),
+            "{path} footer example needs an error"
+        );
+        for (index, error) in footer.errors.iter().enumerate() {
+            assert_documented_diagnostic(error, &format!("{path} footer error {index}"));
+        }
+    }
+}
+
+#[test]
 fn compact_json_omits_metadata_diagnostics_when_empty() {
     let metadata = result_to_json(&empty_result())["metadata"].clone();
     assert!(
@@ -234,21 +335,27 @@ fn compact_json_omits_metadata_diagnostics_when_empty() {
          extraction JSON when empty (docs/errors-array-format.md), got: {metadata}"
     );
 
-    // Populating the array republishes it.
+    // Populating the array republishes it. The entry is the bare message —
+    // the legacy surface (pdftract_core::diagnostics_compat), deliberately
+    // not `Display`'s "CODE: ..." form.
     let mut result = empty_result();
     let diag = Diagnostic::with_static(
         DiagCode::StreamDecodeError,
         42,
         "zlib stream truncated mid-inflation",
     );
-    result.metadata.diagnostics.push(diag.to_string());
+    result
+        .metadata
+        .diagnostics
+        .push(pdftract_core::diagnostics_compat::to_legacy_string(&diag));
 
     let metadata = result_to_json(&result)["metadata"].clone();
     let strings = metadata["diagnostics"].as_array().unwrap();
     assert_eq!(strings.len(), 1);
-    assert!(
-        strings[0].as_str().unwrap().starts_with("STREAM_DECODE_ERROR: "),
-        "the string form must carry the documented CODE: prefix, got: {}",
+    assert_eq!(
+        strings[0].as_str(),
+        Some("zlib stream truncated mid-inflation"),
+        "the string form is the message verbatim, with no code prefix, got: {}",
         strings[0]
     );
 }
@@ -267,23 +374,26 @@ fn full_output_errors_array_is_always_present() {
         .get("errors")
         .expect("top-level `errors` must be present in the full JSON output even when clean");
     assert!(
-        errors.as_array().expect("`errors` must be an array").is_empty(),
+        errors
+            .as_array()
+            .expect("`errors` must be an array")
+            .is_empty(),
         "a clean extraction must serialize an empty `errors` array, got: {errors}"
     );
 }
 
 #[test]
 fn footer_frame_errors_are_always_present() {
-    let footer = FooterFrame::new(
-        pdftract_core::schema::ExtractionQuality::new(),
-        vec![],
-    );
+    let footer = FooterFrame::new(pdftract_core::schema::ExtractionQuality::new(), vec![]);
     let value = serde_json::to_value(&footer).unwrap();
     let errors = value
         .get("errors")
         .expect("the NDJSON footer must carry an `errors` array even when clean");
     assert!(
-        errors.as_array().expect("footer `errors` must be an array").is_empty(),
+        errors
+            .as_array()
+            .expect("footer `errors` must be an array")
+            .is_empty(),
         "a clean footer must serialize an empty `errors` array, got: {errors}"
     );
 }
