@@ -50,3 +50,16 @@ stat -c '%n %s' tests/fixtures/hybrid/hybrid-0??-*.pdf
 The test command exited 0 and reported `1 passed; 0 failed`; its output table
 is reproduced above. The exact tool string is recorded in every sidecar's
 `validation` block.
+
+The repository-wide default definition-of-done attempt was also run from the
+same committed extraction:
+
+```text
+timeout --kill-after=30s 600s cargo build --all-targets   # exit 0
+timeout --kill-after=30s 600s cargo test                  # exit 101
+```
+
+The full test run reached 353 passing tests and 8 pre-existing
+`pdftract-cli` unit-test failures. The failed extraction was intentionally
+retained at `/home/coding/scratch/pdftract-dod-head.4fEPtO` for diagnosis; the
+hybrid acceptance target passed independently.

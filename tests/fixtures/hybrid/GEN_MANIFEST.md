@@ -86,6 +86,11 @@ The five `failed` rows are documented classifier-tuning inputs in the
 verification note for `pdftract-2946c023`; they match the test's
 `EXPECTED_MISMATCH` registry.
 
+The targeted hybrid-corpus test passed at the validation HEAD. The repository
+default `cargo test` definition-of-done command remains red on eight
+pre-existing `pdftract-cli` unit-test failures; this does not affect the
+fixture-specific result and is recorded in the verification note.
+
 ## Fixture Metadata
 
 Each hybrid fixture entry includes:
