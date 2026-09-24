@@ -472,21 +472,6 @@ pub async fn run(
 
     let max_body_bytes = max_upload_mb * 1024 * 1024;
 
-    // Sample `pdftract_rayon_pool_utilization` periodically for the whole
-    // lifetime of the server (`metrics` feature).
-    #[cfg(feature = "metrics")]
-    {
-        let sampler_registry = state.metrics.clone();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
-            loop {
-                ticker.tick().await;
-                sampler_registry
-                    .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
-            }
-        });
-    }
-
     // Bind the `--metrics PORT` listener BEFORE the main
     // listener (`metrics` feature): a port that cannot be bound must fail
     // startup cleanly here — with the flag's clean error and a nonzero
@@ -494,12 +479,14 @@ pub async fn run(
     // only on this listener; the main router below gains neither route
     // (plan "Monitoring and Alerting" endpoint policy).
     #[cfg(feature = "metrics")]
-    if let Some(port) = metrics_port {
+    let metrics_listener = if let Some(port) = metrics_port {
         let metrics_addr = crate::metrics::listener_addr(&bind_addr, port)?;
         let registry = state.metrics.clone();
         let readiness = state.readiness.clone();
-        crate::metrics::bind_and_spawn(&metrics_addr, registry, readiness).await?;
-    }
+        Some(crate::metrics::bind_and_spawn(&metrics_addr, registry, readiness).await?)
+    } else {
+        None
+    };
     #[cfg(not(feature = "metrics"))]
     if metrics_port.is_some() {
         anyhow::bail!(
@@ -508,11 +495,35 @@ pub async fn run(
         );
     }
 
+    #[cfg(feature = "metrics")]
+    let sampler_registry = state.metrics.clone();
     let app = build_router(state, max_body_bytes);
 
-    let listener = tokio::net::TcpListener::bind(&bind_addr)
-        .await
-        .context(format!("Failed to bind to {}", bind_addr))?;
+    let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            #[cfg(feature = "metrics")]
+            if let Some(metrics_listener) = metrics_listener {
+                metrics_listener.shutdown().await;
+            }
+            return Err(error).context(format!("Failed to bind to {}", bind_addr));
+        }
+    };
+
+    // Sample `pdftract_rayon_pool_utilization` periodically for the whole
+    // lifetime of the server (`metrics` feature). Start this only after both
+    // sockets have bound successfully, so failed startup leaves no task.
+    #[cfg(feature = "metrics")]
+    let sampler_task = {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                sampler_registry
+                    .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
+            }
+        })
+    };
 
     // Print startup banner with security warning
     eprintln!("pdftract serve is starting on http://{}", bind_addr);
@@ -536,12 +547,21 @@ pub async fn run(
     // `ConnectInfo<SocketAddr>`, so the make service must supply it — a
     // bare Router serve 500s every request with "Missing request
     // extension".
-    axum::serve(
+    let server_result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await
-    .context("HTTP server error")?;
+    .context("HTTP server error");
+
+    #[cfg(feature = "metrics")]
+    sampler_task.abort();
+    #[cfg(feature = "metrics")]
+    if let Some(metrics_listener) = metrics_listener {
+        metrics_listener.shutdown().await;
+    }
+
+    server_result?;
 
     Ok(())
 }

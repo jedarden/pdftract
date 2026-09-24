@@ -184,21 +184,6 @@ pub async fn run_server(
         audit_writer,
     );
 
-    // Sample `pdftract_rayon_pool_utilization` periodically for the whole
-    // lifetime of the server (`metrics` feature).
-    #[cfg(feature = "metrics")]
-    {
-        let sampler_registry = state.metrics().clone();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
-            loop {
-                ticker.tick().await;
-                sampler_registry
-                    .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
-            }
-        });
-    }
-
     // Bind the `--metrics PORT` listener BEFORE the main
     // listener (`metrics` feature): a port that cannot be bound must fail
     // startup cleanly here — with a clean error and a nonzero exit —
@@ -208,12 +193,14 @@ pub async fn run_server(
     // extraction cache, so readiness is the pool-utilization condition
     // alone (`Readiness::production`'s `None` cache).
     #[cfg(feature = "metrics")]
-    if let Some(port) = metrics_port {
+    let metrics_listener = if let Some(port) = metrics_port {
         let metrics_addr = crate::metrics::listener_addr(&bind_addr, port)?;
         let registry = state.metrics().clone();
         let readiness = crate::metrics::Readiness::production(registry.clone(), None);
-        crate::metrics::bind_and_spawn(&metrics_addr, registry, readiness).await?;
-    }
+        Some(crate::metrics::bind_and_spawn(&metrics_addr, registry, readiness).await?)
+    } else {
+        None
+    };
     #[cfg(not(feature = "metrics"))]
     if metrics_port.is_some() {
         anyhow::bail!(
@@ -222,17 +209,48 @@ pub async fn run_server(
         );
     }
 
+    #[cfg(feature = "metrics")]
+    let sampler_registry = state.metrics().clone();
     let app = build_router(state);
 
     // Resolve the bind address
-    let addr = bind_addr
-        .parse::<SocketAddr>()
-        .with_context(|| format!("Invalid bind address: {}", bind_addr))?;
+    let addr = match bind_addr.parse::<SocketAddr>() {
+        Ok(addr) => addr,
+        Err(error) => {
+            #[cfg(feature = "metrics")]
+            if let Some(metrics_listener) = metrics_listener {
+                metrics_listener.shutdown().await;
+            }
+            return Err(error).with_context(|| format!("Invalid bind address: {}", bind_addr));
+        }
+    };
 
     // Create the TCP listener
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("Failed to bind to {}", bind_addr))?;
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            #[cfg(feature = "metrics")]
+            if let Some(metrics_listener) = metrics_listener {
+                metrics_listener.shutdown().await;
+            }
+            return Err(error).with_context(|| format!("Failed to bind to {}", bind_addr));
+        }
+    };
+
+    // Sample `pdftract_rayon_pool_utilization` periodically for the whole
+    // lifetime of the server (`metrics` feature). Start this only after both
+    // sockets have bound successfully, so failed startup leaves no task.
+    #[cfg(feature = "metrics")]
+    let sampler_task = {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                ticker.tick().await;
+                sampler_registry
+                    .set_rayon_pool_utilization(crate::metrics::sampler::sample_utilization());
+            }
+        })
+    };
 
     eprintln!("MCP HTTP+SSE server listening on {}", bind_addr);
     eprintln!("Endpoints:");
@@ -245,12 +263,21 @@ pub async fn run_server(
     // extracts `ConnectInfo<SocketAddr>`, so the make service must supply
     // it — a bare Router serve 500s every request with "Missing request
     // extension".
-    axum::serve(
+    let server_result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await
-    .context("Server error")?;
+    .context("Server error");
+
+    #[cfg(feature = "metrics")]
+    sampler_task.abort();
+    #[cfg(feature = "metrics")]
+    if let Some(metrics_listener) = metrics_listener {
+        metrics_listener.shutdown().await;
+    }
+
+    server_result?;
 
     Ok(())
 }

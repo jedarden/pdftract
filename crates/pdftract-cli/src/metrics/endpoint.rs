@@ -53,6 +53,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::task::JoinHandle;
 
 use super::Registry;
 
@@ -205,9 +206,48 @@ pub fn listener_addr(main_bind: &str, port: u16) -> Result<String> {
     Ok(format!("{host}:{port}"))
 }
 
+/// A running metrics listener.
+///
+/// The listener owns its serving task so the startup path can explicitly stop
+/// it before returning. This matters during startup: if the main listener
+/// fails to bind after metrics succeeds, returning from the startup path must
+/// not leave a monitoring socket behind in a caller-owned Tokio runtime.
+pub struct MetricsListener {
+    address: SocketAddr,
+    task: JoinHandle<()>,
+}
+
+impl MetricsListener {
+    /// Return the address selected by the operating system.
+    pub fn address(&self) -> SocketAddr {
+        self.address
+    }
+
+    /// Stop the listener and wait until its serving task has released the
+    /// socket. The `Drop` implementation remains a non-blocking fallback for
+    /// cancellation paths that cannot await.
+    pub async fn shutdown(mut self) {
+        self.task.abort();
+        let _ = (&mut self.task).await;
+    }
+}
+
+impl std::fmt::Display for MetricsListener {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.address.fmt(formatter)
+    }
+}
+
+impl Drop for MetricsListener {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// Bind the metrics listener and serve `GET /metrics` and `GET /ready`
-/// from `registry`/`readiness` on it until the process exits. Returns
-/// the address actually bound (the caller may have passed port 0).
+/// from `registry`/`readiness` on it until the process exits. Returns an
+/// owned listener handle whose [`MetricsListener::address`] is the address
+/// actually bound (the caller may have passed port 0).
 ///
 /// Binding happens on the caller's task — before the main listener is
 /// bound — so a port that is already in use fails startup with a clean
@@ -217,7 +257,7 @@ pub async fn bind_and_spawn(
     metrics_addr: &str,
     registry: Registry,
     readiness: Readiness,
-) -> Result<SocketAddr> {
+) -> Result<MetricsListener> {
     let listener = tokio::net::TcpListener::bind(metrics_addr)
         .await
         .with_context(|| format!("Failed to bind metrics listener to {}", metrics_addr))?;
@@ -226,12 +266,15 @@ pub async fn bind_and_spawn(
         .context("Failed to read the metrics listener's address")?;
     eprintln!("Metrics endpoint: http://{}/metrics", bound);
 
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         if let Err(error) = axum::serve(listener, metrics_router(registry, readiness)).await {
             eprintln!("Metrics listener error: {}", error);
         }
     });
-    Ok(bound)
+    Ok(MetricsListener {
+        address: bound,
+        task,
+    })
 }
 
 /// The metrics listener's router: `GET /metrics` and `GET /ready`, and
@@ -361,6 +404,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dropping_the_listener_releases_its_socket() {
+        let listener = bind_and_spawn(
+            "127.0.0.1:0",
+            Registry::new(),
+            Readiness::production(Registry::new(), None),
+        )
+        .await
+        .expect("metrics listener binds on :0");
+        let address = listener.address();
+
+        listener.shutdown().await;
+
+        tokio::net::TcpListener::bind(address)
+            .await
+            .expect("dropping the listener must release its socket");
+    }
+
+    #[tokio::test]
     async fn served_route_returns_openmetrics_with_the_exact_content_type() {
         let bound = bind_and_spawn(
             "127.0.0.1:0",
@@ -370,7 +431,7 @@ mod tests {
         .await
         .expect("metrics listener binds on :0");
 
-        let raw = http_get(bound, "/metrics").await;
+        let raw = http_get(bound.address(), "/metrics").await;
 
         assert!(raw.starts_with("HTTP/1.1 200 OK\r\n"), "got: {raw}");
         assert!(
@@ -429,10 +490,10 @@ mod tests {
         .await
         .expect("metrics listener binds on :0");
 
-        let raw = http_get(bound, "/ready").await;
+        let raw = http_get(bound.address(), "/ready").await;
         assert!(raw.starts_with("HTTP/1.1 200 OK\r\n"), "got: {raw}");
 
-        let body = http_get_json(bound, "/ready").await;
+        let body = http_get_json(bound.address(), "/ready").await;
         assert_eq!(body["status"], "ready", "got: {body}");
         assert_eq!(body["unready"], serde_json::json!([]), "got: {body}");
     }
@@ -463,14 +524,14 @@ mod tests {
         .await
         .expect("metrics listener binds on :0");
 
-        let healthy = http_get(bound, "/ready").await;
+        let healthy = http_get(bound.address(), "/ready").await;
         assert!(healthy.starts_with("HTTP/1.1 200 OK\r\n"), "got: {healthy}");
 
         saturated.store(true, Ordering::Relaxed);
-        let raw = http_get(bound, "/ready").await;
+        let raw = http_get(bound.address(), "/ready").await;
         assert!(raw.starts_with("HTTP/1.1 503"), "got: {raw}");
 
-        let body = http_get_json(bound, "/ready").await;
+        let body = http_get_json(bound.address(), "/ready").await;
         assert_eq!(body["status"], "unready", "got: {body}");
         assert_eq!(
             body["unready"],
@@ -479,7 +540,7 @@ mod tests {
         );
 
         saturated.store(false, Ordering::Relaxed);
-        let recovered = http_get(bound, "/ready").await;
+        let recovered = http_get(bound.address(), "/ready").await;
         assert!(
             recovered.starts_with("HTTP/1.1 200 OK\r\n"),
             "readiness did not recover after utilization fell: {recovered}"
@@ -498,7 +559,7 @@ mod tests {
         .await
         .expect("metrics listener binds on :0");
 
-        let raw = http_get(bound, "/ready").await;
+        let raw = http_get(bound.address(), "/ready").await;
         assert!(raw.starts_with("HTTP/1.1 200 OK\r\n"), "got: {raw}");
     }
 
@@ -516,10 +577,10 @@ mod tests {
         .await
         .expect("metrics listener binds on :0");
 
-        let raw = http_get(bound, "/ready").await;
+        let raw = http_get(bound.address(), "/ready").await;
         assert!(raw.starts_with("HTTP/1.1 503"), "got: {raw}");
 
-        let body = http_get_json(bound, "/ready").await;
+        let body = http_get_json(bound.address(), "/ready").await;
         assert_eq!(body["status"], "unready", "got: {body}");
         assert_eq!(
             body["unready"],
@@ -540,7 +601,7 @@ mod tests {
         .await
         .expect("metrics listener binds on :0");
 
-        let body = http_get_json(bound, "/ready").await;
+        let body = http_get_json(bound.address(), "/ready").await;
         assert_eq!(body["status"], "unready", "got: {body}");
         assert_eq!(
             body["unready"],

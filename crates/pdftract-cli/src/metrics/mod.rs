@@ -29,7 +29,8 @@ pub mod registry;
 pub mod sampler;
 
 pub use endpoint::{
-    bind_and_spawn, listener_addr, Readiness, ReadinessReport, SATURATION_THRESHOLD,
+    bind_and_spawn, listener_addr, MetricsListener, Readiness, ReadinessReport,
+    SATURATION_THRESHOLD,
 };
 pub use openmetrics::{
     escape_help_text, escape_label_value, format_float, render, MetricFamily, MetricKind, Sample,
