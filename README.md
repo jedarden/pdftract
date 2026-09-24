@@ -91,7 +91,7 @@ usable until a real release has been published and independently verified.
 | Python bindings | PyPI | Not published |
 | Container images | GHCR (`ghcr.io/jedarden/pdftract`) | Not published |
 | Pre-built binaries | GitHub Releases | Only test-only `v0.1.0-test`; no supported release |
-| Homebrew | `jedarden/homebrew-tap` | No formula exists |
+| Homebrew | `jedarden/homebrew-tap` | Tap exists; formula and install verification pending the first versioned release |
 | Hosted user guide | `pdftract.com` | Domain is not a supported channel |
 
 The locally supported Docker variants are `default` and `full`; their build and
