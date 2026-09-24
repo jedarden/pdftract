@@ -344,12 +344,21 @@ fn is_extraction_tool(tool: &str) -> bool {
     matches!(tool, "extract" | "extract_text" | "extract_markdown")
 }
 
-/// Report the OCR build capability using the same contract as the serve
-/// handlers. The MCP tool currently accepts the `ocr` argument but the core
-/// extraction options do not expose per-request OCR usage to this layer.
+/// Read the per-request OCR selection from an extraction tool call.
+///
+/// The core options currently expose OCR language/DPI settings rather than a
+/// separate boolean, but MCP's public tool contract has an explicit `ocr`
+/// argument. Metrics should describe the request that entered the extraction
+/// path, not whether the binary happened to be compiled with OCR support.
 #[cfg(feature = "metrics")]
-fn extraction_ocr_enabled() -> bool {
-    cfg!(feature = "ocr")
+fn extraction_ocr_requested(request: &Request) -> bool {
+    request
+        .params
+        .as_ref()
+        .and_then(|params| params.get("arguments"))
+        .and_then(|arguments| arguments.get("ocr"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// Count pages represented by an MCP extraction result. The full `extract`
@@ -396,11 +405,28 @@ fn record_mcp_extraction(
 /// Extraction tools embed the document's structured diagnostics in their
 /// result at `metadata.diagnostics_detailed`; each entry feeds
 /// `pdftract_diagnostic_emitted_total` with the same code/severity
-/// labels the serve path's `record_extraction` uses. Observation only:
-/// error responses, results without the array, and unparseable entries
-/// count nothing, and the response is never modified.
+/// labels the serve path's `record_extraction` uses. Error responses with a
+/// structured `data.code` are also counted; protocol errors without a
+/// diagnostic code, results without the array, and unparseable entries count
+/// nothing. The response is never modified.
 #[cfg(feature = "metrics")]
 fn record_response_diagnostics(metrics: &crate::metrics::Registry, response: &Response) {
+    if let Some(error) = response.get_error() {
+        let Some(data) = error.data.as_ref() else {
+            return;
+        };
+        let Some(code) = data.get("code").and_then(Value::as_str) else {
+            return;
+        };
+        let severity = data
+            .get("severity")
+            .and_then(Value::as_str)
+            .map(diagnostic_metric_severity_name)
+            .unwrap_or_else(|| diagnostic_metric_severity_for_code(code));
+        metrics.inc_diagnostic(code, severity);
+        return;
+    }
+
     let Some(result) = response.get_result() else {
         return;
     };
@@ -420,6 +446,20 @@ fn record_response_diagnostics(metrics: &crate::metrics::Registry, response: &Re
             &diagnostic.code,
             diagnostic_metric_severity_name(&diagnostic.severity),
         );
+    }
+}
+
+/// Use the diagnostic catalog for error responses that carry only a code.
+/// Tool-layer errors such as `IO_ERROR` are not catalog entries and therefore
+/// conservatively use the error bucket.
+#[cfg(feature = "metrics")]
+fn diagnostic_metric_severity_for_code(code: &str) -> &'static str {
+    match pdftract_core::diagnostics::DiagCode::from_name(code).map(|code| code.severity()) {
+        Some(pdftract_core::diagnostics::Severity::Info) => "info",
+        Some(pdftract_core::diagnostics::Severity::Warning) => "warn",
+        Some(pdftract_core::diagnostics::Severity::Error)
+        | Some(pdftract_core::diagnostics::Severity::Fatal)
+        | None => "error",
     }
 }
 
@@ -495,7 +535,7 @@ async fn handle_post_request(
         #[cfg(feature = "metrics")]
         let extraction_started = extraction.as_deref().map(|_| {
             state.metrics.inc_inflight_extractions();
-            (Instant::now(), extraction_ocr_enabled())
+            (Instant::now(), extraction_ocr_requested(&request))
         });
 
         // MCP extraction tools execute the same synchronous core pipeline as
@@ -1379,7 +1419,8 @@ mod tests {
     /// Metrics: the diagnostics an mcp tool result reports at
     /// `metadata.diagnostics_detailed` feed
     /// `pdftract_diagnostic_emitted_total` with code/severity labels;
-    /// error responses and results without the array count nothing.
+    /// protocol errors without a diagnostic code and results without the
+    /// array count nothing.
     #[cfg(feature = "metrics")]
     #[test]
     fn test_metrics_record_response_diagnostics_counts_tool_result() {
@@ -1399,7 +1440,8 @@ mod tests {
         );
         record_response_diagnostics(&registry, &success);
 
-        // An error response and a result without the array: no counts.
+        // A protocol error without a diagnostic code and a result without the
+        // array: no counts.
         record_response_diagnostics(
             &registry,
             &Response::error(Id::Number(2), ErrorObject::invalid_params()),
@@ -1407,6 +1449,17 @@ mod tests {
         record_response_diagnostics(
             &registry,
             &Response::success(Id::Number(3), json!({"text": "no diagnostics here"})),
+        );
+
+        // Extraction/tool errors carry their emitted diagnostic in data.code.
+        // Catalog codes retain their documented severity label.
+        record_response_diagnostics(
+            &registry,
+            &Response::error(
+                Id::Number(4),
+                ErrorObject::new(-32000, "extraction failed")
+                    .with_data(json!({"code": "STRUCT_MISSING_KEY"})),
+            ),
         );
 
         let text = registry.render();
@@ -1418,10 +1471,34 @@ mod tests {
         );
         assert!(
             text.contains(
-                "pdftract_diagnostic_emitted_total{code=\"STRUCT_MISSING_KEY\",severity=\"warn\"} 1\n"
+                "pdftract_diagnostic_emitted_total{code=\"STRUCT_MISSING_KEY\",severity=\"warn\"} 2\n"
             ),
             "missing STRUCT_MISSING_KEY counter:\n{text}"
         );
+    }
+
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_mcp_ocr_label_follows_tool_request() {
+        let request = Request::new(
+            "tools/call",
+            Some(json!({
+                "name": "extract",
+                "arguments": {"path": "document.pdf", "ocr": true}
+            })),
+            Some(Id::Number(1)),
+        );
+        assert!(extraction_ocr_requested(&request));
+
+        let request_without_ocr = Request::new(
+            "tools/call",
+            Some(json!({
+                "name": "extract",
+                "arguments": {"path": "document.pdf"}
+            })),
+            Some(Id::Number(2)),
+        );
+        assert!(!extraction_ocr_requested(&request_without_ocr));
     }
 
     /// Metrics: an MCP extraction failure still records one timed error and

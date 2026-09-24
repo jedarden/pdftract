@@ -546,13 +546,6 @@ pub async fn run(
     Ok(())
 }
 
-/// Value of the `ocr` label on `pdftract_extractions_total`: whether the
-/// OCR request path exists in this build. The serve layer cannot observe
-/// per-page OCR usage from outside pdftract-core, so the label records
-/// build capability, not per-document OCR activity.
-#[cfg(feature = "metrics")]
-const OCR_PATH_ENABLED: bool = cfg!(feature = "ocr");
-
 /// Build the serve application router (shared by [`run`] and tests).
 ///
 /// Layer order, outermost first: metrics counting (`metrics` feature),
@@ -682,6 +675,15 @@ fn record_diagnostics(
     }
 }
 
+/// Whether a serve request explicitly selected an OCR setting. The HTTP form
+/// has no standalone `ocr` flag; language and DPI fields are the request-level
+/// signals that select the OCR path. The build feature still gates whether
+/// that path is available at runtime.
+#[cfg(feature = "metrics")]
+fn extraction_ocr_requested(params: &ExtractParams) -> bool {
+    cfg!(feature = "ocr") && (params.ocr_language.is_some() || params.ocr_dpi.is_some())
+}
+
 /// Record one completed extraction on the registry (`metrics` feature):
 /// duration histogram, result/ocr counter, emitted pages, cache hit or
 /// miss, and the document's diagnostics with code and severity labels.
@@ -721,17 +723,19 @@ struct ExtractionMetricsGuard {
     metrics: crate::metrics::Registry,
     started: std::time::Instant,
     cache_status_on_error: Option<&'static str>,
+    ocr: bool,
     done: bool,
 }
 
 #[cfg(feature = "metrics")]
 impl ExtractionMetricsGuard {
-    fn new(metrics: crate::metrics::Registry, cache_enabled: bool) -> Self {
+    fn new(metrics: crate::metrics::Registry, cache_enabled: bool, ocr: bool) -> Self {
         metrics.inc_inflight_extractions();
         Self {
             metrics,
             started: std::time::Instant::now(),
             cache_status_on_error: cache_enabled.then_some("miss"),
+            ocr,
             done: false,
         }
     }
@@ -753,7 +757,7 @@ impl ExtractionMetricsGuard {
             &self.metrics,
             self.started.elapsed().as_secs_f64(),
             result_label,
-            OCR_PATH_ENABLED,
+            self.ocr,
             pages,
             cache_status,
             diagnostics_detailed,
@@ -900,7 +904,11 @@ async fn extract_handler(
 
     // Perform extraction with cache integration
     #[cfg(feature = "metrics")]
-    let extraction_metrics = ExtractionMetricsGuard::new(state.metrics.clone(), !cache_disabled);
+    let extraction_metrics = ExtractionMetricsGuard::new(
+        state.metrics.clone(),
+        !cache_disabled,
+        extraction_ocr_requested(&params),
+    );
 
     let pdf_file_clone = pdf_file.clone();
     let extracted = {
@@ -1013,7 +1021,11 @@ async fn extract_text_handler(
     drop(cache_state);
 
     #[cfg(feature = "metrics")]
-    let extraction_metrics = ExtractionMetricsGuard::new(state.metrics.clone(), !cache_disabled);
+    let extraction_metrics = ExtractionMetricsGuard::new(
+        state.metrics.clone(),
+        !cache_disabled,
+        extraction_ocr_requested(&params),
+    );
 
     let extracted = {
         #[cfg(feature = "metrics")]
@@ -1133,7 +1145,11 @@ async fn extract_stream_handler(
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
 
     #[cfg(feature = "metrics")]
-    let extraction_metrics = ExtractionMetricsGuard::new(state.metrics.clone(), false);
+    let extraction_metrics = ExtractionMetricsGuard::new(
+        state.metrics.clone(),
+        false,
+        extraction_ocr_requested(&params),
+    );
 
     // Spawn extraction task in background
     tokio::task::spawn_blocking(move || {
@@ -2297,7 +2313,7 @@ mod tests {
     #[test]
     fn test_metrics_cancelled_extraction_records_error_and_releases_inflight() {
         let metrics = crate::metrics::Registry::new();
-        let guard = ExtractionMetricsGuard::new(metrics.clone(), true);
+        let guard = ExtractionMetricsGuard::new(metrics.clone(), true, false);
         assert!(metrics
             .render()
             .contains("pdftract_inflight_extractions 1\n"));
@@ -2309,6 +2325,20 @@ mod tests {
         assert!(text.contains("pdftract_cache_misses_total 1\n"));
         assert!(text.contains("pdftract_extraction_duration_seconds_count 1\n"));
         assert!(text.contains("pdftract_inflight_extractions 0\n"));
+    }
+
+    /// The guard carries the request's OCR selection through both successful
+    /// and failed completion paths instead of substituting build capability.
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_extraction_guard_preserves_ocr_label() {
+        let metrics = crate::metrics::Registry::new();
+        let guard = ExtractionMetricsGuard::new(metrics.clone(), false, true);
+        drop(guard);
+
+        assert!(metrics
+            .render()
+            .contains("pdftract_extractions_total{result=\"error\",ocr=\"true\"} 1\n"));
     }
 
     /// A cache location that is an existing file is not writable as a cache
