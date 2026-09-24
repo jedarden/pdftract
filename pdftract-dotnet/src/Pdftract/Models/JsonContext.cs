@@ -16,6 +16,8 @@ namespace Pdftract.Models;
 [JsonSerializable(typeof(Span))]
 [JsonSerializable(typeof(Block))]
 [JsonSerializable(typeof(Metadata))]
+[JsonSerializable(typeof(Error))]
+[JsonSerializable(typeof(ObjectLocation))]
 [JsonSerializable(typeof(Match))]
 [JsonSerializable(typeof(Fingerprint))]
 [JsonSerializable(typeof(Classification))]

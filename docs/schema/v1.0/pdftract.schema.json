@@ -816,7 +816,7 @@
       "type": "object"
     },
     "DiagnosticJson": {
-      "description": "JSON representation of a diagnostic error.\n\nThis struct wraps the internal Diagnostic type for JSON serialization,\nproviding stable error codes and human-readable messages for consumers.",
+      "description": "Canonical JSON representation of one extraction diagnostic.\n\nThis is the structured diagnostic envelope used by full JSON\n[`Output::errors`], the NDJSON footer `errors` array, and\n[`crate::extract::ExtractionMetadata::diagnostics_detailed`]. The legacy\n[`crate::extract::ExtractionMetadata::diagnostics`] `Vec<String>` remains\navailable for compatibility; it contains only the diagnostic message and\nmust not be used when callers need code, severity, page, location, or hint.\nThe conversion from the typed [`crate::diagnostics::Diagnostic`] lives in\n[`crate::diagnostics`] (`impl From<&Diagnostic>`).\n\n`code`, `message`, and `severity` are always serialized. The optional\n`page_index`, `location`, and `hint` fields are omitted—not serialized as\n`null`—when their values are `None`.",
       "properties": {
         "code": {
           "description": "Stable string identifier for this diagnostic (e.g., \"FONT_GLYPH_UNMAPPED\").",
@@ -845,7 +845,7 @@
           "type": "string"
         },
         "page_index": {
-          "description": "Page index where this diagnostic occurred, or `null` for document-level events.",
+          "description": "Zero-based page index where this diagnostic occurred; omitted (not\nserialized as `null`) for document-level events.",
           "format": "uint",
           "minimum": 0,
           "type": [
@@ -1844,7 +1844,7 @@
     },
     "errors": {
       "default": [],
-      "description": "All diagnostics emitted during extraction.",
+      "description": "All structured diagnostics emitted during extraction.\n\nThis is the canonical machine-readable form. The compact extraction\nresult also exposes the compatibility pair\n`metadata.diagnostics` (legacy `Vec<String>`) and\n`metadata.diagnostics_detailed`.",
       "items": {
         "$ref": "#/$defs/DiagnosticJson"
       },

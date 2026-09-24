@@ -26,13 +26,36 @@ type Metadata struct {
 	Tagged       bool     // Whether the PDF is tagged (accessible)
 	Form         bool     // Whether the PDF contains form fields
 	Encrypted    bool     // Whether the PDF is encrypted
+	// Diagnostics is the legacy message-only compatibility surface.
+	Diagnostics []string `json:"diagnostics,omitempty"`
+	// DiagnosticsDetailed is the canonical structured diagnostic surface.
+	DiagnosticsDetailed []Diagnostic `json:"diagnostics_detailed,omitempty"`
+}
+
+// DiagnosticLocation identifies the PDF indirect object associated with a
+// structured diagnostic.
+type DiagnosticLocation struct {
+	ObjectNumber     uint32 `json:"object_number"`
+	GenerationNumber uint16 `json:"generation_number"`
+}
+
+// Diagnostic is the canonical structured diagnostic envelope emitted in full
+// JSON errors and NDJSON footer errors. Optional context is omitted when nil.
+type Diagnostic struct {
+	Code      string              `json:"code"`
+	Message   string              `json:"message"`
+	Severity  string              `json:"severity"`
+	PageIndex *uint               `json:"page_index,omitempty"`
+	Location  *DiagnosticLocation `json:"location,omitempty"`
+	Hint      *string             `json:"hint,omitempty"`
 }
 
 // Document represents a fully parsed PDF document.
 type Document struct {
-	Path     string   // Filesystem path to the PDF
-	Pages    []Page   // All pages in the document
-	Metadata Metadata // Document metadata
+	Path     string       // Filesystem path to the PDF
+	Pages    []Page       // All pages in the document
+	Metadata Metadata     // Document metadata
+	Errors   []Diagnostic `json:"errors"` // Structured diagnostics
 }
 
 // Fingerprint provides a unique identifier for a PDF document.

@@ -76,6 +76,8 @@ from pdftract.types import (
     Fingerprint,
     Classification,
     Metadata,
+    Diagnostic,
+    DiagnosticLocation,
 )
 
 # Import typing for return annotations
@@ -119,6 +121,8 @@ __all__ = [
     "Fingerprint",
     "Classification",
     "Metadata",
+    "Diagnostic",
+    "DiagnosticLocation",
     # Functions
     "extract",
     "extract_text",

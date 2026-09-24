@@ -3,7 +3,8 @@
 //! Defines the three frame types emitted during streaming extraction:
 //! - HeaderFrame: Document metadata and outline (emitted first)
 //! - PageFrame: Single page extraction result (emitted as pages complete)
-//! - FooterFrame: Aggregated quality metrics and diagnostics (emitted last)
+//! - FooterFrame: Aggregated quality metrics and structured diagnostics
+//!   (emitted last)
 
 use crate::schema::{BlockJson, ExtractionQuality, SpanJson, TableJson};
 // serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
@@ -26,7 +27,7 @@ pub enum NdjsonFrame {
     Header(HeaderFrame),
     /// Page frame containing a single page's extraction result.
     Page(PageFrame),
-    /// Footer frame containing aggregated metrics and diagnostics.
+    /// Footer frame containing aggregated metrics and structured diagnostics.
     Footer(FooterFrame),
 }
 
@@ -199,7 +200,11 @@ pub struct FooterFrame {
     /// Includes overall quality, confidence statistics, OCR fraction, etc.
     pub extraction_quality: ExtractionQuality,
 
-    /// All diagnostics collected during extraction.
+    /// All structured diagnostics collected during extraction.
+    ///
+    /// This is the NDJSON compatibility path for consumers that stream
+    /// output: the legacy string array remains on the compact Rust metadata
+    /// API, while NDJSON exposes the canonical diagnostic objects here.
     ///
     /// Includes errors and warnings from all pages.
     #[cfg(feature = "serde")]

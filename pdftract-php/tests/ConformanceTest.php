@@ -27,6 +27,24 @@ class ConformanceTest extends TestCase
         $this->assertInstanceOf(\Jedarden\Pdftract\Models\Metadata::class, $document->metadata);
     }
 
+    public function testStructuredDiagnosticModelPreservesCanonicalFields(): void
+    {
+        $diagnostic = new \Jedarden\Pdftract\Models\Diagnostic([
+            'code' => 'STREAM_DECODE_ERROR',
+            'message' => 'zlib stream truncated mid-inflation',
+            'severity' => 'warning',
+            'page_index' => 3,
+            'location' => ['object_number' => 42, 'generation_number' => 7],
+            'hint' => 'Inspect the source PDF for corrupt stream data',
+        ]);
+
+        $this->assertSame('STREAM_DECODE_ERROR', $diagnostic->code);
+        $this->assertSame('warning', $diagnostic->severity);
+        $this->assertSame(3, $diagnostic->pageIndex);
+        $this->assertSame(42, $diagnostic->location->objectNumber);
+        $this->assertSame('Inspect the source PDF for corrupt stream data', $diagnostic->hint);
+    }
+
     public function testExtractTextReturnsString()
     {
         $text = $this->client->extractText($this->fixturePath);

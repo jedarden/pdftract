@@ -11,7 +11,14 @@ module Pdftract
   #
   # Document represents a PDF document with pages and metadata.
   #
-  Document = Data.define(:schema_version, :pages, :metadata)
+  Document = Data.define(:schema_version, :pages, :metadata, :errors)
+
+  # PDF indirect-object location attached to a diagnostic.
+  DiagnosticLocation = Data.define(:object_number, :generation_number)
+
+  # Canonical structured extraction diagnostic. The compact result's legacy
+  # metadata string array remains available separately.
+  Diagnostic = Data.define(:code, :message, :severity, :page_index, :location, :hint)
 
   #
   # Page represents a single page in the document.
@@ -48,7 +55,8 @@ module Pdftract
   # Metadata represents document metadata.
   #
   Metadata = Data.define(:title, :author, :subject, :keywords, :creator,
-                         :producer, :created, :modified, :page_count)
+                         :producer, :created, :modified, :page_count,
+                         :diagnostics, :diagnostics_detailed)
 
   #
   # Helper module for converting JSON hashes to Data classes.
@@ -79,6 +87,10 @@ module Pdftract
           convert_classification(symbolized)
         when 'Pdftract::Metadata'
           convert_metadata(symbolized)
+        when 'Pdftract::Diagnostic'
+          convert_diagnostic(symbolized)
+        when 'Pdftract::DiagnosticLocation'
+          convert_diagnostic_location(symbolized)
         else
           klass.new(**symbolized)
         end
@@ -90,7 +102,8 @@ module Pdftract
         Document.new(
           schema_version: h[:schema_version],
           pages: h[:pages]&.map { |p| convert_page(p.transform_keys(&:to_sym)) },
-          metadata: h[:metadata] ? convert_metadata(h[:metadata].transform_keys(&:to_sym)) : nil
+          metadata: h[:metadata] ? convert_metadata(h[:metadata].transform_keys(&:to_sym)) : nil,
+          errors: h[:errors]&.map { |d| convert_diagnostic(d.transform_keys(&:to_sym)) } || []
         )
       end
 
@@ -168,7 +181,27 @@ module Pdftract
           producer: h[:producer],
           created: h[:created],
           modified: h[:modified],
-          page_count: h[:page_count]
+          page_count: h[:page_count],
+          diagnostics: h[:diagnostics] || [],
+          diagnostics_detailed: h[:diagnostics_detailed]&.map { |d| convert_diagnostic(d.transform_keys(&:to_sym)) } || []
+        )
+      end
+
+      def convert_diagnostic_location(h)
+        DiagnosticLocation.new(
+          object_number: h[:object_number],
+          generation_number: h[:generation_number]
+        )
+      end
+
+      def convert_diagnostic(h)
+        Diagnostic.new(
+          code: h[:code],
+          message: h[:message],
+          severity: h[:severity],
+          page_index: h[:page_index],
+          location: h[:location] ? convert_diagnostic_location(h[:location].transform_keys(&:to_sym)) : nil,
+          hint: h[:hint]
         )
       end
     end

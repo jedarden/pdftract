@@ -42,7 +42,24 @@ export interface Document {
   pages: Page[];
   metadata: Metadata;
   form_fields?: any[];
-  errors?: any[];
+  /** Canonical structured diagnostics from full JSON/NDJSON output. */
+  errors: Diagnostic[];
+}
+
+/** PDF indirect-object location attached to a diagnostic. */
+export interface DiagnosticLocation {
+  object_number: number;
+  generation_number: number;
+}
+
+/** Canonical structured diagnostic envelope. */
+export interface Diagnostic {
+  code: string;
+  message: string;
+  severity: 'info' | 'warning' | 'error' | 'fatal';
+  page_index?: number;
+  location?: DiagnosticLocation;
+  hint?: string;
 }
 
 export interface Page {
@@ -105,6 +122,10 @@ export interface Metadata {
   modified?: string;
   page_count: number;
   is_encrypted?: boolean;
+  /** Legacy compact-result diagnostic messages, retained for compatibility. */
+  diagnostics?: string[];
+  /** Structured compact-result diagnostics; prefer this over diagnostics. */
+  diagnostics_detailed?: Diagnostic[];
 }
 
 export interface ExtractOptions {

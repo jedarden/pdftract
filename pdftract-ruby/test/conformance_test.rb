@@ -29,6 +29,23 @@ module Pdftract
       end
     end
 
+    def test_structured_diagnostic_model_preserves_canonical_fields
+      diagnostic = ModelConverter.from_hash({
+        'code' => 'STREAM_DECODE_ERROR',
+        'message' => 'zlib stream truncated mid-inflation',
+        'severity' => 'warning',
+        'page_index' => 3,
+        'location' => { 'object_number' => 42, 'generation_number' => 7 },
+        'hint' => 'Inspect the source PDF for corrupt stream data'
+      }, Diagnostic)
+
+      assert_equal 'STREAM_DECODE_ERROR', diagnostic.code
+      assert_equal 'warning', diagnostic.severity
+      assert_equal 3, diagnostic.page_index
+      assert_equal 42, diagnostic.location.object_number
+      assert_equal 'Inspect the source PDF for corrupt stream data', diagnostic.hint
+    end
+
     private
 
     def run_test_case(test_case, fixture_path)

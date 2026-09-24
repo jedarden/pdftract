@@ -10,12 +10,15 @@ readonly class Document
     public string $schemaVersion;
     public array $pages;
     public Metadata $metadata;
+    /** @var list<Diagnostic> Canonical structured diagnostics. */
+    public array $errors;
 
     public function __construct(array $data)
     {
         $this->schemaVersion = $data['schema_version'] ?? '1.0';
         $this->pages = array_map(fn($p) => new Page($p), $data['pages'] ?? []);
         $this->metadata = new Metadata($data['metadata'] ?? []);
+        $this->errors = array_map(fn($error) => new Diagnostic($error), $data['errors'] ?? []);
     }
 
     /**
@@ -24,6 +27,42 @@ readonly class Document
     public function getPageCount(): int
     {
         return count($this->pages);
+    }
+}
+
+/** PDF indirect-object location attached to a diagnostic. */
+readonly class DiagnosticLocation
+{
+    public int $objectNumber;
+    public int $generationNumber;
+
+    public function __construct(array $data)
+    {
+        $this->objectNumber = $data['object_number'] ?? 0;
+        $this->generationNumber = $data['generation_number'] ?? 0;
+    }
+}
+
+/** Canonical structured extraction diagnostic. */
+readonly class Diagnostic
+{
+    public string $code;
+    public string $message;
+    public string $severity;
+    public ?int $pageIndex;
+    public ?DiagnosticLocation $location;
+    public ?string $hint;
+
+    public function __construct(array $data)
+    {
+        $this->code = $data['code'] ?? '';
+        $this->message = $data['message'] ?? '';
+        $this->severity = $data['severity'] ?? '';
+        $this->pageIndex = $data['page_index'] ?? null;
+        $this->location = isset($data['location'])
+            ? new DiagnosticLocation($data['location'])
+            : null;
+        $this->hint = $data['hint'] ?? null;
     }
 }
 
@@ -113,6 +152,10 @@ readonly class Metadata
     public ?string $created;
     public ?string $modified;
     public int $pageCount;
+    /** @var list<string> Legacy message-only diagnostics. */
+    public array $diagnostics;
+    /** @var list<Diagnostic> Canonical structured diagnostics. */
+    public array $diagnosticsDetailed;
 
     public function __construct(array $data)
     {
@@ -125,6 +168,11 @@ readonly class Metadata
         $this->created = $data['created'] ?? null;
         $this->modified = $data['modified'] ?? null;
         $this->pageCount = $data['page_count'] ?? 0;
+        $this->diagnostics = $data['diagnostics'] ?? [];
+        $this->diagnosticsDetailed = array_map(
+            fn($diagnostic) => new Diagnostic($diagnostic),
+            $data['diagnostics_detailed'] ?? []
+        );
     }
 }
 

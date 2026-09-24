@@ -816,12 +816,20 @@ impl From<Signature> for SignatureJson {
     }
 }
 
-/// JSON representation of a diagnostic error.
+/// Canonical JSON representation of one extraction diagnostic.
 ///
-/// This struct wraps the internal Diagnostic type for JSON serialization,
-/// providing stable error codes and human-readable messages for consumers.
-/// The conversion lives in [`crate::diagnostics`] (`impl From<&Diagnostic>`),
-/// which also owns `DiagCode::from_name` — the inverse of the `code` mapping.
+/// This is the structured diagnostic envelope used by full JSON
+/// [`Output::errors`], the NDJSON footer `errors` array, and
+/// [`crate::extract::ExtractionMetadata::diagnostics_detailed`]. The legacy
+/// [`crate::extract::ExtractionMetadata::diagnostics`] `Vec<String>` remains
+/// available for compatibility; it contains only the diagnostic message and
+/// must not be used when callers need code, severity, page, location, or hint.
+/// The conversion from the typed [`crate::diagnostics::Diagnostic`] lives in
+/// [`crate::diagnostics`] (`impl From<&Diagnostic>`).
+///
+/// `code`, `message`, and `severity` are always serialized. The optional
+/// `page_index`, `location`, and `hint` fields are omitted—not serialized as
+/// `null`—when their values are `None`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -1565,7 +1573,12 @@ pub struct Output {
     /// Aggregate extraction quality metrics.
     pub extraction_quality: ExtractionQuality,
 
-    /// All diagnostics emitted during extraction.
+    /// All structured diagnostics emitted during extraction.
+    ///
+    /// This is the canonical machine-readable form. The compact extraction
+    /// result also exposes the compatibility pair
+    /// `metadata.diagnostics` (legacy `Vec<String>`) and
+    /// `metadata.diagnostics_detailed`.
     #[cfg_attr(feature = "serde", serde(default))]
     pub errors: Vec<DiagnosticJson>,
 }

@@ -272,7 +272,23 @@ For large documents, the `--stream` flag activates NDJSON output: one JSON objec
 
 ## Error and Diagnostic Schema
 
-Every diagnostic event from the extraction pipeline is recorded in the `errors` array at document level. Each entry has: `code` (a stable string identifier like `"FONT_CMAP_MISSING"`, `"GLYPH_UNMAPPED"`, `"OCR_FALLBACK"`, `"XREF_REPAIRED"`, `"ENCRYPTION_UNSUPPORTED"`), `message` (a human-readable description), `page_index` (integer or `null` for document-level events), `severity` (one of `"error"`, `"warning"`, `"info"`), and `location` (an optional object with `object_number` and `generation_number` identifying the PDF indirect object where the issue originated). Error codes are namespaced by area: `FONT_*` for encoding failures, `OCR_*` for raster fallback events, `STRUCT_*` for structure tree problems, `XREF_*` for cross-reference repairs. Integration developers can key on codes programmatically rather than parsing messages, which remain subject to wording changes between releases.
+Every diagnostic event from the extraction pipeline is recorded as a
+structured object in the full JSON document's `errors` array and in the
+NDJSON footer's `errors` array. The same objects are available on the compact
+Rust result as `metadata.diagnostics_detailed`. Each entry has the canonical
+fields `code`, `message`, and `severity`, plus optional `page_index`,
+`location`, and `hint` fields. The optional fields are omitted from serialized
+output—not written as `null`—when their values are unknown or do not apply.
+
+The compact result retains `metadata.diagnostics: Vec<String>` as a legacy
+compatibility path. Its entries are the corresponding diagnostic messages in
+emission order; consumers that need stable codes or typed context must use
+`metadata.diagnostics_detailed` or the structured `errors` arrays. Error codes
+are namespaced by area: `FONT_*` for encoding failures, `OCR_*` for raster
+fallback events, `STRUCT_*` for structure tree problems, and `XREF_*` for
+cross-reference repairs. Integration developers can key on codes
+programmatically rather than parsing messages, which remain subject to wording
+changes between releases.
 
 ### Error Entry Fields
 
@@ -280,9 +296,10 @@ Every diagnostic event from the extraction pipeline is recorded in the `errors` 
 |-------|------|-------------|
 | `code` | string | Stable string identifier (e.g., `"FONT_CMAP_MISSING"`) |
 | `message` | string | Human-readable description |
-| `page_index` | integer\|null | Page index where error occurred, or `null` for document-level |
-| `severity` | string | One of `"error"`, `"warning"`, `"info"` |
-| `location` | object\|null | PDF object reference with `object_number` and `generation_number` |
+| `page_index` | integer, omitted when absent | Page index where error occurred |
+| `severity` | string | One of `"fatal"`, `"error"`, `"warning"`, `"info"` |
+| `location` | object, omitted when absent | PDF object reference with `object_number` and `generation_number` |
+| `hint` | string, omitted when absent | Suggested action from the diagnostic code catalog |
 
 ---
 

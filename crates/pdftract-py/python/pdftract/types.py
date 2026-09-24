@@ -10,6 +10,49 @@ from typing import Dict, List, Optional, Self, Tuple
 
 
 @dataclass(frozen=True, slots=True)
+class DiagnosticLocation:
+    """PDF indirect-object location attached to a diagnostic."""
+
+    object_number: int
+    generation_number: int
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        return cls(
+            object_number=int(native_dict["object_number"]),
+            generation_number=int(native_dict["generation_number"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Diagnostic:
+    """Canonical structured extraction diagnostic.
+
+    The legacy ``Metadata.diagnostics`` string list remains available for
+    compatibility; use this model when typed context is required.
+    """
+
+    code: str
+    message: str
+    severity: str
+    page_index: Optional[int] = None
+    location: Optional[DiagnosticLocation] = None
+    hint: Optional[str] = None
+
+    @classmethod
+    def from_native(cls, native_dict: dict) -> Self:
+        location = native_dict.get("location")
+        return cls(
+            code=native_dict["code"],
+            message=native_dict["message"],
+            severity=native_dict["severity"],
+            page_index=native_dict.get("page_index"),
+            location=DiagnosticLocation.from_native(location) if location else None,
+            hint=native_dict.get("hint"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Metadata:
     """Document metadata.
 
@@ -34,6 +77,9 @@ class Metadata:
     producer: Optional[str] = None
     created: Optional[str] = None
     modified: Optional[str] = None
+    # Legacy compatibility messages and their canonical structured mirror.
+    diagnostics: Optional[List[str]] = None
+    diagnostics_detailed: Optional[List[Diagnostic]] = None
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
@@ -47,6 +93,11 @@ class Metadata:
             producer=native_dict.get("producer"),
             created=native_dict.get("created"),
             modified=native_dict.get("modified"),
+            diagnostics=native_dict.get("diagnostics"),
+            diagnostics_detailed=[
+                Diagnostic.from_native(item)
+                for item in native_dict.get("diagnostics_detailed", [])
+            ] or None,
         )
 
     def __repr__(self) -> str:
@@ -267,6 +318,7 @@ class Document:
     pages: List[Page]
     schema_version: Optional[str] = None
     metadata: Optional[Metadata] = None
+    errors: Optional[List[Diagnostic]] = None
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
@@ -274,6 +326,7 @@ class Document:
             schema_version=native_dict.get("schema_version"),
             pages=[Page.from_native(page_dict) for page_dict in native_dict.get("pages", [])],
             metadata=Metadata.from_native(native_dict.get("metadata", {})) if native_dict.get("metadata") else None,
+            errors=[Diagnostic.from_native(item) for item in native_dict.get("errors", [])],
         )
 
     def __repr__(self) -> str:
