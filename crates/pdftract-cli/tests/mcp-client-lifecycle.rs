@@ -496,6 +496,14 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
         init_result["capabilities"]["tools"].is_object(),
         "server must advertise tool capability"
     );
+    assert!(
+        init_result["capabilities"]["resources"].is_null(),
+        "server must not advertise unsupported resources capability"
+    );
+    assert!(
+        init_result["capabilities"]["prompts"].is_null(),
+        "server must not advertise unsupported prompts capability"
+    );
     assert_eq!(init_result["serverInfo"]["name"], "pdftract");
     assert_eq!(
         init_result["serverInfo"]["version"],
@@ -550,34 +558,28 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
         call["id"], 3,
         "tools/call response must carry the request id"
     );
-    // The client contract under test: a well-formed, id-correlated JSON-RPC
-    // response. Whether text extraction itself succeeds is the extraction
-    // pipeline's concern (covered by the extraction suites), not the stdio
-    // lifecycle's — but either arm must honor the documented response shape.
-    if let Some(error) = call.get("error") {
-        // Structured JSON-RPC error, and specifically NOT invalid-params:
-        // an absolute path in trust-the-caller mode must pass validation.
+    // Tool execution always returns an MCP CallToolResult. A failed
+    // extraction is an in-band result, not a JSON-RPC error envelope.
+    let call_result = assert_success(&call, "tools/call");
+    assert!(
+        call_result["content"].as_array().is_some_and(|content| {
+            content
+                .first()
+                .is_some_and(|block| block["type"] == "text" && block["text"].is_string())
+        }),
+        "tools/call result must carry text content: {call}"
+    );
+    if call_result["isError"] == true {
         assert!(
-            error["code"].is_i64(),
-            "tools/call error must carry a numeric code: {call}"
-        );
-        assert!(
-            error["message"].is_string(),
-            "error must carry a message: {call}"
-        );
-        assert_ne!(
-            error["code"], -32602,
-            "valid absolute path in trust-the-caller mode must not be rejected as invalid params: {call}"
-        );
-        eprintln!(
-            "NOTE: extraction failed (tracked separately): {}",
-            error["message"].as_str().unwrap_or_default()
+            call_result["content"][0]["text"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty()),
+            "failed tools/call must explain the failure in content: {call}"
         );
     } else {
-        let call_result = assert_success(&call, "tools/call");
         assert!(
-            call_result["text"].is_string(),
-            "extract_text success result must carry a string 'text': {call}"
+            call_result["structuredContent"]["text"].is_string(),
+            "extract_text success result must preserve structured text: {call}"
         );
     }
 
@@ -592,10 +594,11 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
 }
 
 /// The documented error contract over the wire: with `--root` set, a
-/// traversal path and an absolute path are rejected with `-32602` (with the
-/// boundary code in `data`), a missing-params `tools/call` is rejected with
-/// `-32602` + `data.reason`, paths inside root are NOT rejected by the
-/// boundary, and the server keeps serving after rejections.
+/// traversal path and an absolute path are rejected in-band with `isError`
+/// and `structuredContent.code == -32602` (with the boundary code in the
+/// nested data), a missing-params `tools/call` is rejected with `-32602` +
+/// `data.reason`, paths inside root are NOT rejected by the boundary, and the
+/// server keeps serving after rejections.
 #[test]
 fn out_of_root_and_invalid_params_rejected_with_32602() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -609,7 +612,7 @@ fn out_of_root_and_invalid_params_rejected_with_32602() {
 
     let mut server = McpServer::spawn(&["--root", root.to_str().expect("utf-8 root")]);
 
-    // Relative traversal out of root → -32602, PATH_ESCAPES_ROOT.
+    // Relative traversal out of root → in-band -32602, PATH_ESCAPES_ROOT.
     let traversal = server.request(
         "tools/call",
         json!({
@@ -617,19 +620,19 @@ fn out_of_root_and_invalid_params_rejected_with_32602() {
             "arguments": {"path": "../outside.pdf"}
         }),
     );
-    let error = traversal
-        .get("error")
-        .unwrap_or_else(|| panic!("traversal path must be rejected, got: {traversal}"));
+    let error = assert_success(&traversal, "traversal tools/call");
+    assert_eq!(error["isError"], true);
     assert_eq!(
-        error["code"], -32602,
+        error["structuredContent"]["code"], -32602,
         "traversal rejection code: {traversal}"
     );
     assert_eq!(
-        error["data"]["code"], "PATH_ESCAPES_ROOT",
+        error["structuredContent"]["data"]["code"], "PATH_ESCAPES_ROOT",
         "traversal rejection must carry the boundary code: {traversal}"
     );
 
-    // Absolute path under --root → -32602, ABSOLUTE_PATH_NOT_PERMITTED.
+    // Absolute path under --root → in-band -32602,
+    // ABSOLUTE_PATH_NOT_PERMITTED.
     let absolute = server.request(
         "tools/call",
         json!({
@@ -637,15 +640,14 @@ fn out_of_root_and_invalid_params_rejected_with_32602() {
             "arguments": {"path": "/etc/passwd"}
         }),
     );
-    let error = absolute
-        .get("error")
-        .unwrap_or_else(|| panic!("absolute path under --root must be rejected, got: {absolute}"));
+    let error = assert_success(&absolute, "absolute-path tools/call");
+    assert_eq!(error["isError"], true);
     assert_eq!(
-        error["code"], -32602,
+        error["structuredContent"]["code"], -32602,
         "absolute-path rejection code: {absolute}"
     );
     assert_eq!(
-        error["data"]["code"], "ABSOLUTE_PATH_NOT_PERMITTED",
+        error["structuredContent"]["data"]["code"], "ABSOLUTE_PATH_NOT_PERMITTED",
         "absolute-path rejection must carry the boundary code: {absolute}"
     );
 
@@ -675,13 +677,18 @@ fn out_of_root_and_invalid_params_rejected_with_32602() {
             "arguments": {"path": "inside.pdf"}
         }),
     );
-    if let Some(error) = inside.get("error") {
+    if inside.get("error").is_some() {
+        let error = inside.get("error").unwrap();
         assert_ne!(
             error["code"], -32602,
             "path inside root must not be rejected by the boundary check: {inside}"
         );
     } else {
         assert_success(&inside, "tools/call(inside)");
+        assert_ne!(
+            inside["result"]["structuredContent"]["code"], -32602,
+            "path inside root must not be rejected by the boundary check: {inside}"
+        );
     }
 
     // Errors don't kill the server: it still answers after rejections.
@@ -912,9 +919,9 @@ fn extract_text_returns_content_for_checked_in_valid_minimal_fixtures() {
         // Content must come back: no JSON-RPC error arm at all, so -32002
         // ("Extraction failed") is excluded by construction.
         let call_result = assert_success(&call, &format!("extract_text on {what}"));
-        let text = call_result["text"].as_str().unwrap_or_else(|| {
-            panic!("extract_text on {what} must carry a string 'text': {call}")
-        });
+        let text = call_result["structuredContent"]["text"]
+            .as_str()
+            .unwrap_or_else(|| panic!("extract_text on {what} must carry a string 'text': {call}"));
         assert!(
             !text.trim().is_empty(),
             "extract_text on {what} returned an empty text layer: {call}"
@@ -930,4 +937,55 @@ fn extract_text_returns_content_for_checked_in_valid_minimal_fixtures() {
     server.close_stdin();
     let code = server.wait_for_exit();
     assert_eq!(code, Some(0), "server must exit 0 on stdin EOF");
+}
+
+/// A notification must not consume the response slot for the next request.
+/// This is the pipelining failure that occurs when notifications/initialized
+/// is answered with a JSON-RPC error carrying id:null.
+#[test]
+fn initialized_notification_is_silent_when_requests_are_pipelined() {
+    let mut server = McpServer::spawn(&[]);
+
+    server.send_raw(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
+    server.send_raw(r#"{"jsonrpc":"2.0","id":42,"method":"tools/list"}"#);
+
+    let response = server.recv_response(42);
+    assert!(
+        response["result"]["tools"].is_array(),
+        "unexpected response: {response}"
+    );
+
+    server.close_stdin();
+    assert_eq!(server.wait_for_exit(), Some(0));
+}
+
+/// Once a known tool has been selected, execution failures belong in the MCP
+/// result envelope rather than the JSON-RPC error slot.
+#[test]
+fn tool_failures_are_in_band_call_results() {
+    let mut server = McpServer::spawn(&[]);
+    let init = server.request("initialize", json!({"capabilities": {}}));
+    assert_success(&init, "initialize");
+
+    let call = server.request(
+        "tools/call",
+        json!({
+            "name": "hash",
+            "arguments": {"path": "/path/that/does/not/exist.pdf"}
+        }),
+    );
+    let result = assert_success(&call, "failed tools/call");
+    assert_eq!(
+        result["isError"], true,
+        "tool failure must be in-band: {call}"
+    );
+    assert!(result["content"].as_array().is_some_and(|content| {
+        content.first().is_some_and(|block| {
+            block["type"] == "text" && block["text"].as_str().is_some_and(|text| !text.is_empty())
+        })
+    }));
+    assert_eq!(result["structuredContent"]["data"]["code"], "PATH_INVALID");
+
+    server.close_stdin();
+    assert_eq!(server.wait_for_exit(), Some(0));
 }

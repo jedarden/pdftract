@@ -371,6 +371,16 @@ impl Response {
         self.error.is_some()
     }
 
+    /// Returns true when a successful MCP tool result reports an in-band
+    /// execution failure via `isError: true`.
+    pub fn is_tool_error(&self) -> bool {
+        self.result
+            .as_ref()
+            .and_then(|result| result.get("isError"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// Get the result value, if this is a success response.
     pub fn get_result(&self) -> Option<&Value> {
         self.result.as_ref()
@@ -707,21 +717,22 @@ mod tests {
     // SSRF_BLOCKED detection tests
     #[test]
     fn test_is_ssrf_blocked_with_code_in_data() {
-        let error = ErrorObject::new(-32001, "SSRF protection blocked this URL")
-            .with_data(Value::Object({
+        let error = ErrorObject::new(-32001, "SSRF protection blocked this URL").with_data(
+            Value::Object({
                 let mut map = serde_json::Map::new();
-                map.insert("code".to_string(), Value::String("SSRF_BLOCKED".to_string()));
+                map.insert(
+                    "code".to_string(),
+                    Value::String("SSRF_BLOCKED".to_string()),
+                );
                 map
-            }));
+            }),
+        );
         assert!(error.is_ssrf_blocked());
     }
 
     #[test]
     fn test_is_ssrf_blocked_with_message() {
-        let error = ErrorObject::new(
-            -32001,
-            "SSRF_BLOCKED: URL targets private network",
-        );
+        let error = ErrorObject::new(-32001, "SSRF_BLOCKED: URL targets private network");
         assert!(error.is_ssrf_blocked());
     }
 
@@ -733,18 +744,18 @@ mod tests {
 
     #[test]
     fn test_is_ssrf_blocked_empty_data() {
-        let error = ErrorObject::new(-32001, "Some error").with_data(Value::Object(serde_json::Map::new()));
+        let error =
+            ErrorObject::new(-32001, "Some error").with_data(Value::Object(serde_json::Map::new()));
         assert!(!error.is_ssrf_blocked());
     }
 
     #[test]
     fn test_is_ssrf_blocked_different_code_in_data() {
-        let error = ErrorObject::new(-32001, "Some error")
-            .with_data(Value::Object({
-                let mut map = serde_json::Map::new();
-                map.insert("code".to_string(), Value::String("OTHER_ERROR".to_string()));
-                map
-            }));
+        let error = ErrorObject::new(-32001, "Some error").with_data(Value::Object({
+            let mut map = serde_json::Map::new();
+            map.insert("code".to_string(), Value::String("OTHER_ERROR".to_string()));
+            map
+        }));
         assert!(!error.is_ssrf_blocked());
     }
 
@@ -756,12 +767,14 @@ mod tests {
 
     #[test]
     fn test_is_ssrf_blocked_case_sensitive_in_data() {
-        let error = ErrorObject::new(-32001, "Some error")
-            .with_data(Value::Object({
-                let mut map = serde_json::Map::new();
-                map.insert("code".to_string(), Value::String("ssrf_blocked".to_string()));
-                map
-            }));
+        let error = ErrorObject::new(-32001, "Some error").with_data(Value::Object({
+            let mut map = serde_json::Map::new();
+            map.insert(
+                "code".to_string(),
+                Value::String("ssrf_blocked".to_string()),
+            );
+            map
+        }));
         assert!(!error.is_ssrf_blocked(), "Should be case-sensitive");
     }
 

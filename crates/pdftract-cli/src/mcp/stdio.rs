@@ -274,9 +274,7 @@ fn handle_request(
             let result = json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {},
-                    "resources": {},
-                    "prompts": {}
+                    "tools": {}
                 },
                 "serverInfo": {
                     "name": "pdftract",
@@ -365,8 +363,8 @@ fn handle_request(
             }
 
             match result {
-                Ok(value) => Response::success(id, value),
-                Err(error) => Response::error(id, error),
+                Ok(value) => Response::success(id, tools::call_result(value)),
+                Err(error) => Response::success(id, tools::call_error(&error)),
             }
         }
         _ => {
@@ -458,12 +456,16 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
         match read_message(&mut stdin) {
             Ok(Some(request)) => {
                 // Handle the request
+                let is_notification = request.is_notification();
                 let response = handle_request(request, &registry, root, _audit_writer.as_ref());
 
-                // Write the response
-                if let Err(e) = write_response(&response) {
-                    eprintln!("Failed to write response: {}", e);
-                    return Err(e);
+                // JSON-RPC notifications, including notifications/initialized,
+                // must not produce a response or even an error envelope.
+                if !is_notification {
+                    if let Err(e) = write_response(&response) {
+                        eprintln!("Failed to write response: {}", e);
+                        return Err(e);
+                    }
                 }
             }
             Ok(None) => {

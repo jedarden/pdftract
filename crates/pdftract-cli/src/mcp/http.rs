@@ -394,7 +394,10 @@ fn extraction_ocr_requested(request: &Request) -> bool {
 /// response shape.
 #[cfg(feature = "metrics")]
 fn response_page_count(response: &Response) -> u64 {
-    let Some(result) = response.get_result() else {
+    let Some(result) = response
+        .get_result()
+        .map(|result| result.get("structuredContent").unwrap_or(result))
+    else {
         return 0;
     };
     if let Some(pages) = result.get("pages").and_then(Value::as_array) {
@@ -421,7 +424,7 @@ fn record_mcp_extraction(
         metrics,
         started.elapsed().as_secs_f64(),
         ocr,
-        response.is_success(),
+        response.is_success() && !response.is_tool_error(),
         response_page_count(response),
     );
 }
@@ -523,7 +526,10 @@ fn record_response_diagnostics(metrics: &crate::metrics::Registry, response: &Re
         return;
     }
 
-    let Some(result) = response.get_result() else {
+    let Some(result) = response
+        .get_result()
+        .map(|result| result.get("structuredContent").unwrap_or(result))
+    else {
         return;
     };
     let Some(entries) = result
@@ -644,6 +650,7 @@ async fn handle_post_request(
             crate::metrics::sampler::BusyGuard::begin_with_registry(state.metrics.clone())
         });
 
+        let is_notification = request.is_notification();
         let response = handle_request(request, registry, root);
 
         #[cfg(feature = "metrics")]
@@ -654,7 +661,9 @@ async fn handle_post_request(
         // Count diagnostics the tool reported (`metrics` feature).
         #[cfg(feature = "metrics")]
         record_response_diagnostics(&state.metrics, &response);
-        responses.push(response);
+        if !is_notification {
+            responses.push(response);
+        }
     }
 
     // Write audit log if configured
@@ -673,7 +682,10 @@ async fn handle_post_request(
         };
 
         // Determine status: 200 if all responses are success, 500 if any error
-        let status = if responses.iter().all(|r| r.is_success()) {
+        let status = if responses
+            .iter()
+            .all(|r| r.is_success() && !r.is_tool_error())
+        {
             200
         } else {
             500
@@ -694,6 +706,12 @@ async fn handle_post_request(
             status,
             &diagnostics,
         );
+    }
+
+    // Notifications have no JSON-RPC response body. HTTP has no stdio frame
+    // to omit, so acknowledge the transport request with an empty 202.
+    if responses.is_empty() {
+        return StatusCode::ACCEPTED.into_response();
     }
 
     // Return the response(s)
@@ -930,9 +948,7 @@ fn handle_request(
             let result = serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
-                    "tools": {},
-                    "resources": {},
-                    "prompts": {}
+                    "tools": {}
                 },
                 "serverInfo": {
                     "name": "pdftract",
@@ -1006,8 +1022,8 @@ fn handle_request(
             );
 
             match result {
-                Ok(value) => Response::success(id, value),
-                Err(error) => Response::error(id, error),
+                Ok(value) => Response::success(id, tools::call_result(value)),
+                Err(error) => Response::success(id, tools::call_error(&error)),
             }
         }
         _ => {
@@ -1483,7 +1499,10 @@ mod tests {
             .unwrap();
         let response_json: Value = serde_json::from_slice(&response_body).unwrap();
         assert_eq!(
-            response_json["result"]["pages"].as_array().unwrap().len(),
+            response_json["result"]["structuredContent"]["pages"]
+                .as_array()
+                .unwrap()
+                .len(),
             1
         );
 
@@ -1692,7 +1711,9 @@ mod tests {
         // What the client received, as (code, severity) -> count.
         let mut reported: std::collections::BTreeMap<(String, String), usize> =
             std::collections::BTreeMap::new();
-        if let Some(entries) = response["result"]["metadata"]["diagnostics_detailed"].as_array() {
+        if let Some(entries) =
+            response["result"]["structuredContent"]["metadata"]["diagnostics_detailed"].as_array()
+        {
             for diagnostic in entries {
                 let key = (
                     diagnostic["code"].as_str().unwrap().to_string(),
