@@ -518,18 +518,18 @@ impl PdfSource for HttpRangeSource {
             // next read_range over this span falls back to a synchronous
             // fetch — a performance hint lost, never correctness — so the
             // error is deliberately swallowed rather than propagated.
-            // Logged at trace level so a silently failing prefetch (which
+            // Logged at debug level so a silently failing prefetch (which
             // would otherwise degrade every later read in the span with no
             // record anywhere) is observable when debugging, mirroring the
             // MmapSource::prefetch madvise handling.
             if let Err(e) = self.fetch_range(run_start, run_end) {
                 // Structured fields so a persistently failing run is
                 // diagnosable and queryable from the log line alone.
-                tracing::trace!(
+                tracing::debug!(
                     run_start,
                     run_end,
                     error = %e,
-                    "range prefetch fetch failed; continuing without warmed cache"
+                    "range prefetch fetch failed; prefetch continues without this run"
                 );
             }
         }
@@ -1178,7 +1178,7 @@ mod tests {
         }
 
         fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-            metadata.level() == &tracing::Level::TRACE
+            metadata.level() == &tracing::Level::DEBUG
         }
 
         fn new_span(&self, _attrs: &tracing::span::Attributes<'_>) -> tracing::Id {
@@ -1204,15 +1204,14 @@ mod tests {
         fn exit(&self, _span: &tracing::Id) {}
     }
 
-    /// A failed fetch_range inside prefetch must be recorded at trace level
+    /// A failed fetch_range inside prefetch must be recorded at debug level
     /// with the run_start/run_end/error fields, while prefetch itself stays
     /// infallible — it returns () and does not panic. Mirrors
     /// `test_prefetch_madvise_failure_is_traced` in mmap.rs.
     #[cfg(feature = "remote")]
     #[test]
-    fn test_prefetch_fetch_failure_is_traced() {
+    fn test_prefetch_fetch_failure_is_logged() {
         use std::sync::atomic::Ordering;
-        use std::sync::Mutex;
 
         // Two blocks: block 0 can be warmed while block 1 fails.
         let body = vec![0x41u8; 2 * BLOCK_SIZE as usize];
@@ -1236,7 +1235,7 @@ mod tests {
                 source.prefetch(0, 10);
                 assert!(
                     captured.lock().unwrap().is_empty(),
-                    "successful prefetch must not emit a trace event"
+                    "successful prefetch must not emit a debug event"
                 );
 
                 server.fail_range_get.store(true, Ordering::Relaxed);
@@ -1257,7 +1256,7 @@ mod tests {
         // One bounded retry closes the race deterministically, without
         // sleeps: after the first round the callsite is registered, and
         // entering a fresh `with_default` rebuilds its interest through the
-        // dispatcher registry. A genuinely missing `trace!` fails identically
+        // dispatcher registry. A genuinely missing `debug!` fails identically
         // on the retry, so no assertion is weakened.
         if captured.lock().unwrap().is_empty() {
             captured = capture(&source, &server);
@@ -1267,17 +1266,17 @@ mod tests {
         assert_eq!(
             events.len(),
             1,
-            "expected exactly one trace event: {events:?}"
+            "expected exactly one debug event: {events:?}"
         );
         let event = &events[0];
-        assert_eq!(event.level, tracing::Level::TRACE);
+        assert_eq!(event.level, tracing::Level::DEBUG);
         assert!(
             event.target.starts_with("pdftract_core::source"),
             "event came from an unexpected target: {}",
             event.target
         );
         // Each field is asserted on its own so dropping any one of them from
-        // the trace! call fails here rather than passing vacuously. The run
+        // the debug! call fails here rather than passing vacuously. The run
         // fields are BLOCK indices, matching the missing_runs accounting.
         assert_eq!(event.field("run_start"), Some("1"));
         assert_eq!(event.field("run_end"), Some("1"));
@@ -1292,5 +1291,15 @@ mod tests {
             message.contains("prefetch"),
             "message should name the failed operation: {message}"
         );
+
+        // The failed prefetch must not poison the read path: once the origin
+        // recovers, the same bytes are fetched synchronously and returned.
+        server
+            .fail_range_get
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let recovered = source
+            .read_range(BLOCK_SIZE, 10)
+            .expect("read_range must recover after a failed prefetch");
+        assert_eq!(recovered.as_ref(), &[0x41; 10]);
     }
 }
