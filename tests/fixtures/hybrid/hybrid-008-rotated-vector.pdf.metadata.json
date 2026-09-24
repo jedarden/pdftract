@@ -42,6 +42,15 @@
     "confidence_range": "0.80-0.90"
   },
   "file_size_bytes": 1435,
-  "validation_status": "pending",
+  "validation_status": "verified",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Hybrid",
+    "observed_hybrid_cells": 24,
+    "observed_hybrid_percentage": 37.5,
+    "observed_file_size_bytes": 1435,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture designed to test rotated vector text handling. Multiple rotation angles stress-test the grid cell evaluator and merge rules with angular content that doesn't align with the 8×8 grid axes. This tests the classifier's ability to detect hybrid content when vector elements are rotated and may cross multiple cell boundaries. OCR on rotated text typically has lower confidence, testing merge rule behavior with varying confidence levels."
 }

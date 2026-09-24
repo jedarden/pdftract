@@ -46,6 +46,15 @@
     "classification_note": "Lower confidence due to clean separation. System may classify as separate Vector + Scanned regions rather than Hybrid page. Page-level hybrid detection required."
   },
   "file_size_bytes": 1647,
-  "validation_status": "pending",
+  "validation_status": "failed",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Vector",
+    "observed_hybrid_cells": 0,
+    "observed_hybrid_percentage": 0.0,
+    "observed_file_size_bytes": 1647,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture simulating a common real-world hybrid PDF pattern: multi-column documents with vector text in one column and scanned content in another. This is typical of newspapers, academic papers with scanned figures, reports with mixed content types, and invoices with line items (scanned) and summary text (vector). Key difference from hybrid-001: horizontal separation rather than vertical. Key difference from hybrid-002: no overlapping regions, only side-by-side coexistence. This fixture tests whether the classification system treats pages with both vector and scanned content as Hybrid even when the regions are cleanly separated by column. The challenge: grid-based cell detection may find zero cells containing both content types, potentially leading to classification as separate Vector + Scanned regions rather than a unified Hybrid page. Expected behavior: page-level analysis should recognize both content types exist and classify as Hybrid, even with no cell-level overlap."
 }

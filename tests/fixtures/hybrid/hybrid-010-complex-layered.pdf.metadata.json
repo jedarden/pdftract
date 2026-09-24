@@ -45,6 +45,15 @@
     "confidence_range": "0.90-0.98"
   },
   "file_size_bytes": 1876,
-  "validation_status": "pending",
+  "validation_status": "failed",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Scanned",
+    "observed_hybrid_cells": 56,
+    "observed_hybrid_percentage": 87.5,
+    "observed_file_size_bytes": 2027,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Enhanced synthetic fixture designed to test complex multi-layered hybrid content with comprehensive vector shape coverage. This fixture represents a realistic document with multiple structural elements (headers, footers, columns, annotations, shapes) creating hybrid cells across most of the page. Key additions: circular shapes using cubic Bezier curves (12 curveto operators), rectangles (6 operators), lines (3 operators), demonstrating PDF's transparency model with proper layer ordering. With 87.5% hybrid cells, it tests the upper bound of hybrid detection and validates that the classifier correctly handles complex real-world layouts where vector elements serve both content and structural purposes (dividers, borders, layout guides, circular annotations)."
 }

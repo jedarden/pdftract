@@ -42,6 +42,15 @@
     "confidence_range": "0.75-0.90"
   },
   "file_size_bytes": 1461,
-  "validation_status": "pending",
+  "validation_status": "verified",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Hybrid",
+    "observed_hybrid_cells": 12,
+    "observed_hybrid_percentage": 18.75,
+    "observed_file_size_bytes": 1461,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture testing localized hybrid detection with a circular stamp seal in the bottom right corner. This tests whether the classifier can detect hybrid content when it's concentrated in a small region rather than distributed across the page. The circular stamp crosses grid cell boundaries radially, creating complex hybrid cell patterns that test the 8×8 grid evaluation approach. The red color on grayscale background also tests color-aware classification if implemented. This fixture represents a common real-world pattern: approval stamps, notary seals, and validation marks on otherwise scanned documents."
 }

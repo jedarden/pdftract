@@ -42,6 +42,15 @@
     "confidence_range": "0.80-0.92"
   },
   "file_size_bytes": 1407,
-  "validation_status": "pending",
+  "validation_status": "verified",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Hybrid",
+    "observed_hybrid_cells": 28,
+    "observed_hybrid_percentage": 43.75,
+    "observed_file_size_bytes": 1407,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture testing form-specific hybrid patterns with fillable textbox overlays. This complements hybrid-002 (form fields) by using a tax form layout with characteristic horizontal and vertical dividers. The vector textboxes include both rectangular borders (vector graphics) and placeholder labels (vector text), testing multiple vector content types. The scattered distribution of textboxes across the form tests whether the classifier can accumulate distributed hybrid cells to reach the 15% threshold. This fixture represents a common real-world scenario: fillable forms with vector field annotations overlaid on scanned form backgrounds."
 }

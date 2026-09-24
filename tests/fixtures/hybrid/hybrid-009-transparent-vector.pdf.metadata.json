@@ -42,6 +42,15 @@
     "confidence_range": "0.75-0.85"
   },
   "file_size_bytes": 1650,
-  "validation_status": "pending",
+  "validation_status": "verified",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Hybrid",
+    "observed_hybrid_cells": 20,
+    "observed_hybrid_percentage": 31.25,
+    "observed_file_size_bytes": 1653,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture designed to test semi-transparent vector overlay handling. PDF transparency (ExtGState with ca/CA values) creates visually blended content that tests whether the classifier correctly identifies hybrid pages when vector content has reduced opacity. This tests the grid cell evaluator's ability to detect hybrid cells regardless of transparency settings, and merge rule behavior when transparent overlays may affect OCR confidence on underlying scanned content."
 }

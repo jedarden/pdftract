@@ -44,6 +44,15 @@
     "confidence_range": "0.80-0.95"
   },
   "file_size_bytes": 1507,
-  "validation_status": "pending",
+  "validation_status": "verified",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Hybrid",
+    "observed_hybrid_cells": 48,
+    "observed_hybrid_percentage": 75.0,
+    "observed_file_size_bytes": 1507,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture simulating a common real-world hybrid PDF pattern: a scanned paper form with vector fillable field annotations overlaid. This tests the hybrid extraction pipeline's ability to handle scattered vector content distributed across a predominantly scanned page. The vector elements include form field labels, small red checkbox indicators, underline rectangles for text input areas, and descriptive overlay annotations. The scanned background provides a complete employee information form layout. Key challenge: accurate merge of vector and scanned text when they describe the same field (e.g., 'Full Name:' appears in both vector and scanned regions)."
 }

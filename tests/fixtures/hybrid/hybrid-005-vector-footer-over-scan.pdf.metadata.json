@@ -42,6 +42,15 @@
     "confidence_range": "0.70-0.85"
   },
   "file_size_bytes": 1460,
-  "validation_status": "pending",
+  "validation_status": "failed",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Vector",
+    "observed_hybrid_cells": 8,
+    "observed_hybrid_percentage": 12.5,
+    "observed_file_size_bytes": 1460,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture complementing hybrid-001 by testing vertical stack pattern with vector content at bottom instead of top. This tests classifier symmetry and footer extraction precision. The fixture includes a horizontal divider line between body and footer, which adds complexity to the boundary detection. Footer contains page numbers and confidentiality notices, testing whether small vector regions are correctly identified when dominated by large scanned content areas."
 }

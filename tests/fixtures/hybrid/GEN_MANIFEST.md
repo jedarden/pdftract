@@ -61,6 +61,31 @@ them):
   That panic is reproducible from the committed corpus itself — the
   committed `hybrid-008-rotated-vector.pdf` triggers it at HEAD.
 
+## Primary Phase 5.5 corpus
+
+The ten root-level fixtures below are the KU-2 Phase 5.5 classifier corpus.
+The compiled `hybrid_corpus` target reports the observed class and the
+8x8-grid coverage supplied by each sidecar; it does not expose an independent
+per-cell PDF extraction count or confidence value. File sizes are the bytes
+observed in the committed PDFs at the validation HEAD.
+
+| Fixture | Expected PageClass | Observed result | Observed file size (bytes) | verification_status |
+|---|---|---|---:|---|
+| `hybrid-001-vector-header-over-scan.pdf` | Hybrid | Vector; 8/64 cells (12.50%) | 1191 | failed |
+| `hybrid-002-vector-form-over-scan.pdf` | Hybrid | Hybrid; 48/64 cells (75.00%) | 1507 | verified |
+| `hybrid-003-mixed-column-layout.pdf` | Hybrid | Vector; 0/64 cells (0.00%) | 1647 | failed |
+| `hybrid-004-watermark-over-scan.pdf` | Hybrid | Scanned; 64/64 cells (100.00%) | 1416 | failed |
+| `hybrid-005-vector-footer-over-scan.pdf` | Hybrid | Vector; 8/64 cells (12.50%) | 1460 | failed |
+| `hybrid-006-stamp-annotation.pdf` | Hybrid | Hybrid; 12/64 cells (18.75%) | 1461 | verified |
+| `hybrid-007-textbox-overlay.pdf` | Hybrid | Hybrid; 28/64 cells (43.75%) | 1407 | verified |
+| `hybrid-008-rotated-vector.pdf` | Hybrid | Hybrid; 24/64 cells (37.50%) | 1435 | verified |
+| `hybrid-009-transparent-vector.pdf` | Hybrid | Hybrid; 20/64 cells (31.25%) | 1653 | verified |
+| `hybrid-010-complex-layered.pdf` | Hybrid | Scanned; 56/64 cells (87.50%) | 2027 | failed |
+
+The five `failed` rows are documented classifier-tuning inputs in the
+verification note for `pdftract-2946c023`; they match the test's
+`EXPECTED_MISMATCH` registry.
+
 ## Fixture Metadata
 
 Each hybrid fixture entry includes:

@@ -42,6 +42,15 @@
     "confidence_range": "0.85-0.95"
   },
   "file_size_bytes": 1416,
-  "validation_status": "pending",
+  "validation_status": "failed",
+  "validation": {
+    "validated_at": "2026-09-24",
+    "head_commit": "69df04ca292c5e27ef80a7f8d4484dafcf7b0f98",
+    "observed_page_class": "Scanned",
+    "observed_hybrid_cells": 64,
+    "observed_hybrid_percentage": 100.0,
+    "observed_file_size_bytes": 1416,
+    "tool": "timeout --kill-after=30s 600s cargo test -p pdftract-core --test hybrid_corpus -- --nocapture"
+  },
   "notes": "Synthetic fixture designed to test full-page hybrid detection. Watermark is rotated 45 degrees, which creates unique challenges for grid cell evaluation since the watermark crosses cell boundaries diagonally. This tests the classifier's ability to handle page-wide hybrid coverage and distinguish between decorative overlays (watermarks) and substantive content. The gray color watermark may also affect OCR confidence levels during merge rule application."
 }
