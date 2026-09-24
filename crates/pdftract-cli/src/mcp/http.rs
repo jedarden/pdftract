@@ -417,13 +417,82 @@ fn record_mcp_extraction(
     ocr: bool,
     response: &Response,
 ) {
+    record_mcp_extraction_outcome(
+        metrics,
+        started.elapsed().as_secs_f64(),
+        ocr,
+        response.is_success(),
+        response_page_count(response),
+    );
+}
+
+#[cfg(feature = "metrics")]
+fn record_mcp_extraction_outcome(
+    metrics: &crate::metrics::Registry,
+    elapsed_seconds: f64,
+    ocr: bool,
+    success: bool,
+    pages: u64,
+) {
     metrics.dec_inflight_extractions();
-    metrics.observe_extraction_duration(started.elapsed().as_secs_f64());
-    if response.is_success() {
+    metrics.observe_extraction_duration(elapsed_seconds);
+    if success {
         metrics.inc_extraction("success", ocr);
-        metrics.add_pages_extracted(response_page_count(response));
+        metrics.add_pages_extracted(pages);
     } else {
         metrics.inc_extraction("error", ocr);
+    }
+}
+
+/// Own the lifecycle of an MCP extraction invocation.
+///
+/// The HTTP handler executes tools synchronously. Keeping the in-flight
+/// increment and completion accounting in an RAII guard means a panic while a
+/// tool runs still records a timed error and releases the gauge. Metrics are
+/// observational, so this guard never changes the response path.
+#[cfg(feature = "metrics")]
+struct McpExtractionMetricsGuard {
+    metrics: crate::metrics::Registry,
+    started: Instant,
+    ocr: bool,
+    done: bool,
+}
+
+#[cfg(feature = "metrics")]
+impl McpExtractionMetricsGuard {
+    fn new(metrics: crate::metrics::Registry, ocr: bool) -> Self {
+        metrics.inc_inflight_extractions();
+        Self {
+            metrics,
+            started: Instant::now(),
+            ocr,
+            done: false,
+        }
+    }
+
+    fn finish(&mut self, response: &Response) {
+        if self.done {
+            return;
+        }
+        self.done = true;
+        record_mcp_extraction(&self.metrics, self.started, self.ocr, response);
+    }
+}
+
+#[cfg(feature = "metrics")]
+impl Drop for McpExtractionMetricsGuard {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        self.done = true;
+        record_mcp_extraction_outcome(
+            &self.metrics,
+            self.started.elapsed().as_secs_f64(),
+            self.ocr,
+            false,
+            0,
+        );
     }
 }
 
@@ -560,9 +629,11 @@ async fn handle_post_request(
         }
 
         #[cfg(feature = "metrics")]
-        let extraction_started = extraction.as_deref().map(|_| {
-            state.metrics.inc_inflight_extractions();
-            (Instant::now(), extraction_ocr_requested(&request))
+        let mut extraction_metrics = extraction.as_deref().map(|_| {
+            McpExtractionMetricsGuard::new(
+                state.metrics.clone(),
+                extraction_ocr_requested(&request),
+            )
         });
 
         // MCP extraction tools execute the same synchronous core pipeline as
@@ -576,8 +647,8 @@ async fn handle_post_request(
         let response = handle_request(request, registry, root);
 
         #[cfg(feature = "metrics")]
-        if let Some((started, ocr)) = extraction_started {
-            record_mcp_extraction(&state.metrics, started, ocr, &response);
+        if let Some(extraction_metrics) = extraction_metrics.as_mut() {
+            extraction_metrics.finish(&response);
         }
 
         // Count diagnostics the tool reported (`metrics` feature).
@@ -1541,6 +1612,25 @@ mod tests {
 
         let text = registry.render();
         assert!(text.contains("pdftract_extractions_total{result=\"error\",ocr=\"false\"} 1\n"));
+        assert!(text.contains("pdftract_extraction_duration_seconds_count 1\n"));
+        assert!(text.contains("pdftract_inflight_extractions 0\n"));
+    }
+
+    /// Dropping an MCP extraction guard without a response records the same
+    /// error lifecycle as a failed tool and never leaves work in flight.
+    #[cfg(feature = "metrics")]
+    #[test]
+    fn test_metrics_mcp_extraction_guard_drop_records_error() {
+        let registry = crate::metrics::Registry::new();
+        let guard = McpExtractionMetricsGuard::new(registry.clone(), true);
+        assert!(registry
+            .render()
+            .contains("pdftract_inflight_extractions 1\n"));
+
+        drop(guard);
+
+        let text = registry.render();
+        assert!(text.contains("pdftract_extractions_total{result=\"error\",ocr=\"true\"} 1\n"));
         assert!(text.contains("pdftract_extraction_duration_seconds_count 1\n"));
         assert!(text.contains("pdftract_inflight_extractions 0\n"));
     }

@@ -837,7 +837,8 @@ fn refresh_cache_size(
         .current_size_bytes()
     {
         Ok(size) if size > 0 => Some(size),
-        Ok(_) | Err(_) => indexed_size(),
+        Ok(_) => indexed_size().or(Some(0)),
+        Err(_) => indexed_size(),
     };
     if let Some(size) = size {
         metrics.set_cache_size_bytes(size);
@@ -1221,7 +1222,10 @@ async fn extract_stream_handler(
                 &metadata.diagnostics_detailed,
                 None,
             ),
-            Err(_) => extraction_metrics.finish_error(None),
+            Err(error) => {
+                let message = format!("{:?}", error);
+                extraction_metrics.finish_error(extract_diag_code_from_error(&message));
+            }
         }
 
         if let Err(e) = extraction {
