@@ -246,3 +246,66 @@ history above as evidence. Until it lands, a one-off red
 `test_prefetch_madvise_failure_is_traced` in a parallel `cargo test` run is not, by
 itself, evidence of a criterion-(a) regression; discriminate with
 `-- --test-threads=1`.
+
+## Current split-chain evidence (2026-09-24)
+
+This section is the acceptance update for child `pdftract-0fd3417e`, using the
+read-only audit from `pdftract-3c73670a` and the timed test evidence from
+`pdftract-7dd08ff9`. It supersedes the earlier compile-blocked snapshot as the
+current test result; the historical results above remain useful provenance.
+
+### Code-path result
+
+The current `crates/pdftract-core/src/source/mmap.rs` references are:
+
+| Path | Current location | Result |
+|---|---|---|
+| Module contract | `mmap.rs:8-15` | Documents best-effort prefetch and trace visibility for every failure |
+| `offset + length` overflow | `mmap.rs:89-92` | `checked_add` returns `Err`; `prefetch` catches it at `mmap.rs:148-160` — **YES, traced** |
+| Range past EOF | `mmap.rs:94-99` | Explicit `Err`; `prefetch` catches it at `mmap.rs:148-160` — **YES, traced** |
+| `advise_range`/kernel failure | `mmap.rs:101-103` | Mapped to `io::Error`; the same `Err` arm reaches `mmap.rs:152-159` — **YES, traced** |
+| Successful advice | `mmap.rs:101-107` | Returns `Ok(())`; only the `Err` arm logs — **silent** |
+
+The trace event contains `offset`, `length`, `file_len = self.len()`, and
+`error = %e` at `mmap.rs:152-159`. The non-Unix branch at `mmap.rs:105-107` is
+an intentional no-op because this optimization is unavailable there; it has no
+failure path that could bypass tracing. The audit found no real trace bypass, so
+no new focused follow-up bead was required. The prior runtime-evidence follow-up
+`pdftract-b716bac5` and the separate test-flake fix bead `pdftract-aa239a61` are
+linked above for history; neither represents a production trace-path gap.
+
+### Targeted test evidence
+
+Exact command from `pdftract-7dd08ff9`:
+
+```text
+timeout --kill-after=30s 600s cargo test -p pdftract-core --lib source::mmap 2>&1 | tail -40
+```
+
+It completed without timeout or compile failure. Recorded final output:
+
+```text
+warning: `pdftract-core` (lib test) generated 188 warnings
+running 25 tests
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 3652 filtered out
+```
+
+The same command was rerun from a clean `git archive HEAD` extraction and also
+returned success: 25 passed, 0 failed, 0 ignored, 0 measured, 3659 filtered out.
+The timed test child recorded timeout/cargo exit `0` and tail exit `0` for both
+runs; all 25 `source::mmap` tests executed.
+
+### Compile/test limitation and final verdict
+
+The clean extraction’s broader Rust definition check built all targets successfully,
+but the full `cargo test` then exited `101` after 352 tests passed and nine
+unrelated `pdftract-cli` tests failed (SVG/MCID/column rendering: four; pages
+parsing: two; URL parsing: three). That limitation is separate from the targeted
+`pdftract-core` `source::mmap` result and does not identify a failure in the
+prefetch trace path.
+
+**Criterion (a), “log madvise failures at trace level for debugging”: PASS.** The
+code audit shows every Unix failure path reaches the structured trace event, the
+success path is silent, and the current targeted clean-extraction test run is
+25/25 green. No production code was changed, no trace bypass was found, and the
+parent `pdftract-de16d7aa` remains open.
