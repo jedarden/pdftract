@@ -1,7 +1,7 @@
 # bf-5o22rf umbrella verification
 
-**Parent:** `bf-5o22rf` — Add Observability to Prefetch madvise Errors  
-**Consolidation child:** `pdftract-adda71a4`  
+**Parent:** `bf-5o22rf` — Add Observability to Prefetch madvise Errors
+**Consolidation child:** `pdftract-adda71a4`
 **Date:** 2026-09-24
 
 This note consolidates the four child evidence chains. The parent acceptance
@@ -76,8 +76,34 @@ implementation. The known parallel capture race is retained as a WARN in the
 history and tracked by `pdftract-aa239a61`; it does not change criterion (a)’s
 PASS verdict.
 
-The final full-suite/source-process check for this consolidation is recorded
-below after it is run. The umbrella `bf-5o22rf` is ready to close once this
-terminal child and its dependency chain are closed; this child does not close
-the umbrella.
+## Final committed-HEAD checks
 
+The mandatory clean extraction was made from `HEAD=5e5b30e6` at
+`/home/coding/scratch/pdftract-adda71a4-dod.eR8486`. The repository has no
+`scripts/definition-of-done.sh`, so the default definition was used:
+`cargo build --all-targets && cargo test`. The build passed (exit 0), but the
+full test command exited 101 after 353 passed and 8 unrelated
+`pdftract-cli` unit tests failed (inspect SVG/MCID, pages, and URL behavior).
+The extraction was retained for diagnosis as required; this is a repository
+baseline WARN/FAIL for the broad definition-of-done gate, not a failure in the
+source prefetch suite.
+
+The required final command was run in that same committed extraction:
+
+```text
+timeout --kill-after=30s 600s cargo test -p pdftract-core --lib source 2>&1 | tail -40
+```
+
+It exited 0 (pipeline exit with `pipefail`), was not timeout-killed, and ended
+with `114 passed; 0 failed; 0 ignored; 0 measured; 3570 filtered out`.
+The trace regression `test_prefetch_madvise_failure_is_traced` and the other
+source tests all passed.
+
+The literal required process scan, `pgrep -af 'pdftract'`, matched only the
+active Codex/Needle supervisor command lines and the scan shell itself. A
+follow-up process inspection found no cargo, rustc, test, or pdftract worker
+binary left behind; therefore **no orphan task processes remain**. The scan
+was not evidence of a test timeout or leaked worker.
+
+The umbrella `bf-5o22rf` is ready to close once this terminal child and its
+dependency chain are closed; this child does not close the umbrella.
