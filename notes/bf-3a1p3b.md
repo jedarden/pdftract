@@ -106,6 +106,43 @@ test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 3631 filtered out; 
 TEST_EXIT_CODE=0
 ```
 
+## Clean-archive definition-of-done gate
+
+The committed `HEAD` was extracted to `/tmp/tmp.dp3TLxVKmK` and verified
+outside the shared worktree. `cargo build --all-targets` passed with exit 0.
+The repository-default `cargo test` then exited 101, so the extraction was
+retained for diagnosis as required. This failure is outside the scoped source
+test: 353 tests passed and these 8 unrelated `pdftract-cli` tests failed:
+
+```text
+---- inspect::api::tests::test_render_page_svg_empty_page stdout ----
+assertion failed: svg.contains("<g class=\"selection\"")
+---- inspect::api::tests::test_render_page_svg_basic stdout ----
+assertion failed: svg.contains("<g class=\"layer-columns\"")
+---- inspect::render::tests::test_extract_columns_from_spans stdout ----
+assertion `left == right` failed
+---- pages::tests::test_parse_and_filter_out_of_range stdout ----
+assertion `left == right` failed
+---- pages::tests::test_parse_comma_separated stdout ----
+assertion `left == right` failed
+---- url::tests::test_parse_url_invalid stdout ----
+assertion failed: matches!(result, Err(UrlError::MissingHost(_)))
+---- url::tests::test_parse_url_urlencoded_credentials stdout ----
+assertion `left == right` failed
+---- url::tests::test_parse_url_with_empty_path stdout ----
+assertion `left == right` failed
+
+test result: FAILED. 353 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+error: test failed, to rerun pass `-p pdftract-cli --lib`
+CARGO_TEST_EXIT_CODE=101
+ARCHIVE_VERIFICATION=FAIL
+RETAINED=/tmp/tmp.dp3TLxVKmK
+```
+
+Because this mandatory full-suite gate failed, the child remains open even
+though this bead's scoped source test and all parent acceptance evidence pass.
+
 ## Orphan-process check
 
 The requested check was run using the shell-safe equivalent pattern so the
