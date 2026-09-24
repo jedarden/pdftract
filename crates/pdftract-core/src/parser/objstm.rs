@@ -31,7 +31,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{ObjRef, ObjectParser, PdfObject, PdfStream};
-use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
+use crate::parser::stream::{decode_stream_with_context, ExtractionOptions, PdfSource};
 
 /// Maximum depth for `/Extends` chain to prevent adversarial deep chains.
 const MAX_EXTENDS_DEPTH: u8 = 16;
@@ -142,9 +142,12 @@ impl ObjectStmParser {
     }
 
     /// Emit a diagnostic.
-    fn emit_diagnostic(&self, code: DiagCode, message: String) {
+    fn emit_diagnostic(&self, code: DiagCode, message: String, object_ref: ObjRef) {
         if let Ok(mut diags) = self.diagnostics.write() {
-            diags.push(Diagnostic::with_dynamic_no_offset(code, message));
+            diags.push(
+                Diagnostic::with_dynamic_no_offset(code, message)
+                    .with_object_ref_parts(object_ref.object, object_ref.generation),
+            );
         }
     }
 
@@ -229,7 +232,11 @@ impl ObjectStmParser {
                     .unwrap_or(PdfObject::Null)
             }
             Err(e) => {
-                self.emit_diagnostic(e.diag_code(), format!("Object stream error: {}", e));
+                self.emit_diagnostic(
+                    e.diag_code(),
+                    format!("Object stream error: {}", e),
+                    host_objstm_ref,
+                );
                 PdfObject::Null
             }
         }
@@ -357,7 +364,18 @@ impl ObjectStmParser {
         };
 
         let mut counter = { *self.decompress_counter.read().unwrap() };
-        let decompressed = decode_stream(stream, source, &opts, &mut counter);
+        let decoded = decode_stream_with_context(
+            stream,
+            source,
+            &opts,
+            &mut counter,
+            Some(obj_stm_ref),
+            None,
+        );
+        let decompressed = decoded.bytes;
+        if let Ok(mut diagnostics) = self.diagnostics.write() {
+            diagnostics.extend(decoded.diagnostics);
+        }
         {
             *self.decompress_counter.write().unwrap() = counter;
         }
@@ -384,6 +402,7 @@ impl ObjectStmParser {
                     first,
                     decompressed.len()
                 ),
+                obj_stm_ref,
             );
             return Ok(Arc::new(Vec::new()));
         }
@@ -470,17 +489,25 @@ impl ObjectStmParser {
             if matches!(obj, PdfObject::Stream(_)) {
                 self.emit_diagnostic(
                     DiagCode::StructInvalidObjstm,
-                    format!("Embedded object {} in ObjStm {} is a Stream, which is not allowed per PDF spec", obj_number, obj_stm_ref),
+                    format!(
+                        "Embedded object {} in ObjStm {} is a Stream, which is not allowed per PDF spec",
+                        obj_number, obj_stm_ref
+                    ),
+                    obj_stm_ref,
                 );
                 result.push((obj_number, PdfObject::Null));
             } else {
                 result.push((obj_number, obj));
             }
 
-            // Note: Object parser uses the old parser-specific diagnostic system
-            // We don't forward those diagnostics here since the systems are different
-            // The object parser diagnostics are available via obj_parser.take_diagnostics()
-            // but we skip them for now since objstm uses the unified diagnostics system
+            // Embedded object parsing uses the shared typed diagnostic model.
+            // Offsets are relative to the decompressed object slice, while the
+            // host ObjStm reference remains the stable object context.
+            if let Ok(mut diagnostics) = self.diagnostics.write() {
+                diagnostics.extend(obj_parser.take_diagnostics().into_iter().map(|diagnostic| {
+                    diagnostic.with_object_ref_parts(obj_stm_ref.object, obj_stm_ref.generation)
+                }));
+            }
         }
 
         // Handle /Extends if present

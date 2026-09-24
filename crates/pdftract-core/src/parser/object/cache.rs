@@ -343,7 +343,8 @@ impl ObjectCache {
             return Err(Diag::with_dynamic_no_offset(
                 DiagCode::StructCircularRef,
                 format!("Circular reference detected at {}", obj_ref),
-            ));
+            )
+            .with_object_ref_parts(obj_ref.object, obj_ref.generation));
         }
 
         // Check depth limit using thread-local depth counter
@@ -356,7 +357,8 @@ impl ObjectCache {
                         "Resolution depth exceeds limit of {} (obj ref: {})",
                         MAX_RESOLUTION_DEPTH, obj_ref
                     ),
-                ));
+                )
+                .with_object_ref_parts(obj_ref.object, obj_ref.generation));
             }
             depth.set(current + 1);
             Ok(())
