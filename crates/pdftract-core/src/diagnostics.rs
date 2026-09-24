@@ -61,6 +61,11 @@
 //! or the code's [`DiagCode::default_message`]. The `emit!` macro and
 //! [`DiagnosticsCollector`] apply the default automatically, so a code never
 //! renders a placeholder message.
+//!
+//! The repository policy table is
+//! `docs/integrations/diagnostics-codes.md`: its severity and description
+//! rows are backed by [`DIAGNOSTIC_CATALOG`]. [`DiagCode::policy`] packages
+//! those rows' severity/message/hint values for emission sites.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -97,7 +102,7 @@ impl fmt::Display for ObjRef {
 ///
 /// Severity determines how the diagnostic affects the extraction result
 /// and whether it should be surfaced to users prominently.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Severity {
     /// Informational — does not affect output validity
     ///
@@ -126,6 +131,23 @@ impl fmt::Display for Severity {
             Severity::Fatal => write!(f, "fatal"),
         }
     }
+}
+
+/// The deterministic policy attached to a diagnostic code.
+///
+/// A code's policy is the single source of truth for the fields that an
+/// emission site cannot invent safely: severity, the fallback message, and
+/// the actionable hint. Site-specific code may replace the fallback message
+/// with more specific context, but it must not have to reconstruct severity or
+/// the user action from a formatted string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiagnosticPolicy {
+    /// Severity serialized for this code.
+    pub severity: Severity,
+    /// Stable message used when an emission site has no more specific text.
+    pub message: &'static str,
+    /// Stable user action, when one is defined for the code.
+    pub hint: Option<&'static str>,
 }
 
 /// Diagnostic code identifying the type of error or warning.
@@ -1492,7 +1514,6 @@ impl DiagCode {
         }
     }
 
-
     /// Deterministic default message for this diagnostic code.
     ///
     /// Message policy (docs/integrations/diagnostics-codes.md): an emission
@@ -1508,35 +1529,53 @@ impl DiagCode {
     pub const fn default_message(self) -> &'static str {
         match self {
             DiagCode::StructInvalidName => "Invalid name character or malformed name object",
-            DiagCode::StructInvalidHex => "Invalid hexadecimal character in hex string or name escape",
+            DiagCode::StructInvalidHex => {
+                "Invalid hexadecimal character in hex string or name escape"
+            }
             DiagCode::StructInvalidOctal => "Invalid octal escape sequence in literal string",
-            DiagCode::StructInvalidStreamHeader => "Invalid stream header (stream keyword not followed by proper newline)",
+            DiagCode::StructInvalidStreamHeader => {
+                "Invalid stream header (stream keyword not followed by proper newline)"
+            }
             DiagCode::StructUnexpectedByte => "Unexpected byte (e.g., stray `>` not part of `>>`)",
             DiagCode::StructUnexpectedEof => "Unexpected end of file while parsing a token",
-            DiagCode::StructUnterminatedString => "Unterminated literal string (missing closing paren)",
+            DiagCode::StructUnterminatedString => {
+                "Unterminated literal string (missing closing paren)"
+            }
             DiagCode::StructMissingKey => "Missing required dictionary key",
             DiagCode::StructCircularRef => "Circular reference detected",
             DiagCode::StructXobjectCycle => "Form XObject cycle detected",
             DiagCode::StructDepthExceeded => "Dictionary nesting depth exceeds limit",
-            DiagCode::StructInvalidDictValue => "Invalid dictionary value (missing value after key)",
+            DiagCode::StructInvalidDictValue => {
+                "Invalid dictionary value (missing value after key)"
+            }
             DiagCode::StructInvalidDictKey => "Invalid dictionary key (not a name object)",
             DiagCode::StructInvalidIndirectHeader => "Invalid indirect object header",
             DiagCode::StructIntegerOverflow => "Integer overflow during parsing",
             DiagCode::StructRealInvalid => "Invalid real number literal",
             DiagCode::StructInvalidNumber => "Invalid numeric literal",
-            DiagCode::StructInvalidAscii85 => "Invalid ASCII85 character or malformed ASCII85 stream",
+            DiagCode::StructInvalidAscii85 => {
+                "Invalid ASCII85 character or malformed ASCII85 stream"
+            }
             DiagCode::StructInvalidObjstm => "Invalid object stream format",
             DiagCode::StructInvalidUtf16 => "Invalid UTF-16BE encoding in string",
             DiagCode::StructUnresolvedDestination => "Unresolved named destination",
             DiagCode::StructNonGotoOutline => "Non-GoTo action in outline",
             DiagCode::StructInvalidPdfDocEncoding => "Invalid PDFDocEncoding in string",
-            DiagCode::StructInvalidGeometry => "Invalid geometry value (NaN or Inf in MediaBox/CropBox/Rotate)",
+            DiagCode::StructInvalidGeometry => {
+                "Invalid geometry value (NaN or Inf in MediaBox/CropBox/Rotate)"
+            }
             DiagCode::StructInvalidType => "Invalid object type (expected type not found)",
-            DiagCode::StructHybridConflict => "Hybrid xref conflict: traditional table and stream disagree on object state",
-            DiagCode::StructIncompleteCoverage => "StructTree coverage below 80% threshold with /Suspects true",
+            DiagCode::StructHybridConflict => {
+                "Hybrid xref conflict: traditional table and stream disagree on object state"
+            }
+            DiagCode::StructIncompleteCoverage => {
+                "StructTree coverage below 80% threshold with /Suspects true"
+            }
             DiagCode::XrefInvalidHeader => "Invalid xref keyword or header",
             DiagCode::XrefInvalidEntry => "Malformed xref entry (not 20 bytes, bad format)",
-            DiagCode::XrefInvalidSubsectionHeader => "Invalid subsection header (not \"start count\")",
+            DiagCode::XrefInvalidSubsectionHeader => {
+                "Invalid subsection header (not \"start count\")"
+            }
             DiagCode::XrefObjectZeroNotFree => "Object 0 is not free (violates PDF spec)",
             DiagCode::XrefTrailerNotFound => "Trailer dictionary not found or malformed",
             DiagCode::XrefTruncated => "Truncated xref table (unexpected EOF)",
@@ -1565,13 +1604,19 @@ impl DiagCode {
             DiagCode::FontInvalidCmap => "Invalid CMap format",
             DiagCode::FontParseFailed => "Font program parsing failed",
             DiagCode::FontUnsupported => "Font type not supported for embedded loading",
-            DiagCode::FontCidtogidmapTruncated => "CIDToGIDMap stream has odd byte count (truncated GID entry)",
-            DiagCode::FontEncodingDifferenceOutOfRange => "Character code in /Differences array exceeds valid range",
+            DiagCode::FontCidtogidmapTruncated => {
+                "CIDToGIDMap stream has odd byte count (truncated GID entry)"
+            }
+            DiagCode::FontEncodingDifferenceOutOfRange => {
+                "Character code in /Differences array exceeds valid range"
+            }
             DiagCode::FontType3WidthsLengthMismatch => "Type3 font /Widths array length mismatch",
             #[cfg(feature = "cjk")]
             DiagCode::CjkDecodeMalformed => "Malformed byte sequence in CJK encoding fallback",
             #[cfg(feature = "cjk")]
-            DiagCode::CjkTokenizeUnknownByte => "Unrecognized byte during CJK codespace tokenization",
+            DiagCode::CjkTokenizeUnknownByte => {
+                "Unrecognized byte during CJK codespace tokenization"
+            }
             DiagCode::CmapInvalidCodespace => "Invalid codespace range in CMap",
             DiagCode::OcrJbig2Unsupported => "JBIG2 decoder not available",
             DiagCode::OcrJpxUnsupported => "JPEG2000 (JPX) decoder not available",
@@ -1579,7 +1624,9 @@ impl DiagCode {
             DiagCode::OcrTesseractFailed => "Tesseract OCR failed",
             DiagCode::OcrBrokenVectorUnavailable => "OCR unavailable on broken-vector page",
             DiagCode::OcrLanguageUnavailable => "Requested OCR language pack not available",
-            DiagCode::ImgSoftmaskUnsupported => "Image soft mask not supported in direct compositing path",
+            DiagCode::ImgSoftmaskUnsupported => {
+                "Image soft mask not supported in direct compositing path"
+            }
             DiagCode::ImgUnsupportedFormat => "Image format not supported",
             DiagCode::ImgDeskewOutOfRange => "Deskew angle out of detectable range",
             DiagCode::StreamTruncated => "Stream data truncated",
@@ -1595,14 +1642,18 @@ impl DiagCode {
             DiagCode::CmArgCount => "Invalid argument count for cm operator",
             DiagCode::CmDegenerate => "Degenerate matrix (det == 0 or NaN)",
             DiagCode::HorizScalingZero => "Horizontal scaling set to zero (Tz 0)",
-            DiagCode::TextRenderingModeClamped => "Text rendering mode clamped to valid range (0-7)",
+            DiagCode::TextRenderingModeClamped => {
+                "Text rendering mode clamped to valid range (0-7)"
+            }
             DiagCode::TstarZeroLeading => "T* operator when leading == 0 (no-op)",
             DiagCode::FontResourceNotFound => "Font resource not found",
             DiagCode::FontSizeZeroOrNegative => "Font size zero or negative (clamped to 1.0)",
             DiagCode::BtNested => "BT operator nested inside another BT block",
             DiagCode::EtWithoutBt => "ET operator without matching BT",
             DiagCode::TextShowOutsideBt => "Text-show operator outside BT/ET block",
-            DiagCode::LayoutTaggedPdfDeferred => "Tagged PDF StructTree traversal is deferred; XY-cut reading order is used",
+            DiagCode::LayoutTaggedPdfDeferred => {
+                "Tagged PDF StructTree traversal is deferred; XY-cut reading order is used"
+            }
             DiagCode::LayoutReadingOrderAmbiguous => "Reading order may be incorrect",
             DiagCode::LayoutLowReadability => "Low readability score",
             DiagCode::McpToolInvalidParams => "MCP tool call has invalid parameters",
@@ -1622,6 +1673,21 @@ impl DiagCode {
             DiagCode::ProfileInvalid => "Profile YAML is invalid or malformed",
             DiagCode::RepairRescuedFromBackwardsXref => "Xref repaired from backwards scan",
             DiagCode::SecurityJavascriptPresent => "JavaScript present in PDF (never executed)",
+        }
+    }
+
+    /// Return the complete deterministic policy for this code.
+    ///
+    /// Keeping this lookup next to [`DiagCode::default_message`] and the
+    /// catalog lookup makes it possible for every emission helper to carry
+    /// the policy as typed data. The policy is deliberately not assembled
+    /// from the human-readable `Display` form.
+    #[inline]
+    pub fn policy(self) -> DiagnosticPolicy {
+        DiagnosticPolicy {
+            severity: self.severity(),
+            message: self.default_message(),
+            hint: suggested_action(self),
         }
     }
 
@@ -2873,6 +2939,115 @@ pub fn suggested_action(code: DiagCode) -> Option<&'static str> {
         .map(|info| info.suggested_action)
 }
 
+/// Typed context carried by a diagnostic emission.
+///
+/// This is the common hand-off between an emission site and [`Diagnostic`].
+/// It keeps every field separate until the structured JSON boundary:
+/// severity and hint come from the code policy, while page/object/byte
+/// location and message are supplied when the source has them. In
+/// particular, location information is never appended to `message` where it
+/// would be lossy and impossible for consumers to recover reliably.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticContext {
+    /// Deterministic severity for the diagnostic code.
+    pub severity: Severity,
+    /// Byte offset in the source, when known.
+    pub byte_offset: Option<u64>,
+    /// Indirect PDF object containing or causing the diagnostic, when known.
+    pub object_ref: Option<ObjRef>,
+    /// Zero-based page index, when the diagnostic is page-scoped.
+    pub page_index: Option<u32>,
+    /// Human-readable message, either the code policy fallback or contextual text.
+    pub message: Cow<'static, str>,
+    /// Actionable hint from the code policy, when one is defined.
+    pub hint: Option<&'static str>,
+}
+
+impl DiagnosticContext {
+    /// Create an empty-location context using the code's deterministic policy.
+    #[inline]
+    pub fn for_code(code: DiagCode) -> Self {
+        let policy = code.policy();
+        Self {
+            severity: policy.severity,
+            byte_offset: None,
+            object_ref: None,
+            page_index: None,
+            message: Cow::Borrowed(policy.message),
+            hint: policy.hint,
+        }
+    }
+
+    /// Alias for [`Self::for_code`] that reads naturally at construction sites.
+    #[inline]
+    pub fn new(code: DiagCode) -> Self {
+        Self::for_code(code)
+    }
+
+    /// Replace the fallback message with site-specific text.
+    #[inline]
+    pub fn with_message(mut self, message: impl Into<Cow<'static, str>>) -> Self {
+        self.message = message.into();
+        self
+    }
+
+    /// Attach a byte offset without changing the message.
+    #[inline]
+    pub fn with_byte_offset(mut self, byte_offset: u64) -> Self {
+        self.byte_offset = Some(byte_offset);
+        self
+    }
+
+    /// Attach an optional byte offset without branching at the call site.
+    #[inline]
+    pub fn with_byte_offset_opt(mut self, byte_offset: Option<u64>) -> Self {
+        self.byte_offset = byte_offset;
+        self
+    }
+
+    /// Attach an indirect-object location without changing the message.
+    #[inline]
+    pub fn with_object_ref(mut self, object_ref: ObjRef) -> Self {
+        self.object_ref = Some(object_ref);
+        self
+    }
+
+    /// Attach an optional indirect-object location without branching at the call site.
+    #[inline]
+    pub fn with_object_ref_opt(mut self, object_ref: Option<ObjRef>) -> Self {
+        self.object_ref = object_ref;
+        self
+    }
+
+    /// Attach an indirect-object location from its numeric parts.
+    #[inline]
+    pub fn with_object_ref_parts(mut self, object: u32, generation: u16) -> Self {
+        self.object_ref = Some(ObjRef::new(object, generation));
+        self
+    }
+
+    /// Attach an optional indirect-object location from numeric parts.
+    #[inline]
+    pub fn with_object_ref_parts_opt(mut self, object_ref: Option<(u32, u16)>) -> Self {
+        self.object_ref = object_ref.map(|(object, generation)| ObjRef::new(object, generation));
+        self
+    }
+
+    /// Attach a zero-based page index without changing the message.
+    #[inline]
+    pub fn with_page_index(mut self, page_index: usize) -> Self {
+        self.page_index = Some(page_index as u32);
+        self
+    }
+
+    /// Attach an optional zero-based page index without branching at the call site.
+    #[inline]
+    pub fn with_page_index_opt(mut self, page_index: Option<usize>) -> Self {
+        self.page_index = page_index.map(|page| page as u32);
+        self
+    }
+}
+
 /// A diagnostic message emitted during PDF parsing and extraction.
 ///
 /// Per INV-8, all errors are emitted as diagnostics rather than panicking.
@@ -2883,13 +3058,17 @@ pub fn suggested_action(code: DiagCode) -> Option<&'static str> {
 /// - `code`: The diagnostic code identifying the type of error
 /// - `byte_offset`: Optional byte offset in the input file where the error occurred
 /// - `object_ref`: Optional indirect object reference where the error occurred
+/// - `page_index`: Optional zero-based page index where the error occurred
+/// - `severity`: Typed severity retained from the code policy
 /// - `message`: Human-readable message (static or dynamic)
+/// - `hint`: Optional actionable hint retained from the code policy
 ///
 /// # Size
 ///
-/// The struct is 64 bytes on 64-bit targets (code: 2, byte_offset: 16,
-/// object_ref: 12, page_index: 8, message: 24 + padding). Large parse failures
-/// may emit hundreds of diagnostics, so compact storage is important.
+/// The struct remains bounded to a small fixed-size record on 64-bit targets;
+/// messages use copy-on-write storage and policy hints are static references.
+/// Large parse failures may emit hundreds of diagnostics, so compact storage
+/// is important.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     /// Diagnostic code identifying the type of error
@@ -2901,57 +3080,84 @@ pub struct Diagnostic {
     /// Zero-based index of the page the diagnostic applies to
     /// (None for document-level diagnostics)
     pub page_index: Option<u32>,
+    /// Typed severity retained from the code policy at emission time.
+    severity: Severity,
     /// Human-readable message (static messages don't allocate)
     pub message: Cow<'static, str>,
+    /// Actionable hint retained from the code policy at emission time.
+    hint: Option<&'static str>,
 }
 
 impl Diagnostic {
+    /// Build a diagnostic from a complete typed context.
+    ///
+    /// Emission sites should normally begin with
+    /// [`DiagnosticContext::for_code`], then attach only the context they
+    /// actually know. This constructor preserves all fields as structured
+    /// values; it does not parse or append them to the human-readable
+    /// message. The context's severity and hint are intentionally retained
+    /// so the common path has one typed representation all the way to JSON.
+    #[inline]
+    pub fn from_context(code: DiagCode, context: DiagnosticContext) -> Self {
+        assert_eq!(
+            context.severity,
+            code.severity(),
+            "diagnostic context severity must come from its code policy"
+        );
+        assert_eq!(
+            context.hint,
+            suggested_action(code),
+            "diagnostic context hint must come from its code policy"
+        );
+        Diagnostic {
+            code,
+            byte_offset: context.byte_offset,
+            object_ref: context.object_ref,
+            page_index: context.page_index,
+            severity: context.severity,
+            message: context.message,
+            hint: context.hint,
+        }
+    }
+
     /// Create a new diagnostic with a static message.
     #[inline]
     pub fn with_static(code: DiagCode, byte_offset: u64, message: &'static str) -> Self {
-        Diagnostic {
+        Self::from_context(
             code,
-            byte_offset: Some(byte_offset),
-            object_ref: None,
-            page_index: None,
-            message: Cow::Borrowed(message),
-        }
+            DiagnosticContext::for_code(code)
+                .with_message(message)
+                .with_byte_offset(byte_offset),
+        )
     }
 
     /// Create a new diagnostic with a static message and no byte offset.
     #[inline]
     pub fn with_static_no_offset(code: DiagCode, message: &'static str) -> Self {
-        Diagnostic {
+        Self::from_context(
             code,
-            byte_offset: None,
-            object_ref: None,
-            page_index: None,
-            message: Cow::Borrowed(message),
-        }
+            DiagnosticContext::for_code(code).with_message(message),
+        )
     }
 
     /// Create a new diagnostic with a dynamic message.
     #[inline]
     pub fn with_dynamic(code: DiagCode, byte_offset: u64, message: String) -> Self {
-        Diagnostic {
+        Self::from_context(
             code,
-            byte_offset: Some(byte_offset),
-            object_ref: None,
-            page_index: None,
-            message: Cow::Owned(message),
-        }
+            DiagnosticContext::for_code(code)
+                .with_message(message)
+                .with_byte_offset(byte_offset),
+        )
     }
 
     /// Create a new diagnostic with a dynamic message and no byte offset.
     #[inline]
     pub fn with_dynamic_no_offset(code: DiagCode, message: String) -> Self {
-        Diagnostic {
+        Self::from_context(
             code,
-            byte_offset: None,
-            object_ref: None,
-            page_index: None,
-            message: Cow::Owned(message),
-        }
+            DiagnosticContext::for_code(code).with_message(message),
+        )
     }
 
     /// Create a diagnostic from any message form, no location context.
@@ -2983,19 +3189,41 @@ impl Diagnostic {
         object_ref: Option<ObjRef>,
         page_index: Option<usize>,
     ) -> Self {
-        Diagnostic {
-            code,
-            byte_offset,
-            object_ref,
-            page_index: page_index.map(|page| page as u32),
-            message: message.into(),
-        }
+        let mut context = DiagnosticContext::for_code(code)
+            .with_message(message)
+            .with_object_ref_opt(object_ref)
+            .with_page_index_opt(page_index);
+        context.byte_offset = byte_offset;
+        Self::from_context(code, context)
     }
 
     /// Get the severity level for this diagnostic.
     #[inline]
     pub fn severity(&self) -> Severity {
-        self.code.severity()
+        self.severity
+    }
+
+    /// Get the actionable hint retained for this diagnostic's code.
+    #[inline]
+    pub fn hint(&self) -> Option<&'static str> {
+        self.hint
+    }
+
+    /// Borrow a complete typed context snapshot for this diagnostic.
+    ///
+    /// The returned value is useful when forwarding diagnostics between
+    /// parser, decoder, page, and extraction layers without flattening the
+    /// context into a string.
+    #[inline]
+    pub fn context(&self) -> DiagnosticContext {
+        DiagnosticContext {
+            severity: self.severity,
+            byte_offset: self.byte_offset,
+            object_ref: self.object_ref,
+            page_index: self.page_index,
+            message: self.message.clone(),
+            hint: self.hint,
+        }
     }
 
     /// Check if this diagnostic indicates a recoverable error.
@@ -3042,10 +3270,7 @@ impl Diagnostic {
 
     /// Set an indirect-object location from optional numeric parts.
     #[inline]
-    pub fn with_object_ref_parts_opt(
-        mut self,
-        object_ref: Option<(u32, u16)>,
-    ) -> Self {
+    pub fn with_object_ref_parts_opt(mut self, object_ref: Option<(u32, u16)>) -> Self {
         self.object_ref = object_ref.map(|(object, generation)| ObjRef::new(object, generation));
         self
     }
@@ -3073,10 +3298,12 @@ impl fmt::Debug for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Diagnostic")
             .field("code", &self.code)
+            .field("severity", &self.severity)
             .field("byte_offset", &self.byte_offset)
             .field("object_ref", &self.object_ref)
             .field("page_index", &self.page_index)
             .field("message", &self.message.as_ref())
+            .field("hint", &self.hint)
             .finish()
     }
 }
@@ -3113,7 +3340,7 @@ impl From<&Diagnostic> for DiagnosticJson {
                 object_number: r.object,
                 generation_number: r.generation,
             }),
-            hint: suggested_action(d.code).map(str::to_string),
+            hint: d.hint().map(str::to_string),
         }
     }
 }
@@ -3341,13 +3568,13 @@ macro_rules! emit {
     }};
 }
 
-// Static assertion: Diagnostic struct size should be 48-64 bytes.
+// Static assertion: Diagnostic struct size should stay bounded.
 // Written as >=/<= comparisons (not exact-offset arithmetic) so the guard
-// holds on every target: on 64-bit the struct is 56 bytes, but pointer-width
-// differences (e.g. wasm32) shift the total while staying in range.
+// holds on every target: the explicit severity and static hint fields add
+// storage, while pointer-width differences (e.g. wasm32) shift the total.
 const _: () = {
     let _assert_min: [(); 1] = [(); (std::mem::size_of::<Diagnostic>() >= 48) as usize];
-    let _assert_max: [(); 1] = [(); (std::mem::size_of::<Diagnostic>() <= 64) as usize];
+    let _assert_max: [(); 1] = [(); (std::mem::size_of::<Diagnostic>() <= 96) as usize];
     let _ = (_assert_min, _assert_max);
 };
 
@@ -3662,15 +3889,16 @@ mod tests {
     #[test]
     fn test_diagnostic_size() {
         let size = std::mem::size_of::<Diagnostic>();
-        // Diagnostic should be 48-64 bytes (actual: 56)
-        // breakdown: code (2) + byte_offset (16) + object_ref (12) + message (24) + padding (2)
+        // Diagnostic should remain a bounded 48-96 byte record. The explicit
+        // severity and static hint are retained alongside the existing
+        // context fields, so the 64-bit representation is currently 80 bytes.
         assert!(
             size >= 48,
             "Diagnostic is smaller than expected: {} bytes",
             size
         );
         assert!(
-            size <= 64,
+            size <= 96,
             "Diagnostic is larger than expected: {} bytes",
             size
         );
@@ -3725,7 +3953,11 @@ impl DiagnosticsCollector {
     #[inline]
     pub fn emit_with_offset(&self, code: DiagCode, offset: u64) {
         let mut diagnostics = self.inner.lock().unwrap();
-        diagnostics.push(Diagnostic::with_static(code, offset, code.default_message()));
+        diagnostics.push(Diagnostic::with_static(
+            code,
+            offset,
+            code.default_message(),
+        ));
     }
 
     /// Emit a diagnostic with the given code and custom message.
