@@ -15,6 +15,10 @@
 > - **CI is not wired to git events yet** — nothing runs automatically on push/PR (bead `pdftract-a8d7bd1d`, open), and no completed end-to-end CI run has been retained — the CI cluster holds zero pdftract workflow runs (the stabilization baseline records "no retained end-to-end CI proof").
 > - **No supported release is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels or images exist. GitHub exposes only the test-only `v0.1.0-test` release entry used for release-cascade testing, not a consumable v0.1.0 release.
 
+![Grep results with page, bounding box, and confidence](docs/assets/grep-demo.gif)
+
+`pdftract grep --json --no-progress -E 'Lorem (ipsum|dolor)' tests/fixtures/grep-corpus/corpus/synthetic_1.pdf`
+
 ## How it compares
 
 | Capability | pdftract | pdfplumber | pypdf | pdfminer |
