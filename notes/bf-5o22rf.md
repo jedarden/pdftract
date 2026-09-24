@@ -78,11 +78,11 @@ PASS verdict.
 
 ## Final committed-HEAD checks
 
-The mandatory clean extraction was made from `HEAD=5e5b30e6` at
-`/home/coding/scratch/pdftract-adda71a4-dod.eR8486`. The repository has no
+The mandatory clean extraction was made from final `HEAD=c1872f3d` at
+`/home/coding/scratch/pdftract-adda71a4-final-dod.6kfPdM`. The repository has no
 `scripts/definition-of-done.sh`, so the default definition was used:
 `cargo build --all-targets && cargo test`. The build passed (exit 0), but the
-full test command exited 101 after 353 passed and 8 unrelated
+full test command exited 101 after 354 passed and 7 unrelated
 `pdftract-cli` unit tests failed (inspect SVG/MCID, pages, and URL behavior).
 The extraction was retained for diagnosis as required; this is a repository
 baseline WARN/FAIL for the broad definition-of-done gate, not a failure in the
@@ -101,9 +101,11 @@ source tests all passed.
 
 The literal required process scan, `pgrep -af 'pdftract'`, matched only the
 active Codex/Needle supervisor command lines and the scan shell itself. A
-follow-up process inspection found no cargo, rustc, test, or pdftract worker
-binary left behind; therefore **no orphan task processes remain**. The scan
-was not evidence of a test timeout or leaked worker.
+follow-up inspection found no cargo, rustc, test, or pdftract worker binary
+spawned by this bead left behind; unrelated workers from other repositories
+were visible on the shared host. Therefore **no orphan task processes remain**
+for this verification, and the scan was not evidence of a timeout or leaked
+worker.
 
 The umbrella `bf-5o22rf` is ready to close once this terminal child and its
 dependency chain are closed; this child does not close the umbrella.
