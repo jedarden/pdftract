@@ -153,10 +153,11 @@ mod tests {
         // All pixels should be exactly 0 or 255
         for x in 0..256 {
             let pixel = binary.get_pixel(x, 0)[0];
-            assert_eq!(
-                pixel, 0,
+            assert!(
+                pixel == 0 || pixel == 255,
                 "Pixel at x={} should be 0 or 255, got {}",
-                x, pixel
+                x,
+                pixel
             );
         }
     }

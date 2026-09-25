@@ -191,7 +191,7 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 /// This is a public helper function for other preprocessing modules
 /// that need to interface with leptonica FFI functions.
 pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
-    use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData};
+    use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData, pixGetWpl};
     use std::ptr;
 
     let width = image.width() as i32;
@@ -210,7 +210,7 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
         }
 
         // Get the data pointer from the Pix
-        let pix_data = pixGetData(pix);
+        let pix_data = pixGetData(pix).cast::<u8>();
 
         if pix_data.is_null() {
             pixDestroy(&mut pix);
@@ -221,14 +221,18 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
             return Err(diagnostics);
         }
 
-        // Copy pixel data from GrayImage to Pix
-        // Pix stores data as l_uint32* (4-byte words), but for 8 bpp each pixel is one byte
+        // Pix stores data as l_uint32* with each row padded to a whole word.
+        // Treating that pointer as a contiguous pixel array overruns the
+        // allocation because pointer arithmetic would advance by four bytes.
         let raw_data = image.as_raw();
-        let len = raw_data.len();
+        let width = width as usize;
+        let height = height as usize;
+        let row_stride = (pixGetWpl(pix) as usize).saturating_mul(std::mem::size_of::<u32>());
 
-        // Copy byte by byte
-        for i in 0..len {
-            *pix_data.add(i) = raw_data[i] as u32;
+        for y in 0..height {
+            let src_offset = y * width;
+            let dst = pix_data.add(y * row_stride);
+            ptr::copy_nonoverlapping(raw_data.as_ptr().add(src_offset), dst, width);
         }
 
         Ok(pix)
@@ -242,7 +246,10 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
 /// This is a public helper function for other preprocessing modules
 /// that need to interface with leptonica FFI functions.
 pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
-    use leptonica_plumbing::leptonica_sys::{pixGetData, pixGetDepth, pixGetHeight, pixGetWidth};
+    use leptonica_plumbing::leptonica_sys::{
+        pixGetData, pixGetDepth, pixGetHeight, pixGetWidth, pixGetWpl,
+    };
+    use std::ptr;
 
     unsafe {
         if pix.is_null() {
@@ -265,7 +272,7 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
             return Err(diagnostics);
         }
 
-        let data_ptr = pixGetData(pix);
+        let data_ptr = pixGetData(pix).cast::<u8>();
 
         if data_ptr.is_null() {
             let diagnostics = vec![Diagnostic::with_static_no_offset(
@@ -275,16 +282,22 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
             return Err(diagnostics);
         }
 
-        // Copy the pixel data into a GrayImage
-        let len = (width * height) as usize;
-        let mut buffer = Vec::with_capacity(len);
+        // Pix rows are padded to a whole number of 32-bit words, while the
+        // GrayImage buffer is tightly packed. Copy only the active pixels in
+        // each row and skip Leptonica's padding bytes.
+        let width = width as usize;
+        let height = height as usize;
+        let row_stride = (pixGetWpl(pix) as usize).saturating_mul(std::mem::size_of::<u32>());
+        let len = width.saturating_mul(height);
+        let mut buffer = vec![0u8; len];
 
-        // Copy pixel data (stored as u32 but each pixel is 1 byte for 8 bpp)
-        for i in 0..len {
-            buffer.push(*data_ptr.add(i) as u8);
+        for y in 0..height {
+            let src = data_ptr.add(y * row_stride);
+            let dst = buffer.as_mut_ptr().add(y * width);
+            ptr::copy_nonoverlapping(src, dst, width);
         }
 
-        GrayImage::from_raw(width, height, buffer).ok_or_else(|| {
+        GrayImage::from_raw(width as u32, height as u32, buffer).ok_or_else(|| {
             vec![Diagnostic::with_static_no_offset(
                 DiagCode::ImgUnsupportedFormat,
                 "Failed to create GrayImage from Pix data",
