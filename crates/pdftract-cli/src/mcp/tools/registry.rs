@@ -528,41 +528,6 @@ fn build_extraction_options(
     options
 }
 
-/// Create a stub response for tools that require Phase 6 extraction surface.
-fn stub_extraction_response(path: &str, tool_name: &str, page_count: Option<usize>) -> Value {
-    let mut response = serde_json::Map::new();
-    response.insert(
-        "_note".to_string(),
-        json!("This tool requires Phase 6 extraction surface"),
-    );
-    response.insert("_tool".to_string(), json!(tool_name));
-    response.insert("_path".to_string(), json!(path));
-
-    if let Some(count) = page_count {
-        response.insert("_page_count".to_string(), json!(count));
-    }
-
-    // Add format-specific fields
-    match tool_name {
-        "extract" => {
-            response.insert("pages".to_string(), json!([]));
-            response.insert("metadata".to_string(), json!({}));
-        }
-        "extract_text" => {
-            response.insert("text".to_string(), json!(""));
-        }
-        "extract_markdown" => {
-            response.insert("markdown".to_string(), json!(""));
-        }
-        "search" => {
-            response.insert("matches".to_string(), json!([]));
-        }
-        _ => {}
-    }
-
-    json!(response)
-}
-
 // ============================================================================
 // Tool Implementations
 // ============================================================================
@@ -768,7 +733,7 @@ impl Tool for SearchTool {
         to_value(schemars::schema_for!(SearchArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
         let tool_args: SearchArgs =
             serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
@@ -778,22 +743,14 @@ impl Tool for SearchTool {
                 .with_data(json!({"reason": "Invalid regex pattern", "details": e.to_string()}))
         })?;
 
-        if is_url(&tool_args.path) {
-            return Ok(json!({
-                "_note": "Remote PDF search requires Phase 1.8 remote source adapter",
-                "_tool": "search",
-                "_path": tool_args.path,
-                "_pattern": tool_args.pattern,
-                "matches": []
-            }));
-        }
-
-        let ctx = open_pdf(&tool_args.path, tool_args.password.as_deref(), root)?;
-        let mut response = stub_extraction_response(&tool_args.path, "search", ctx.page_count);
-        if let Some(obj) = response.as_object_mut() {
-            obj.insert("_pattern".to_string(), json!(tool_args.pattern));
-        }
-        Ok(response)
+        Err(ErrorObject::server_error(
+            super::ERROR_NOT_YET_IMPLEMENTED,
+            "search is not yet implemented (Phase 6 extraction surface)",
+        )
+        .with_data(json!({
+            "code": super::CODE_NOT_YET_IMPLEMENTED,
+            "tool": "search"
+        })))
     }
 }
 
@@ -1204,6 +1161,27 @@ mod tests {
         assert!(props.contains_key("case_insensitive"));
         assert!(props.contains_key("max_matches"));
         assert!(props.contains_key("password"));
+    }
+
+    #[test]
+    fn test_search_tool_fails_loudly_until_extraction_surface_exists() {
+        let tool = SearchTool;
+        let result = tool.execute(
+            json!({"path": "document.pdf", "pattern": "needle"}),
+            None,
+            None,
+        );
+
+        let err = result.expect_err("unimplemented search must not return empty matches");
+        assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
+        assert!(err.message.contains("Phase 6 extraction surface"));
+        assert_eq!(
+            err.data
+                .as_ref()
+                .and_then(|data| data.get("code"))
+                .and_then(Value::as_str),
+            Some(crate::mcp::tools::CODE_NOT_YET_IMPLEMENTED)
+        );
     }
 
     #[test]

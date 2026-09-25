@@ -195,6 +195,30 @@ fn test_search_tool_with_invalid_regex() {
 }
 
 #[test]
+fn test_search_tool_returns_in_band_not_implemented_error() {
+    let registry = tools::all_tools();
+    let tool = registry.get("search").unwrap();
+
+    let error = tool
+        .execute(
+            serde_json::json!({"path": "document.pdf", "pattern": "needle"}),
+            None,
+            None,
+        )
+        .expect_err("unimplemented search must not return empty matches");
+
+    let result = tools::call_error(&error);
+    assert_eq!(result["isError"], true);
+    assert_eq!(
+        result["structuredContent"]["data"]["code"],
+        tools::CODE_NOT_YET_IMPLEMENTED
+    );
+    assert!(result["content"][0]["text"]
+        .as_str()
+        .is_some_and(|text| text.contains("Phase 6 extraction surface")));
+}
+
+#[test]
 fn test_path_resolution() {
     let cwd = std::env::current_dir().unwrap();
     println!("Current dir: {:?}", cwd);
