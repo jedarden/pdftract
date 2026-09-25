@@ -16,6 +16,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use image::{GrayImage, ImageBuffer, Luma};
+use leptonica_plumbing::leptonica_sys::Pix;
 use std::ffi::c_float;
 
 /// Border padding size in pixels.
@@ -121,7 +122,7 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
     let mut diagnostics = Vec::new();
 
     // Convert GrayImage to leptonica Pix
-    let pix = grayimage_to_pix(image)?;
+    let mut pix = grayimage_to_pix(image)?;
 
     // Call pixFindSkewAndDeskew to detect the skew angle and deskew
     let (deskewed_pix, angle) = unsafe {
@@ -133,7 +134,7 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
         let result = pixFindSkewAndDeskew(pix, 0, &mut angle, &mut conf);
 
         if result.is_null() {
-            pixDestroy(pix);
+            pixDestroy(&mut pix);
             let diagnostics = vec![Diagnostic::with_static_no_offset(
                 DiagCode::ImgUnsupportedFormat,
                 "pixFindSkewAndDeskew returned null",
@@ -145,17 +146,19 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 
         // Check if angle is below the threshold (function returns clone for small angles)
         if angle_deg.abs() < DESKEW_THRESHOLD_DEG {
-            pixDestroy(result);
-            pixDestroy(pix);
+            let mut result = result;
+            pixDestroy(&mut result);
+            pixDestroy(&mut pix);
             return Ok((image.clone(), 0.0, diagnostics));
         }
 
         // Check if angle is within the expected detection range
         // pixFindSkewAndDeskew typically searches within ±7 degrees by default
         if angle_deg.abs() > DESKEW_MAX_RANGE_DEG {
-            pixDestroy(result);
-            pixDestroy(pix);
-            diagnostics.push(Diagnostic::with_static_no_offset(
+            let mut result = result;
+            pixDestroy(&mut result);
+            pixDestroy(&mut pix);
+            diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::ImgDeskewOutOfRange,
                 format!(
                     "Skew angle {}° exceeds detection range (±{}°)",
@@ -173,7 +176,9 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 
     // Clean up
     unsafe {
-        pixDestroy(deskewed_pix);
+        let mut deskewed_pix = deskewed_pix;
+        pixDestroy(&mut deskewed_pix);
+        pixDestroy(&mut pix);
     }
 
     Ok((result_image, angle, diagnostics))
@@ -186,7 +191,7 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 /// This is a public helper function for other preprocessing modules
 /// that need to interface with leptonica FFI functions.
 pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
-    use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData, Pix};
+    use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData};
     use std::ptr;
 
     let width = image.width() as i32;
@@ -194,7 +199,7 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
     const DEPTH: i32 = 8;
 
     unsafe {
-        let pix = pixCreate(width, height, DEPTH);
+        let mut pix = pixCreate(width, height, DEPTH);
 
         if pix.is_null() {
             let diagnostics = vec![Diagnostic::with_static_no_offset(
@@ -208,7 +213,7 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
         let pix_data = pixGetData(pix);
 
         if pix_data.is_null() {
-            pixDestroy(pix);
+            pixDestroy(&mut pix);
             let diagnostics = vec![Diagnostic::with_static_no_offset(
                 DiagCode::ImgUnsupportedFormat,
                 "Failed to get pixel data pointer from Pix",
@@ -237,9 +242,7 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
 /// This is a public helper function for other preprocessing modules
 /// that need to interface with leptonica FFI functions.
 pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
-    use leptonica_plumbing::leptonica_sys::{
-        pixGetData, pixGetDepth, pixGetHeight, pixGetWidth, Pix,
-    };
+    use leptonica_plumbing::leptonica_sys::{pixGetData, pixGetDepth, pixGetHeight, pixGetWidth};
 
     unsafe {
         if pix.is_null() {
@@ -255,7 +258,7 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
         let depth = pixGetDepth(pix) as u32;
 
         if depth != 8 {
-            let diagnostics = vec![Diagnostic::with_static_no_offset(
+            let diagnostics = vec![Diagnostic::with_dynamic_no_offset(
                 DiagCode::ImgUnsupportedFormat,
                 format!("Unsupported Pix depth {} (expected 8)", depth),
             )];
@@ -288,6 +291,67 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
             )]
         })
     }
+}
+
+/// Add the OCR border padding required by Tesseract.
+pub fn add_border_padding(image: &GrayImage) -> GrayImage {
+    let width = image.width();
+    let height = image.height();
+    let mut padded = GrayImage::from_pixel(
+        width.saturating_add(2 * BORDER_PADDING),
+        height.saturating_add(2 * BORDER_PADDING),
+        Luma([255]),
+    );
+
+    for y in 0..height {
+        for x in 0..width {
+            padded.put_pixel(x + BORDER_PADDING, y + BORDER_PADDING, *image.get_pixel(x, y));
+        }
+    }
+
+    padded
+}
+
+/// Normalize image contrast using the OCR histogram-stretch implementation.
+pub fn normalize_contrast(image: &GrayImage) -> GrayImage {
+    let mut normalized = image.clone();
+    let _ = crate::ocr::preprocessing::histogram_stretch_if_needed(&mut normalized);
+    normalized
+}
+
+/// Apply global Otsu thresholding to an image.
+pub fn binarize_otsu(image: &GrayImage) -> GrayImage {
+    crate::ocr::preprocessing::otsu_binarize(image)
+}
+
+/// Apply default Sauvola local thresholding to an image.
+pub fn binarize_sauvola(image: &GrayImage) -> GrayImage {
+    crate::ocr::preprocessing::sauvola_binarize_default(image)
+}
+
+/// Apply a 3x3 median denoising filter to an image.
+pub fn denoise_median(image: &GrayImage) -> GrayImage {
+    crate::ocr::preprocessing::median_denoise(image)
+}
+
+/// Run the complete OCR preprocessing pipeline for an image source.
+pub fn preprocess(
+    image: &GrayImage,
+    source: ImageSource,
+) -> Result<(GrayImage, Vec<Diagnostic>)> {
+    let (mut current, _angle, diagnostics) = deskew(image)?;
+
+    if !source.is_jbig2() {
+        current = normalize_contrast(&current);
+        current = if source.is_digital() {
+            binarize_otsu(&current)
+        } else {
+            binarize_sauvola(&current)
+        };
+        current = denoise_median(&current);
+    }
+
+    Ok((add_border_padding(&current), diagnostics))
 }
 
 #[cfg(test)]
@@ -348,7 +412,7 @@ mod tests {
     #[test]
     fn test_grayimage_to_pix_roundtrip() {
         let img = create_horizontal_lines_image();
-        let pix = grayimage_to_pix(&img).expect("Failed to convert to Pix");
+        let mut pix = grayimage_to_pix(&img).expect("Failed to convert to Pix");
 
         // Check that the Pix was created successfully
         unsafe {
@@ -361,21 +425,21 @@ mod tests {
             assert_eq!(pixGetHeight(pix) as u32, img.height());
             assert_eq!(pixGetDepth(pix) as u32, 8);
 
-            pixDestroy(pix);
+            pixDestroy(&mut pix);
         }
     }
 
     #[test]
     fn test_pix_to_grayimage_roundtrip() {
         let img = create_horizontal_lines_image();
-        let pix = grayimage_to_pix(&img).expect("Failed to convert to Pix");
+        let mut pix = grayimage_to_pix(&img).expect("Failed to convert to Pix");
 
         let converted = pix_to_grayimage(pix).expect("Failed to convert back");
 
         // Clean up
         unsafe {
             use leptonica_plumbing::leptonica_sys::pixDestroy;
-            pixDestroy(pix);
+            pixDestroy(&mut pix);
         }
 
         assert_eq!(converted.width(), img.width());

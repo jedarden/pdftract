@@ -312,19 +312,11 @@ fn parse_xfa_xml(xml_bytes: &[u8], diagnostics: &mut Vec<Diagnostic>) -> Vec<Xfa
         use quick_xml::Reader;
 
         let mut fields = Vec::new();
-        let mut xml = match Reader::from_reader(xml_bytes) {
-            Ok(r) => r,
-            Err(e) => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructUnexpectedEof,
-                    format!("Failed to create XML reader: {}", e),
-                ));
-                return fields;
-            }
-        };
+        let mut xml = Reader::from_reader(xml_bytes);
 
         // Configure the reader
-        xml.check_end_names(false).trim_markup(false);
+        xml.config_mut().check_end_names = false;
+        xml.config_mut().trim_markup_names_in_closing_tags = false;
 
         // Track namespace prefixes
         let mut ns_map = HashMap::new();
@@ -342,7 +334,7 @@ fn parse_xfa_xml(xml_bytes: &[u8], diagnostics: &mut Vec<Diagnostic>) -> Vec<Xfa
                     // Register namespace bindings
                     for attr_result in e.attributes() {
                         if let Ok(attr) = attr_result {
-                            let key = attr.key.into_owned();
+                            let key = attr.key.as_ref().to_vec();
                             if key.starts_with(b"xmlns:") || key == b"xmlns" {
                                 let prefix = if key == b"xmlns" {
                                     b"default".to_vec()
@@ -354,7 +346,7 @@ fn parse_xfa_xml(xml_bytes: &[u8], diagnostics: &mut Vec<Diagnostic>) -> Vec<Xfa
                         }
                     }
 
-                    let name = String::from_utf8_lossy(e.name()).to_string();
+                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
 
                     // Track path
                     current_path.push(name.clone());
@@ -371,7 +363,7 @@ fn parse_xfa_xml(xml_bytes: &[u8], diagnostics: &mut Vec<Diagnostic>) -> Vec<Xfa
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    let name = String::from_utf8_lossy(e.name()).to_string();
+                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
 
                     if capture_text && is_xfa_element(&name, &ns_map, "data") {
                         in_data = false;
@@ -396,8 +388,9 @@ fn parse_xfa_xml(xml_bytes: &[u8], diagnostics: &mut Vec<Diagnostic>) -> Vec<Xfa
                 }
                 Ok(Event::Text(ref e)) => {
                     if capture_text {
-                        current_value
-                            .push_str(&e.unescape().unwrap_or_else(|_| current_value.clone()));
+                        if let Ok(value) = e.unescape() {
+                            current_value.push_str(value.as_ref());
+                        }
                     }
                 }
                 Ok(Event::CData(ref e)) => {

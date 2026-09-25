@@ -518,6 +518,42 @@ fn parse_inline_image(
 
         let value = &dict_buffer[i + 1];
 
+        // The lexer exposes arrays as delimiters and element tokens rather
+        // than as a grouped token. Handle the two inline-image array values
+        // before processing scalar values below.
+        if matches!(value, Token::ArrayStart) {
+            let mut end = i + 2;
+            while end < dict_buffer.len() && !matches!(dict_buffer[end], Token::ArrayEnd) {
+                end += 1;
+            }
+            let items = &dict_buffer[i + 2..end.min(dict_buffer.len())];
+            match key {
+                "/F" | "/Filter" => {
+                    for item in items {
+                        if let Token::Name(filter) = item {
+                            header.filters.push(
+                                std::str::from_utf8(filter.as_slice())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
+                "/G" | "/Mask" => {
+                    if let Some(Token::Name(color)) = items.first() {
+                        match std::str::from_utf8(color.as_slice()).unwrap_or("") {
+                            "Black" => header.mask_color = Some(0),
+                            "White" => header.mask_color = Some(1),
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+            i = if end < dict_buffer.len() { end + 1 } else { end };
+            continue;
+        }
+
         match key {
             "/W" | "/Width" => {
                 if let Token::Integer(w) = value {
@@ -536,7 +572,8 @@ fn parse_inline_image(
             }
             "/CS" | "/ColorSpace" => {
                 if let Token::Name(cs) = value {
-                    header.colorspace = Some(std::str::from_utf8(cs).unwrap_or("").to_string());
+                    header.colorspace =
+                        Some(std::str::from_utf8(cs.as_slice()).unwrap_or("").to_string());
                 }
             }
             "/F" | "/Filter" => {
@@ -544,17 +581,7 @@ fn parse_inline_image(
                     Token::Name(f) => {
                         header
                             .filters
-                            .push(std::str::from_utf8(f).unwrap_or("").to_string());
-                    }
-                    Token::Array(arr) => {
-                        // Filter array - extract all names
-                        for item in arr {
-                            if let Token::Name(f) = item {
-                                header
-                                    .filters
-                                    .push(std::str::from_utf8(f).unwrap_or("").to_string());
-                            }
-                        }
+                            .push(std::str::from_utf8(f.as_slice()).unwrap_or("").to_string());
                     }
                     _ => {}
                 }
@@ -565,19 +592,7 @@ fn parse_inline_image(
                 }
             }
             "/G" | "/Mask" => {
-                // Image mask color: /Mask [ Black | White ]
-                if let Token::Array(arr) = value {
-                    if arr.len() >= 1 {
-                        if let Token::Name(color) = &arr[0] {
-                            let color_str = std::str::from_utf8(color).unwrap_or("");
-                            if color_str == "Black" {
-                                header.mask_color = Some(0);
-                            } else if color_str == "White" {
-                                header.mask_color = Some(1);
-                            }
-                        }
-                    }
-                }
+                // Array-valued masks are handled above.
             }
             _ => {
                 // Unknown key - ignore

@@ -32,7 +32,7 @@ use std::collections::BTreeSet;
 /// This is a minimal span type used during the merge operation.
 /// The actual extraction pipeline uses the canonical HybridSpan type from the span module.
 #[derive(Debug, Clone)]
-pub struct HybridHybridSpan {
+pub struct HybridSpan {
     /// Bounding box [x0, y0, x1, y1] in PDF user space.
     pub bbox: [f64; 4],
     /// Confidence score [0.0, 1.0].
@@ -61,7 +61,7 @@ pub enum HybridSpanSource {
     OcrFallback,
 }
 
-impl HybridHybridSpan {
+impl HybridSpan {
     /// Create a new span.
     pub fn new(bbox: [f64; 4], confidence: f32, source: HybridSpanSource, text: String) -> Self {
         Self {
@@ -121,6 +121,12 @@ impl CorrectableText for HybridSpan {
         &self.text
     }
 }
+
+/// Backwards-compatible name used by the original hybrid/OCR call sites.
+pub type Span = HybridSpan;
+
+/// Source type re-exported by the crate's OCR API.
+pub type SpanSource = HybridSpanSource;
 
 /// Compute the Intersection over Union (IoU) of two bounding boxes.
 ///

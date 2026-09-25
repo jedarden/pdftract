@@ -67,13 +67,13 @@ use image::{GrayImage, Luma};
 /// - 1080p grayscale image (1920×1080): ~30 ms
 /// - Significantly faster than Sauvola for uniformly-lit images
 pub fn otsu_binarize(image: &GrayImage) -> GrayImage {
-    use imageproc::contrast::{otsu_level, threshold};
+    use imageproc::contrast::{otsu_level, threshold, ThresholdType};
 
     // Find the optimal threshold using Otsu's method
     let level = otsu_level(image);
 
     // Apply the threshold to create a binary image
-    threshold(image, level)
+    threshold(image, level, ThresholdType::Binary)
 }
 
 #[cfg(test)]

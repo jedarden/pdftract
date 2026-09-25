@@ -20,7 +20,8 @@ use std::ffi::CString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tesseract::{PageSegMode, TessBaseAPI};
+use tesseract::plumbing::TessBaseApi;
+use tesseract::PageSegMode;
 
 /// Global counter for tracking Tesseract initializations across all threads.
 ///
@@ -255,7 +256,11 @@ pub fn validate_ocr_languages(
     }
 
     // Build the language string for Tesseract (e.g., "eng+fra+deu")
-    available_langs.join("+")
+    available_langs
+        .iter()
+        .map(|lang| lang.as_str())
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 /// Tesseract OCR configuration options.
@@ -419,7 +424,7 @@ impl TessOpts {
 /// used to initialize it, enabling cache comparison.
 struct TessState {
     /// The Tesseract FFI API instance.
-    api: TessBaseAPI,
+    api: TessBaseApi,
     /// The options used to initialize this instance.
     opts: TessOpts,
 }
@@ -442,7 +447,7 @@ impl TessState {
     /// - The language data files are not found
     /// - The tessdata directory is invalid
     fn new(opts: TessOpts) -> Result<Self, String> {
-        let mut api = TessBaseAPI::new();
+        let mut api = TessBaseApi::create();
 
         // Resolve the tessdata path
         let tessdata_path = opts.resolve_tessdata_path();
@@ -457,10 +462,10 @@ impl TessState {
                 .ok_or_else(|| format!("Tessdata path contains invalid UTF-8: {:?}", path))?;
             let path_cstr = CString::new(path_str)
                 .map_err(|e| format!("Invalid tessdata path string: {}", e))?;
-            api.init(path_cstr.as_c_str(), lang_cstr.as_c_str())
+            api.init_2(Some(path_cstr.as_c_str()), Some(lang_cstr.as_c_str()))
         } else {
             // Pass null for data path to use Tesseract's default
-            api.init(None, lang_cstr.as_c_str())
+            api.init_2(None, Some(lang_cstr.as_c_str()))
         };
 
         init_result.map_err(|e| {
@@ -473,7 +478,7 @@ impl TessState {
 
         // Set page segmentation mode if specified
         if let Some(mode) = opts.page_seg_mode {
-            api.set_page_seg_mode(mode);
+            api.set_page_seg_mode(mode.as_tess_page_seg_mode());
         }
 
         // Track initialization for testing
@@ -484,7 +489,7 @@ impl TessState {
 
     /// Get a mutable reference to the underlying TessBaseAPI.
     #[inline]
-    fn api_mut(&mut self) -> &mut TessBaseAPI {
+    fn api_mut(&mut self) -> &mut TessBaseApi {
         &mut self.api
     }
 
@@ -508,6 +513,32 @@ thread_local! {
     static TESS: RefCell<Option<TessState>> = RefCell::new(None);
 }
 
+/// Owned access guard for the current thread's cached Tesseract instance.
+pub struct TessGuard {
+    state: Option<TessState>,
+}
+
+impl TessGuard {
+    fn api_mut(&mut self) -> Result<&mut TessBaseApi, String> {
+        self.state
+            .as_mut()
+            .map(|state| &mut state.api)
+            .ok_or_else(|| "Tesseract guard state is unavailable".to_string())
+    }
+}
+
+impl Drop for TessGuard {
+    fn drop(&mut self) {
+        if let Some(state) = self.state.take() {
+            TESS.with(|cell| {
+                if let Ok(mut cached) = cell.try_borrow_mut() {
+                    *cached = Some(state);
+                }
+            });
+        }
+    }
+}
+
 /// Borrow or initialize the thread-local Tesseract instance.
 ///
 /// This helper provides access to the cached TessBaseAPI for the current
@@ -522,7 +553,9 @@ thread_local! {
 ///
 /// # Returns
 ///
-/// A `RefMut<TessState>` providing mutable access to the cached state.
+/// A guard providing mutable access to the cached state. Initialization
+/// failures are returned as errors so OCR callers can report them without
+/// panicking.
 ///
 /// # Panics
 ///
@@ -554,29 +587,24 @@ thread_local! {
 ///   cannot be moved between threads. Rayon's thread isolation prevents
 ///   races.
 #[inline]
-pub fn borrow_or_init(opts: &TessOpts) -> std::cell::RefMut<'static, Option<TessState>> {
+pub fn borrow_or_init(opts: &TessOpts) -> Result<TessGuard, String> {
     TESS.with(|cell| {
         let mut state_ref = cell.borrow_mut();
 
-        match state_ref.as_ref() {
-            // No cached instance - initialize
-            None => {
-                *state_ref =
-                    Some(TessState::new(opts.clone()).expect("Tesseract initialization failed"));
-            }
-            // Cached instance exists - check if opts match
-            Some(cached) => {
-                if cached.opts() != opts {
-                    // Opts changed - reinitialize
-                    *state_ref = Some(
-                        TessState::new(opts.clone()).expect("Tesseract reinitialization failed"),
-                    );
-                }
-                // else: opts match, reuse cached instance
-            }
+        let reuse_cached = state_ref
+            .as_ref()
+            .map(|cached| cached.opts() == opts)
+            .unwrap_or(false);
+
+        if reuse_cached {
+            return state_ref
+                .take()
+                .map(|state| TessGuard { state: Some(state) })
+                .ok_or_else(|| "Tesseract cache was unexpectedly empty".to_string());
         }
 
-        state_ref
+        let state = TessState::new(opts.clone())?;
+        Ok(TessGuard { state: Some(state) })
     })
 }
 
@@ -1216,7 +1244,7 @@ pub fn parse_hocr(hocr_text: &str) -> Result<Vec<HocrWord>, String> {
     use quick_xml::Reader;
 
     let mut reader = Reader::from_str(hocr_text);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut words = Vec::new();
     let mut buffer = Vec::new();
@@ -1292,8 +1320,7 @@ fn get_attribute<'a>(element: &'a quick_xml::events::BytesStart<'a>, name: &str)
         .attributes()
         .filter_map(|a| a.ok())
         .find(|a| a.key.as_ref() == name.as_bytes())
-        .and_then(|a| std::str::from_utf8(a.value.as_ref()).ok())
-        .map(|s| s.to_string())
+        .and_then(|a| String::from_utf8(a.value.into_owned()).ok())
 }
 
 /// Parse the title attribute to extract bbox and confidence.
@@ -1358,8 +1385,6 @@ fn parse_title_attribute(title: &str) -> Result<([u32; 4], u8), String> {
 /// Handles invalid UTF-8 by substituting U+FFFD.
 fn extract_text_content(reader: &mut quick_xml::Reader<&[u8]>, start_depth: usize) -> String {
     use quick_xml::events::Event;
-    use std::str::Utf8Error;
-
     let mut text = String::new();
     let mut depth = start_depth;
     let mut buffer = Vec::new();
@@ -1367,16 +1392,8 @@ fn extract_text_content(reader: &mut quick_xml::Reader<&[u8]>, start_depth: usiz
     loop {
         match reader.read_event_into(&mut buffer) {
             Ok(Event::Text(e)) => {
-                // Handle UTF-8 errors gracefully
-                match std::str::from_utf8(e.as_ref()) {
-                    Ok(s) => text.push_str(s),
-                    Err(_) => {
-                        // Invalid UTF-8: substitute with U+FFFD
-                        for byte in e.as_ref() {
-                            text.push(byte as char);
-                        }
-                    }
-                }
+                // Invalid UTF-8 is replaced with U+FFFD.
+                text.push_str(&String::from_utf8_lossy(e.as_ref()));
             }
             Ok(Event::Start(_)) => {
                 depth += 1;
@@ -2055,8 +2072,8 @@ pub fn run_tesseract(
     opts: &TessOpts,
 ) -> Result<Vec<crate::hybrid::Span>, String> {
     // Step 1: Borrow or initialize thread-local Tesseract instance
-    let mut tess_state = borrow_or_init(opts);
-    let tess_api = tess_state.api_mut();
+    let mut tess_state = borrow_or_init(opts)?;
+    let tess_api = tess_state.api_mut()?;
 
     // Step 2: Set the image for Tesseract to process
     // Tesseract expects raw image bytes in grayscale format
@@ -2068,7 +2085,7 @@ pub fn run_tesseract(
         .collect();
 
     tess_api
-        .set_image(&raw_data, width, height, 1, width as i32)
+        .set_image(&raw_data, width as i32, height as i32, 1, width as i32)
         .map_err(|e| format!("Failed to set image for OCR: {}", e))?;
 
     // Step 3: Run OCR and get HOCR output
@@ -2077,6 +2094,7 @@ pub fn run_tesseract(
     let hocr_text = tess_api
         .get_hocr_text(0) // Page number (0-indexed)
         .map_err(|e| format!("OCR failed: {}", e))?;
+    let hocr_text = hocr_text.as_ref().to_string_lossy();
 
     // Step 4: Parse HOCR into HocrWord list
     let hocr_words = parse_hocr(&hocr_text)?;
@@ -2122,8 +2140,8 @@ pub fn run_tesseract_on_cell(
     cell_origin: [f64; 2],
     opts: &TessOpts,
 ) -> Result<Vec<crate::hybrid::Span>, String> {
-    let mut tess_state = borrow_or_init(opts);
-    let tess_api = tess_state.api_mut();
+    let mut tess_state = borrow_or_init(opts)?;
+    let tess_api = tess_state.api_mut()?;
 
     let width = image.width();
     let height = image.height();
@@ -2133,12 +2151,13 @@ pub fn run_tesseract_on_cell(
         .collect();
 
     tess_api
-        .set_image(&raw_data, width, height, 1, width as i32)
+        .set_image(&raw_data, width as i32, height as i32, 1, width as i32)
         .map_err(|e| format!("Failed to set image for cell OCR: {}", e))?;
 
     let hocr_text = tess_api
         .get_hocr_text(0)
         .map_err(|e| format!("Cell OCR failed: {}", e))?;
+    let hocr_text = hocr_text.as_ref().to_string_lossy();
 
     let hocr_words = parse_hocr(&hocr_text)?;
 
@@ -2501,7 +2520,7 @@ pub fn validate_ocr_with_position_hints(
                     let dy = gx.1 - word_center.1;
                     (dx * dx + dy * dy).sqrt()
                 })
-                .min()
+                .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                 .unwrap_or(f64::MAX); // No glyphs -> max distance
 
             // Apply validation: cap confidence if distance >= 5pt
@@ -2660,7 +2679,7 @@ fn group_words_by_region(hocr_words: &[HocrWord], dpi: u32, page_height_pt: f64)
                 return false;
             }
             // Compute region's baseline from first word
-            let (_, first_bbox, _) = &r.words[0];
+            let (_, first_bbox) = &r.words[0];
             let region_baseline = first_bbox[1] + (first_bbox[3] - first_bbox[1]) * 0.2;
             (region_baseline - baseline).abs() < BASELINE_TOLERANCE_PT
         });
