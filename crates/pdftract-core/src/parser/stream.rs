@@ -18,6 +18,7 @@ use secrecy::SecretString;
 use crate::decoder::jbig2::Jbig2GlobalsRef;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{ObjRef, PdfObject, PdfStream};
+use crate::emit;
 
 #[cfg(feature = "decrypt")]
 use crate::encryption::decryptor::DecryptionContext;
@@ -91,6 +92,23 @@ pub trait StreamDecoder: Send + Sync {
         doc_counter: &mut u64,
         max_bytes: u64,
     ) -> Result<Vec<u8>, FilterError>;
+
+    /// Decode the input and append recoverable diagnostics to `diagnostics`.
+    ///
+    /// The default implementation preserves the byte-only decoder contract for
+    /// filters that do not currently emit decode diagnostics. Filters with
+    /// soft decode failures can override this method while retaining partial
+    /// output recovery.
+    fn decode_with_diagnostics(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+        _diagnostics: &mut Vec<Diagnostic>,
+    ) -> Result<Vec<u8>, FilterError> {
+        self.decode(input, params, doc_counter, max_bytes)
+    }
 
     /// Get the filter name (e.g., "FlateDecode", "ASCII85Decode").
     fn name(&self) -> &'static str;
@@ -465,6 +483,7 @@ impl FlateDecoder {
         params: Option<&PdfObject>,
         doc_counter: &mut u64,
         max_bytes: u64,
+        diagnostics: Option<&mut Vec<Diagnostic>>,
     ) -> Result<Vec<u8>, FilterError> {
         if input.is_empty() {
             return Ok(Vec::new());
@@ -476,7 +495,17 @@ impl FlateDecoder {
         // Try ZlibDecoder first (zlib-wrapped data, RFC 1950)
         // If that fails, try DeflateDecoder (raw deflate, RFC 1951)
         // Many PDFs use raw deflate without the zlib wrapper
-        let output = Self::decode_with_fallback(input, doc_counter, max_bytes);
+        let (output, decode_error) = Self::decode_with_fallback(input, doc_counter, max_bytes);
+
+        if decode_error {
+            if let Some(diagnostics) = diagnostics {
+                emit!(
+                    diagnostics,
+                    StreamDecodeError,
+                    message = "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output".to_string()
+                );
+            }
+        }
 
         // Pass remaining budget to predictor
         let predictor_budget = max_bytes.saturating_sub(*doc_counter);
@@ -492,13 +521,17 @@ impl FlateDecoder {
     /// but many PDFs in the wild use raw deflate (RFC 1951) without the
     /// zlib wrapper. This function tries zlib first, then falls back to
     /// raw deflate if zlib fails with a data error.
-    fn decode_with_fallback(input: &[u8], doc_counter: &mut u64, max_bytes: u64) -> Vec<u8> {
+    fn decode_with_fallback(
+        input: &[u8],
+        doc_counter: &mut u64,
+        max_bytes: u64,
+    ) -> (Vec<u8>, bool) {
         // Try ZlibDecoder first
         let output = Self::decode_impl(ZlibDecoder::new(input), doc_counter, max_bytes);
 
         // If we got no output and the input looks like raw deflate,
         // try again with DeflateDecoder
-        if output.is_empty() && !input.is_empty() {
+        if output.0.is_empty() && !input.is_empty() {
             // Raw deflate data doesn't start with the zlib header (0x78)
             // Zlib header is 0x78 followed by a compression method byte
             // If the first byte is NOT 0x78, it's likely raw deflate
@@ -519,7 +552,7 @@ impl FlateDecoder {
         mut decoder: R,
         doc_counter: &mut u64,
         max_bytes: u64,
-    ) -> Vec<u8> {
+    ) -> (Vec<u8>, bool) {
         let mut output = Vec::new();
         let mut chunk = vec![0u8; BOMB_CHECK_CHUNK];
 
@@ -533,22 +566,22 @@ impl FlateDecoder {
                         let remaining = (max_bytes - *doc_counter - output.len() as u64) as usize;
                         let to_add = remaining.min(n);
                         output.extend_from_slice(&chunk[..to_add]);
-                        return output;
+                        return (output, false);
                     }
                     output.extend_from_slice(&chunk[..n]);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     // Truncated stream - return partial bytes (INV-8)
-                    break;
+                    return (output, true);
                 }
                 Err(_) => {
                     // Other decoder errors - return partial bytes decoded so far
-                    break;
+                    return (output, true);
                 }
             }
         }
 
-        output
+        (output, false)
     }
 }
 
@@ -560,7 +593,18 @@ impl StreamDecoder for FlateDecoder {
         doc_counter: &mut u64,
         max_bytes: u64,
     ) -> Result<Vec<u8>, FilterError> {
-        self.decode_with_predictor(input, params, doc_counter, max_bytes)
+        self.decode_with_predictor(input, params, doc_counter, max_bytes, None)
+    }
+
+    fn decode_with_diagnostics(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Result<Vec<u8>, FilterError> {
+        self.decode_with_predictor(input, params, doc_counter, max_bytes, Some(diagnostics))
     }
 
     fn name(&self) -> &'static str {
@@ -4008,11 +4052,12 @@ fn decode_stream_impl(
         match get_decoder(&normalized_name) {
             Some(decoder) => {
                 let counter_before = *doc_decompress_counter;
-                match decoder.decode(
+                match decoder.decode_with_diagnostics(
                     &current_bytes,
                     params,
                     doc_decompress_counter,
                     opts.max_decompress_bytes,
+                    &mut diagnostics,
                 ) {
                     Ok(decoded) => {
                         // Check if we hit the bomb limit during this filter
