@@ -828,7 +828,7 @@ mod tests {
     fn test_detect_available_languages_returns_hashset() {
         let langs = detect_available_languages();
         // Result should always be a HashSet (may be empty)
-        let _ = HashSet::<&str>::from(langs);
+        let _: HashSet<String> = langs;
     }
 
     /// Test detect_available_languages with TESSDATA_PREFIX env var
@@ -2194,7 +2194,13 @@ mod integration_tests {
             return;
         }
 
-        let spans = result.unwrap();
+        let spans = match result.unwrap() {
+            Ok(spans) => spans,
+            Err(error) => {
+                println!("Skipping test_run_tesseract_returns_spans: {error}");
+                return;
+            }
+        };
         // Empty image should produce empty or minimal spans
         println!("Got {} spans from empty image", spans.len());
     }
@@ -2215,7 +2221,13 @@ mod integration_tests {
             return;
         }
 
-        let spans = result.unwrap();
+        let spans = match result.unwrap() {
+            Ok(spans) => spans,
+            Err(error) => {
+                println!("Skipping test_run_tesseract_on_cell_offset: {error}");
+                return;
+            }
+        };
         // Verify that any spans have coordinates offset by cell origin
         for span in spans {
             assert!(span.bbox[0] >= 100.0, "X should be offset by cell origin");

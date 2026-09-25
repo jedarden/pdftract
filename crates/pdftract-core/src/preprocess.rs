@@ -711,7 +711,7 @@ mod tests {
         // Compute optimal threshold using Otsu's method
         let mut sum: u32 = 0;
         for i in 0..256 {
-            sum += i * histogram[i];
+            sum += i as u32 * histogram[i];
         }
 
         let mut sum_b: u32 = 0;
@@ -730,7 +730,7 @@ mod tests {
                 break;
             }
 
-            sum_b += i * histogram[i];
+            sum_b += i as u32 * histogram[i];
             let sum_f = sum - sum_b;
 
             let m_b = if w_b > 0 {
