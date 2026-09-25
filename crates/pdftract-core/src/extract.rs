@@ -3840,6 +3840,46 @@ startxref
     }
 
     #[test]
+    fn test_extraction_result_assert_exit_code_mismatching_values() {
+        // Each supported exit code should fail when a different code is expected.
+        let result_for = |error_count| ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                diagnostics_detailed: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
+
+        for (error_count, expected_exit_code, actual_exit_code) in [(0, 1, 0), (1, 0, 1)] {
+            let result = result_for(error_count);
+            let error = result
+                .assert_exit_code(expected_exit_code)
+                .expect_err("mismatched exit codes should return an assertion error");
+
+            assert_eq!(error.expected, expected_exit_code);
+            assert_eq!(error.actual, actual_exit_code);
+        }
+    }
+
+    #[test]
     fn test_extraction_result_assert_exit_code_mismatch() {
         // Test that assert_exit_code returns Err when exit codes don't match
         let result = ExtractionResult {
