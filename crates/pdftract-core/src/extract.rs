@@ -163,7 +163,7 @@ fn decode_page_content_streams(
     }
 
     // Check for empty content stream
-    if all_decoded.is_empty() {
+    if all_decoded.is_empty() && diagnostics.is_empty() {
         return Err(PageExtractionError::MissingContentStream { page_index });
     }
 
