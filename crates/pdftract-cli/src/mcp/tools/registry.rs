@@ -6,24 +6,26 @@
 
 use super::args::*;
 use super::{
-    CODE_IO_ERROR, CODE_PATH_INVALID, CODE_SSRF_BLOCKED, ERROR_IO_ERROR,
-    ERROR_PATH_INVALID, ERROR_SSRF_BLOCKED,
+    CODE_IO_ERROR, CODE_PATH_INVALID, CODE_SSRF_BLOCKED, ERROR_IO_ERROR, ERROR_PATH_INVALID,
+    ERROR_SSRF_BLOCKED,
 };
 use crate::mcp::framing::ErrorObject;
 use crate::mcp::root::resolve_path;
 use pdftract_core::{
     diagnostics::DiagCode,
     extract::{extract_pdf, result_to_json},
+    forms::decode_pdf_string,
     options::{ExtractionOptions, ReceiptsMode},
     parser::{
-        self, catalog, pages,
+        self, catalog,
+        object::PdfObject,
+        pages,
         stream::{MemorySource, PdfSource},
         xref,
     },
 };
 use regex::Regex;
 use serde_json::{json, to_value, Value};
-use sha2::Digest;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -384,7 +386,11 @@ fn extract_url_host(url: &str) -> Option<&str> {
 
     // Plain host or IPv4 literal: a single separating `:port` is the only colon.
     let host = host_part.split(':').next()?;
-    if host.is_empty() { None } else { Some(host) }
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
 }
 
 /// Reason an IPv4 address is blocked, or `None` if it is publicly routable.
@@ -402,18 +408,26 @@ fn blocked_ipv4_reason(ipv4: std::net::Ipv4Addr) -> Option<String> {
     // Block RFC 1918 private networks
     let octets = ipv4.octets();
     if octets[0] == 10 {
-        return Some("RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string());
+        return Some(
+            "RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string(),
+        );
     }
     if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
-        return Some("RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string());
+        return Some(
+            "RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string(),
+        );
     }
     if octets[0] == 192 && octets[1] == 168 {
-        return Some("RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string());
+        return Some(
+            "RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string(),
+        );
     }
 
     // Block link-local (169.254.0.0/16) - includes cloud metadata
     if octets[0] == 169 && octets[1] == 254 {
-        return Some("Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string());
+        return Some(
+            "Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string(),
+        );
     }
 
     None
@@ -454,7 +468,9 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
 
                 // Block IPv6 unspecified
                 if ipv6.is_unspecified() {
-                    return Err("IPv6 unspecified addresses are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 unspecified addresses are blocked (SSRF protection)".to_string()
+                    );
                 }
 
                 // Block IPv4-mapped and IPv4-compatible literals such as
@@ -474,17 +490,26 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
                 // Block IPv6 private ranges (fc00::/7, fd00::/8)
                 let segments = ipv6.segments();
                 if segments[0] & 0xfe00 == 0xfc00 {
-                    return Err("IPv6 private addresses (fc00::/7) are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 private addresses (fc00::/7) are blocked (SSRF protection)"
+                            .to_string(),
+                    );
                 }
 
                 // Block IPv6 unique local (fd00::/8)
                 if segments[0] & 0xff00 == 0xfd00 {
-                    return Err("IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)"
+                            .to_string(),
+                    );
                 }
 
                 // Block IPv6 link-local (fe80::/10)
                 if segments[0] & 0xffc0 == 0xfe80 {
-                    return Err("IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)"
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -559,8 +584,9 @@ impl Tool for ExtractTool {
             if let Err(reason) = validate_url_no_ssrf(&tool_args.path) {
                 return Err(ErrorObject::server_error(
                     ERROR_SSRF_BLOCKED,
-                    format!("URL blocked: {}", reason)
-                ).with_data(json!({"code": CODE_SSRF_BLOCKED})));
+                    format!("URL blocked: {}", reason),
+                )
+                .with_data(json!({"code": CODE_SSRF_BLOCKED})));
             }
 
             // URL passed SSRF checks, but remote extraction is not yet implemented
@@ -795,16 +821,19 @@ impl Tool for GetMetadataTool {
 }
 
 /// Extract metadata from a PDF file.
-fn extract_metadata(path: &str, _password: Option<&str>, root: Option<&Path>) -> ToolResult {
-    let ctx = open_pdf(path, _password, root)?;
+fn extract_metadata(path: &str, password: Option<&str>, root: Option<&Path>) -> ToolResult {
+    let ctx = open_pdf(path, password, root)?;
 
     // Build metadata response
-    let mut metadata = serde_json::Map::new();
+    let mut metadata = extract_info_metadata(&ctx);
 
     // Page count
     if let Some(count) = ctx.page_count {
         metadata.insert("page_count".to_string(), json!(count));
     }
+
+    // Use the exact same Phase 1.7 implementation as the `hash` subcommand.
+    let fingerprint = compute_cli_fingerprint(&ctx.path, password)?;
 
     // Catalog info if available
     if let Some(catalog) = &ctx.catalog {
@@ -823,21 +852,6 @@ fn extract_metadata(path: &str, _password: Option<&str>, root: Option<&Path>) ->
             json!([])
         };
 
-        // Fingerprint - compute a simple one based on file size and page count
-        // Full fingerprint computation would use the Phase 1.7 algorithm
-        let fingerprint = format!(
-            "pdftract-v1:{:064x}",
-            sha2::Sha256::digest(
-                format!(
-                    "{}:{}:{}",
-                    ctx.source.len().unwrap_or(0),
-                    ctx.page_count.unwrap_or(0),
-                    catalog.pages_ref.object
-                )
-                .as_bytes()
-            )
-        );
-
         Ok(json!({
             "metadata": metadata,
             "outline": outline,
@@ -845,24 +859,106 @@ fn extract_metadata(path: &str, _password: Option<&str>, root: Option<&Path>) ->
         }))
     } else {
         // Catalog not available, return partial metadata
-        let fingerprint = format!(
-            "pdftract-v1:{:064x}",
-            sha2::Sha256::digest(
-                format!(
-                    "{}:{}",
-                    ctx.source.len().unwrap_or(0),
-                    ctx.page_count.unwrap_or(0)
-                )
-                .as_bytes()
-            )
-        );
-
         Ok(json!({
             "metadata": metadata,
             "outline": [],
             "fingerprint": fingerprint
         }))
     }
+}
+
+/// Extract standard PDF document information dictionary fields.
+fn extract_info_metadata(ctx: &PdfContext) -> serde_json::Map<String, Value> {
+    let mut metadata = serde_json::Map::new();
+
+    // Use the same startxref/xref loader as the CLI hash path. The cheap
+    // forward scan used by `open_pdf` intentionally tolerates partial
+    // documents, but can omit a valid trailer Info reference on some files.
+    let xref_section = load_cli_xref(ctx).unwrap_or_else(|| ctx.xref_section.clone());
+
+    let Some(info_ref) = xref_section
+        .trailer
+        .as_ref()
+        .and_then(|trailer| trailer.get("Info"))
+        .and_then(PdfObject::as_ref)
+    else {
+        return metadata;
+    };
+
+    let resolver = xref::XrefResolver::from_section(xref_section);
+    let Ok(info_object) = resolver.resolve_with_source(info_ref, &ctx.source) else {
+        return metadata;
+    };
+    let Some(info_dict) = info_object.as_dict() else {
+        return metadata;
+    };
+
+    const STRING_FIELDS: &[(&str, &str)] = &[
+        ("Title", "title"),
+        ("Author", "author"),
+        ("Subject", "subject"),
+        ("Keywords", "keywords"),
+        ("Creator", "creator"),
+        ("Producer", "producer"),
+        ("CreationDate", "creation_date"),
+        ("ModDate", "modification_date"),
+    ];
+
+    for &(pdf_key, metadata_key) in STRING_FIELDS {
+        let Some(value) = info_dict.get(pdf_key).and_then(|value| {
+            let resolved = match value {
+                PdfObject::Ref(reference) => {
+                    resolver.resolve_with_source(*reference, &ctx.source).ok()?
+                }
+                _ => value.clone(),
+            };
+            let bytes = resolved.as_string()?;
+            decode_pdf_string(bytes).ok()
+        }) else {
+            continue;
+        };
+        metadata.insert(metadata_key.to_string(), json!(value));
+    }
+
+    // /Trapped is a name rather than a text string in the Info dictionary.
+    if let Some(value) = info_dict.get("Trapped").and_then(|value| {
+        let resolved = match value {
+            PdfObject::Ref(reference) => {
+                resolver.resolve_with_source(*reference, &ctx.source).ok()?
+            }
+            _ => value.clone(),
+        };
+        resolved.as_name().map(str::to_owned)
+    }) {
+        metadata.insert("trapped".to_string(), json!(value));
+    }
+
+    metadata
+}
+
+/// Load the xref section through the same startxref path used by the CLI hash
+/// implementation, without copying the whole in-memory PDF.
+fn load_cli_xref(ctx: &PdfContext) -> Option<xref::XrefSection> {
+    let length = ctx.source.len().ok()?;
+    let start = length.saturating_sub(1024);
+    let tail = ctx
+        .source
+        .read_at(start, (length - start).try_into().ok()?)
+        .ok()?;
+    let startxref = find_startxref_offset(&tail).ok()?;
+    Some(xref::load_xref_with_prev_chain(&ctx.source, startxref))
+}
+
+/// Compute a fingerprint through the implementation used by the CLI hash
+/// subcommand, mapping its errors into the MCP tool error shape.
+fn compute_cli_fingerprint(path: &Path, password: Option<&str>) -> Result<String, ErrorObject> {
+    crate::hash::compute_fingerprint_from_file(path, password).map_err(|error| {
+        ErrorObject::server_error(
+            ERROR_IO_ERROR,
+            format!("Failed to compute PDF fingerprint: {error}"),
+        )
+        .with_data(json!({"code": CODE_IO_ERROR}))
+    })
 }
 
 /// Hash tool - compute structural fingerprint only.
@@ -906,43 +1002,18 @@ impl Tool for HashTool {
 /// Compute the fingerprint of a PDF file.
 fn compute_fingerprint(
     path: &str,
-    _password: Option<&str>,
+    password: Option<&str>,
     root: Option<&Path>,
 ) -> Result<String, ErrorObject> {
-    let ctx = open_pdf(path, _password, root)?;
-
-    // Compute a simplified fingerprint for now
-    // Full fingerprint computation would use the Phase 1.7 algorithm with
-    // content stream hashing, resource dict hashing, etc.
-    if let Some(catalog) = &ctx.catalog {
-        let fingerprint = format!(
-            "pdftract-v1:{:064x}",
-            sha2::Sha256::digest(
-                format!(
-                    "{}:{}:{}:{}",
-                    ctx.source.len().unwrap_or(0),
-                    ctx.page_count.unwrap_or(0),
-                    catalog.pages_ref.object,
-                    catalog.mark_info.is_tagged
-                )
-                .as_bytes()
-            )
+    let path_buf = resolve_path(path, root)?;
+    if !path_buf.is_file() {
+        return Err(
+            ErrorObject::server_error(ERROR_PATH_INVALID, format!("Not a file: {path}"))
+                .with_data(json!({"code": CODE_PATH_INVALID, "path": path})),
         );
-        Ok(fingerprint)
-    } else {
-        let fingerprint = format!(
-            "pdftract-v1:{:064x}",
-            sha2::Sha256::digest(
-                format!(
-                    "{}:{}",
-                    ctx.source.len().unwrap_or(0),
-                    ctx.page_count.unwrap_or(0)
-                )
-                .as_bytes()
-            )
-        );
-        Ok(fingerprint)
     }
+
+    compute_cli_fingerprint(&path_buf, password)
 }
 
 /// Get table tool (Phase 7.2 stub).
@@ -1511,7 +1582,10 @@ mod ssrf_validation_tests {
         for (bracketed, literal) in [
             ("https://[::ffff:127.0.0.1]/", "https://127.0.0.1/"),
             ("https://[::ffff:10.0.0.1]/", "https://10.0.0.1/"),
-            ("https://[::ffff:169.254.169.254]/", "https://169.254.169.254/"),
+            (
+                "https://[::ffff:169.254.169.254]/",
+                "https://169.254.169.254/",
+            ),
         ] {
             assert!(
                 validate_url_no_ssrf(bracketed).is_err(),
@@ -1547,8 +1621,17 @@ mod ssrf_validation_tests {
         );
         assert_eq!(extract_url_host("https://[::1]"), Some("::1"));
         // Plain hosts and IPv4 literals still lose their port.
-        assert_eq!(extract_url_host("https://example.com:443/doc.pdf"), Some("example.com"));
-        assert_eq!(extract_url_host("https://127.0.0.1:9999/doc.pdf"), Some("127.0.0.1"));
-        assert_eq!(extract_url_host("https://user:pass@example.com/x"), Some("example.com"));
+        assert_eq!(
+            extract_url_host("https://example.com:443/doc.pdf"),
+            Some("example.com")
+        );
+        assert_eq!(
+            extract_url_host("https://127.0.0.1:9999/doc.pdf"),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            extract_url_host("https://user:pass@example.com/x"),
+            Some("example.com")
+        );
     }
 }

@@ -76,7 +76,9 @@ fn is_url(s: &str) -> bool {
 }
 
 /// Compute the fingerprint for a PDF from a local file.
-fn compute_fingerprint_from_file(path: &Path, _password: Option<&str>) -> Result<String> {
+/// Compute the same structural fingerprint used by the `hash` subcommand for
+/// a local PDF file.
+pub fn compute_fingerprint_from_file(path: &Path, _password: Option<&str>) -> Result<String> {
     // Open the PDF file
     let source = FileSource::open(path).context("Failed to open PDF file")?;
 

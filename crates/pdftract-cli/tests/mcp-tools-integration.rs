@@ -6,6 +6,8 @@
 //! - Actual tool execution with real PDF files
 
 use pdftract_cli::mcp::tools;
+use std::path::Path;
+use std::process::Command;
 use std::time::Instant;
 
 #[test]
@@ -63,6 +65,53 @@ fn test_hash_performance_on_100_page_pdf() {
     assert!(obj.contains_key("fingerprint"));
 
     println!("hash on 100-page PDF: {}ms", duration_ms);
+}
+
+#[test]
+fn test_hash_matches_cli_and_metadata_exposes_info_dictionary() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/json_schema/simple_invoice.pdf")
+        .to_string_lossy()
+        .into_owned();
+
+    let cli_output = Command::new(env!("CARGO_BIN_EXE_pdftract"))
+        .args(["hash", fixture.as_str()])
+        .output()
+        .expect("CLI hash command should start");
+    assert!(
+        cli_output.status.success(),
+        "CLI hash command failed: {}",
+        String::from_utf8_lossy(&cli_output.stderr)
+    );
+    let cli_fingerprint = String::from_utf8(cli_output.stdout)
+        .expect("CLI hash output should be UTF-8")
+        .trim()
+        .to_string();
+
+    let registry = tools::all_tools();
+    let hash = registry
+        .get("hash")
+        .unwrap()
+        .execute(serde_json::json!({"path": fixture}), None, None)
+        .expect("MCP hash should succeed");
+    assert_eq!(hash["fingerprint"].as_str(), Some(cli_fingerprint.as_str()));
+
+    let metadata = registry
+        .get("get_metadata")
+        .unwrap()
+        .execute(serde_json::json!({"path": fixture}), None, None)
+        .expect("MCP get_metadata should succeed");
+    let info = &metadata["metadata"];
+    assert_eq!(info["title"], "untitled");
+    assert_eq!(info["author"], "anonymous");
+    assert_eq!(info["subject"], "unspecified");
+    assert_eq!(info["keywords"], "");
+    assert_eq!(info["creator"], "anonymous");
+    assert_eq!(info["producer"], "ReportLab PDF Library - (opensource)");
+    assert_eq!(info["creation_date"], "D:20260517071406-04'00'");
+    assert_eq!(info["modification_date"], "D:20260517071406-04'00'");
+    assert_eq!(info["trapped"], "False");
+    assert_eq!(metadata["fingerprint"], hash["fingerprint"]);
 }
 
 #[test]
