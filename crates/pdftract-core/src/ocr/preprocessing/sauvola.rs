@@ -113,7 +113,10 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
     #[cfg(feature = "ocr")]
     {
         use crate::preprocess::{grayimage_to_pix, pix_to_grayimage};
-        use leptonica_plumbing::leptonica_sys::{l_float32, l_int32, pixDestroy, Pix};
+        use leptonica_plumbing::leptonica_sys::{
+            l_float32, l_int32, pixConvertTo8, pixDestroy, pixGetDepth, pixSauvolaBinarize, Pix,
+        };
+        use std::ptr;
         use tracing::warn;
 
         assert!(
@@ -153,50 +156,84 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
             }
         };
 
-        // Call pixSauvolaBinarize via leptonica-sys
-        let (mut binary_pix, _result) = unsafe {
-            // Window size must be odd
-            let wh = window_size as i32;
-            let wl = window_size as i32;
-            let factor = k as l_float32;
-
-            // The actual function signature in leptonica is:
-            // PIX * pixSauvolaBinarize(PIX *pixs, l_int32 wh, l_int32 wl, l_float32 factor);
-            extern "C" {
-                fn pixSauvolaBinarize(
-                    pixs: *mut Pix,
-                    wh: l_int32,
-                    wl: l_int32,
-                    factor: l_float32,
-                ) -> *mut Pix;
-            }
-
-            let result = pixSauvolaBinarize(pix, wh, wl, factor);
-
-            if result.is_null() {
-                // leptonica failed to binarize (e.g. internal allocation failure).
-                // Recoverable per the no-panic model: free the input Pix and fall
-                // back to the unbinarized input image as a degraded result.
-                pixDestroy(&mut pix);
-                warn!(
-                    "sauvola_binarize: pixSauvolaBinarize returned null; returning \
-                     unbinarized input as a degraded result (window_size={}, k={})",
-                    window_size, k
-                );
-                return image.clone();
-            }
-
-            (result, ())
+        // Call leptonica's current pixSauvolaBinarize ABI. It returns an l_ok
+        // status and writes the mean, standard-deviation, threshold, and binary
+        // Pix outputs through four output pointers.
+        let mut mean_pix: *mut Pix = ptr::null_mut();
+        let mut stddev_pix: *mut Pix = ptr::null_mut();
+        let mut threshold_pix: *mut Pix = ptr::null_mut();
+        let mut binary_pix: *mut Pix = ptr::null_mut();
+        let status = unsafe {
+            pixSauvolaBinarize(
+                pix,
+                window_size as l_int32,
+                k as l_float32,
+                0,
+                &mut mean_pix,
+                &mut stddev_pix,
+                &mut threshold_pix,
+                &mut binary_pix,
+            )
         };
+
+        unsafe {
+            if !pix.is_null() {
+                pixDestroy(&mut pix);
+            }
+            for candidate in [&mut mean_pix, &mut stddev_pix, &mut threshold_pix] {
+                if !(*candidate).is_null() {
+                    pixDestroy(candidate);
+                }
+            }
+        }
+
+        if status != 0 || binary_pix.is_null() {
+            // Leptonica failed to binarize (e.g. internal allocation failure).
+            // Recoverable per the no-panic model: fall back to the unbinarized
+            // input image as a degraded result.
+            unsafe {
+                if !binary_pix.is_null() {
+                    pixDestroy(&mut binary_pix);
+                }
+            }
+            warn!(
+                "sauvola_binarize: pixSauvolaBinarize failed; returning \
+                 unbinarized input as a degraded result (window_size={}, k={}, status={})",
+                window_size, k, status
+            );
+            return image.clone();
+        }
+
+        // Sauvola returns a 1-bit binary Pix. Convert it to 8-bit grayscale so
+        // the shared Pix-to-GrayImage helper can preserve the 0/255 result.
+        let mut output_pix = unsafe {
+            if pixGetDepth(binary_pix) == 1 {
+                let converted = pixConvertTo8(binary_pix, 0);
+                pixDestroy(&mut binary_pix);
+                converted
+            } else {
+                let output = binary_pix;
+                binary_pix = ptr::null_mut();
+                output
+            }
+        };
+
+        if output_pix.is_null() {
+            warn!(
+                "sauvola_binarize: failed to convert binary Pix to 8 bpp; returning \
+                 unbinarized input as a degraded result"
+            );
+            return image.clone();
+        }
 
         // Convert back to GrayImage.
         //
         // If the back-conversion fails, record the diagnostics, free the Pix, and
         // return the unbinarized input image as a degraded result.
-        let result_image = match pix_to_grayimage(binary_pix) {
+        let result_image = match pix_to_grayimage(output_pix) {
             Ok(img) => img,
             Err(diag) => {
-                unsafe { pixDestroy(&mut binary_pix) };
+                unsafe { pixDestroy(&mut output_pix) };
                 diagnostics.extend(diag);
                 warn!(
                     "sauvola_binarize: Pix→GrayImage conversion failed; returning \
@@ -213,7 +250,7 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
 
         // Clean up
         unsafe {
-            pixDestroy(&mut binary_pix);
+            pixDestroy(&mut output_pix);
         }
 
         result_image

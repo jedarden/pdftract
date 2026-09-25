@@ -318,7 +318,11 @@ pub fn add_border_padding(image: &GrayImage) -> GrayImage {
 
     for y in 0..height {
         for x in 0..width {
-            padded.put_pixel(x + BORDER_PADDING, y + BORDER_PADDING, *image.get_pixel(x, y));
+            padded.put_pixel(
+                x + BORDER_PADDING,
+                y + BORDER_PADDING,
+                *image.get_pixel(x, y),
+            );
         }
     }
 
@@ -348,10 +352,7 @@ pub fn denoise_median(image: &GrayImage) -> GrayImage {
 }
 
 /// Run the complete OCR preprocessing pipeline for an image source.
-pub fn preprocess(
-    image: &GrayImage,
-    source: ImageSource,
-) -> Result<(GrayImage, Vec<Diagnostic>)> {
+pub fn preprocess(image: &GrayImage, source: ImageSource) -> Result<(GrayImage, Vec<Diagnostic>)> {
     let (mut current, _angle, diagnostics) = deskew(image)?;
 
     if !source.is_jbig2() {
