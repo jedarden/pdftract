@@ -66,7 +66,7 @@ fn test_hash_performance_on_100_page_pdf() {
 }
 
 #[test]
-fn test_tools_list_has_all_10_tools() {
+fn test_tools_list_has_only_implemented_tools() {
     let registry = tools::all_tools();
     let list = registry.tools_list();
 
@@ -76,7 +76,7 @@ fn test_tools_list_has_all_10_tools() {
         .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
         .collect();
 
-    assert_eq!(tool_names.len(), 10, "Should have exactly 10 tools");
+    assert_eq!(tool_names.len(), 7, "Should have exactly 7 advertised tools");
 
     let expected = [
         "extract",
@@ -85,10 +85,7 @@ fn test_tools_list_has_all_10_tools() {
         "search",
         "get_metadata",
         "get_table",
-        "get_form_fields",
-        "get_attachments",
         "hash",
-        "classify",
     ];
 
     for name in &expected {

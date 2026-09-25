@@ -55,7 +55,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 1. Restart Claude Desktop
 2. Open a new conversation
 3. Ask: "List available tools"
-4. Verify that the pdftract tools appear. They are named without a prefix — the full catalog is `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`, `get_form_fields`, `get_attachments`, `classify`
+4. Verify that the pdftract tools appear. They are named without a prefix — the implemented catalog is `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`
 
 **Verified against:** Claude Desktop 1.0.0 (2026-05)
 

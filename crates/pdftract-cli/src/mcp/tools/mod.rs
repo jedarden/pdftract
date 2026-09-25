@@ -1,9 +1,10 @@
 //! MCP tool catalog and registry.
 //!
-//! This module implements the 10 MCP tools that pdftract exposes via tools/list
+//! This module implements the MCP tools that pdftract exposes via tools/list
 //! and tools/call. Each tool wraps an existing pdftract surface with a typed
 //! argument schema (JSON Schema via schemars), structured error mapping, and
-//! per-invocation observability.
+//! per-invocation observability. Unimplemented compatibility tools remain
+//! callable but are omitted from tools/list.
 
 mod args;
 mod registry;

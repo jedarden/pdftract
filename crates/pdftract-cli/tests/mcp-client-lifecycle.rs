@@ -5,7 +5,7 @@
 //!
 //! 1. **Spawn:** start `pdftract mcp --stdio` as a subprocess
 //! 2. **Handshake:** send `initialize`, receive capabilities
-//! 3. **List Tools:** call `tools/list` — the 10 cataloged tools
+//! 3. **List Tools:** call `tools/list` — the 7 implemented tools
 //! 4. **Call Tool:** invoke `tools/call` with a tool name and arguments
 //! 5. **Terminate:** close stdin; server exits cleanly on EOF
 //!
@@ -45,8 +45,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The tools cataloged by the server (see `ToolRegistry::register_all` and
-/// the "Tools: 10" startup banner). `tools/list` must return exactly these.
-const CATALOGED_TOOLS: [&str; 10] = [
+/// the tools catalog). `tools/list` must return exactly these.
+const CATALOGED_TOOLS: [&str; 7] = [
     "extract",
     "extract_text",
     "extract_markdown",
@@ -54,9 +54,6 @@ const CATALOGED_TOOLS: [&str; 10] = [
     "get_metadata",
     "hash",
     "get_table",
-    "get_form_fields",
-    "get_attachments",
-    "classify",
 ];
 
 /// Upper bound on waiting for any single JSON-RPC response.
@@ -510,7 +507,7 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
         env!("CARGO_PKG_VERSION")
     );
 
-    // Step 3: List tools — exactly the 10 cataloged tools, each with the
+    // Step 3: List tools — exactly the 7 implemented tools, each with the
     // fields clients need (name, description, inputSchema).
     let list = server.request("tools/list", json!({}));
     let list_result = assert_success(&list, "tools/list");
@@ -533,7 +530,7 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
     expected.sort_unstable();
     assert_eq!(
         names, expected,
-        "tools/list must return exactly the 10 cataloged tools"
+        "tools/list must return exactly the 7 implemented tools"
     );
     for tool in tools {
         assert!(

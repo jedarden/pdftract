@@ -54,6 +54,10 @@ pub trait Tool: Send + Sync {
     fn execute(&self, args: Value, log_path: Option<&str>, root: Option<&Path>) -> ToolResult;
 }
 
+/// Tools that remain callable for compatibility but are not advertised until
+/// their end-to-end implementations are available.
+const UNADVERTISED_TOOL_NAMES: &[&str] = &["classify", "get_form_fields", "get_attachments"];
+
 /// Registry of all available MCP tools.
 pub struct ToolRegistry {
     tools: HashMap<&'static str, Box<dyn Tool>>,
@@ -105,6 +109,7 @@ impl ToolRegistry {
         let tools: Vec<Value> = self
             .tools
             .values()
+            .filter(|tool| !UNADVERTISED_TOOL_NAMES.contains(&tool.name()))
             .map(|tool| {
                 json!({
                     "name": tool.name(),
@@ -1139,7 +1144,11 @@ mod tests {
         assert!(list.is_object());
         let tools = list.get("tools").and_then(|v| v.as_array());
         assert!(tools.is_some());
-        assert_eq!(tools.unwrap().len(), 10);
+        let tools = tools.unwrap();
+        assert_eq!(tools.len(), 7);
+        for name in UNADVERTISED_TOOL_NAMES {
+            assert!(!tools.iter().any(|tool| tool["name"] == *name));
+        }
     }
 
     #[test]
