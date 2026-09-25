@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pdftract
@@ -11,15 +12,48 @@ FIXTURE = (
     Path(__file__).with_name("fixtures") / "search_regression.pdf"
 )
 PATTERN = "PYTHON_SEARCH_REGRESSION"
+EXPECTED = FIXTURE.with_suffix(".expected.json")
 
 
-def test_search_uses_compiled_binding():
-    """The focused harness builds the extension before calling public search."""
+def test_search_result_shape_matches_sdk():
+    """Public search returns the compiled SDK result, including its location."""
     assert FIXTURE.is_file()
+    assert EXPECTED.is_file()
     assert pdftract._native_available, "the focused command must build the native binding"
     assert not pdftract._using_fallback, "the focused harness must not use the CLI fallback"
 
-    # Consume the iterator so the binding is actually called. Detailed result
-    # expectations belong to the follow-up regression test.
-    matches = list(pdftract.search(str(FIXTURE), PATTERN))
-    assert isinstance(matches, list)
+    expected = json.loads(EXPECTED.read_text())
+    native_result = pdftract._native.search(str(FIXTURE), PATTERN)
+    assert native_result["pattern"] == PATTERN
+    native_matches = native_result["matches"]
+    assert isinstance(native_matches, list)
+    assert native_matches, "a known string in the fixture must produce matches"
+
+    for index, match in enumerate(native_matches):
+        assert {
+            "page_index",
+            "span_index",
+            "text",
+            "bbox",
+        } <= match.keys(), f"match {index} is missing search result fields: {match}"
+        assert isinstance(match["page_index"], int) and match["page_index"] >= 0
+        assert isinstance(match["span_index"], int) and match["span_index"] >= 0
+        assert isinstance(match["text"], str) and match["text"]
+        assert (
+            isinstance(match["bbox"], list)
+            and len(match["bbox"]) == 4
+            and all(isinstance(value, (int, float)) for value in match["bbox"])
+        ), f"match {index} has invalid bbox data: {match}"
+
+    # The checked-in result is the sdk::search output for this deterministic
+    # fixture. Exact comparison catches field loss, reordered/extra results,
+    # and fabricated coordinates, not just an empty-list regression.
+    assert native_matches == expected["matches"]
+
+    public_matches = list(pdftract.search(str(FIXTURE), PATTERN))
+    assert public_matches, "public pdftract.search() must surface native matches"
+    assert len(public_matches) == len(native_matches)
+    for public_match, native_match in zip(public_matches, native_matches):
+        assert public_match.page == native_match["page_index"]
+        assert public_match.text == native_match["text"]
+        assert list(public_match.bbox) == native_match["bbox"]
