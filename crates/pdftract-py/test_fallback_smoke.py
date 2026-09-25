@@ -1,116 +1,85 @@
 #!/usr/bin/env python3
-"""Smoke test for subprocess fallback.
+"""Smoke test for the Python SDK subprocess fallback.
 
-This script tests that the subprocess fallback works when the native module
-is unavailable. It temporarily renames the native module to force ImportError.
+The native extension is blocked through the import machinery, so this test
+does not rename or modify an installed extension in the shared checkout.
 """
 
-import os
+import importlib.abc
 import sys
-import shutil
-import tempfile
 from pathlib import Path
 
+
+class _BlockNative(importlib.abc.MetaPathFinder):
+    """Force the same ImportError path used by an unavailable native wheel."""
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "pdftract._native":
+            raise ImportError("forced fallback smoke-test ImportError")
+        return None
+
+
 def test_fallback_smoke():
-    """Test subprocess fallback by forcing ImportError of native module."""
+    """Import through the fallback and exercise its typed public API."""
 
-    # Find the native module
-    pdftract_dir = Path(__file__).parent / "python" / "pdftract"
-    native_module = pdftract_dir / "_native.abi3.so"
-
-    if not native_module.exists():
-        print(f"ERROR: Native module not found at {native_module}")
-        sys.exit(1)
-
-    print(f"Found native module at: {native_module}")
-
-    # Temporarily rename the native module
-    temp_path = pdftract_dir / "_native.abi3.so.backup"
-    shutil.move(str(native_module), str(temp_path))
-    print(f"Temporarily renamed native module to _native.abi3.so.backup")
+    original_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "pdftract" or name.startswith("pdftract.")
+    }
+    original_path = list(sys.path)
+    original_meta_path = list(sys.meta_path)
 
     try:
-        # Force reimport of pdftract
-        # Clear import cache
-        modules_to_clear = [k for k in sys.modules.keys() if k.startswith("pdftract")]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
+        for module in list(sys.modules):
+            if module == "pdftract" or module.startswith("pdftract."):
+                del sys.modules[module]
+        sys.meta_path.insert(0, _BlockNative())
+        sys.path.insert(0, str(Path(__file__).parent / "python"))
 
-        # Import pdftract - should now use subprocess fallback
         import pdftract
+        from pdftract.types import Document, Match, Metadata, Page
 
-        print(f"pdftract imported successfully")
-        print(f"_native_available: {pdftract._native_available}")
+        assert pdftract._using_fallback is True
+        assert pdftract._native_available is False
 
-        if pdftract._native_available:
-            print("ERROR: Native module should not be available")
-            sys.exit(1)
+        test_pdf = (
+            Path(__file__).parents[2]
+            / "crates"
+            / "pdftract-core"
+            / "tests"
+            / "fixtures"
+            / "test-minimal.pdf"
+        )
+        assert test_pdf.exists(), f"Test fixture not found: {test_pdf}"
 
-        # Check that we can use the fallback
-        # First, make sure we have the CLI binary
-        cli_path = shutil.which("pdftract")
-        if not cli_path:
-            print("WARNING: pdftract CLI not found in PATH")
-            print("Installing pdftract CLI via cargo...")
-            os.system("cargo install --path ../.. 2>&1 | tail -5")
-            cli_path = shutil.which("pdftract")
+        document = pdftract.extract(str(test_pdf))
+        assert isinstance(document, Document)
+        assert document.pages and isinstance(document.pages[0], Page)
 
-        if not cli_path:
-            print("ERROR: pdftract CLI still not found after install attempt")
-            print("The fallback requires the CLI binary to be installed.")
-            print("Skipping functionality test - fallback code paths are verified in test_conformance.py")
-            return
+        text = pdftract.extract_text(str(test_pdf))
+        assert "Dummy PDF file" in text
 
-        print(f"pdftract CLI found at: {cli_path}")
+        pages = list(pdftract.extract_stream(str(test_pdf)))
+        assert pages and all(isinstance(page, Page) for page in pages)
 
-        # Create a simple test PDF path
-        test_pdf = Path(__file__).parent.parent.parent / "tests" / "fixtures" / "valid-minimal.pdf"
+        matches = list(pdftract.search(str(test_pdf), "Dummy"))
+        assert matches and all(isinstance(match, Match) for match in matches)
 
-        if not test_pdf.exists():
-            print(f"WARNING: Test fixture not found at {test_pdf}")
-            print("Creating minimal test via CLI...")
+        metadata = pdftract.get_metadata(str(test_pdf))
+        assert isinstance(metadata, Metadata) and metadata.page_count == 1
 
-            # Create a minimal PDF for testing
-            import subprocess
-            result = subprocess.run(
-                ["pdftract", "help"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                print("pdftract CLI is working - fallback should function")
-                print("Smoke test PASSED: fallback infrastructure is in place")
-                return
-            else:
-                print(f"ERROR: pdftract CLI not working: {result.stderr}")
-                sys.exit(1)
+        fingerprint = pdftract.hash(str(test_pdf))
+        assert fingerprint.hash.startswith("pdftract-v1:")
 
-        # Try a simple extraction via fallback
-        try:
-            print(f"\nTesting extraction with fallback...")
-            result = pdftract.extract_text(str(test_pdf))
-            print(f"Extraction succeeded, got {len(result)} characters")
-
-            # Test metadata
-            metadata = pdftract.get_metadata(str(test_pdf))
-            print(f"Metadata: page_count={metadata.page_count}")
-
-            print("\n✅ Smoke test PASSED: Subprocess fallback works correctly")
-        except Exception as e:
-            print(f"\n❌ Smoke test FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-
+        print("Smoke test PASSED: fallback import and API round trips work")
     finally:
-        # Restore the native module
-        shutil.move(str(temp_path), str(native_module))
-        print(f"\nRestored native module from backup")
-
-        # Clear import cache again so native module can be reimported
-        modules_to_clear = [k for k in sys.modules.keys() if k.startswith("pdftract")]
-        for mod in modules_to_clear:
-            del sys.modules[mod]
+        sys.path[:] = original_path
+        sys.meta_path[:] = original_meta_path
+        for module in list(sys.modules):
+            if module == "pdftract" or module.startswith("pdftract."):
+                del sys.modules[module]
+        sys.modules.update(original_modules)
 
 if __name__ == "__main__":
     test_fallback_smoke()

@@ -157,18 +157,20 @@ async for match in pdftract.search("document.pdf", pattern):
 
 ## Subprocess Fallback
 
-The Python SDK automatically falls back to subprocess mode when the native PyO3 module cannot be loaded. This typically happens in:
+The Python SDK automatically falls back to subprocess mode when importing the native PyO3 module raises `ImportError` and a `pdftract` executable is available on `PATH`. This typically happens in:
 
 - **musl-libc environments** (e.g., Alpine Linux) where glibc-linked native modules are incompatible
 - **Missing native module** when the wheel doesn't include a platform-specific build
 - **Development builds** where the native module hasn't been compiled yet
 
-**How it works:** The fallback calls the `pdftract` CLI binary via `subprocess.run()`, passing arguments and parsing JSON/NDJSON output. All public API functions work identically — the switch is transparent.
+**How it works:** The fallback calls the `pdftract` CLI binary via `subprocess.run()`. It parses the CLI's JSON output into the same `Document`, `Page`, `Span`, `Match`, `Metadata`, `Fingerprint`, and `Classification` dataclasses used by the native wrapper. Text and Markdown methods use the corresponding CLI output formats.
 
 **Limitations:**
-- Requires the `pdftract` CLI binary in `PATH` (install via `cargo install pdftract` or your package manager)
+- Requires the `pdftract` CLI binary in `PATH` (for a source checkout, build with `cargo build -p pdftract-cli --bin pdftract` and add `target/debug` to `PATH`, or install it with your package manager)
 - Slight performance overhead from subprocess spawning and JSON serialization
-- Stream operations yield pages from NDJSON rather than direct native iteration
+- `extract_stream()` materializes the CLI's schema-complete JSON document before yielding pages. The CLI NDJSON format is block-oriented and does not contain enough page geometry to construct SDK `Page` objects.
+- The current CLI JSON schema does not include page geometry in its page records; fallback `Page.width` and `Page.height` are therefore `0` unless the CLI supplies those fields.
+- The fallback only forwards options represented by the installed CLI. Options not exposed by that CLI build (such as form/attachment extraction) are ignored, so use the native module when those options are required.
 
 **Checking which mode is active:**
 
@@ -190,31 +192,20 @@ RuntimeWarning: Native module failed to import: <error details>.
 Using subprocess fallback. Performance will be significantly degraded.
 ```
 
+When no native module or CLI is available, importing `pdftract` raises `ImportError`; the warning is not emitted in that case because there is no usable backend.
+
 **Smoke test the fallback:**
 
 ```bash
-# Force ImportError by renaming the native module
-cd crates/pdftract-py/python/pdftract
-mv _native.abi3.so _native.abi3.so.backup
-
-# Test that fallback works (ensure CLI binary is in PATH first)
-python3 -c "
-import sys
-sys.path.insert(0, 'crates/pdftract-py/python')
-import pdftract
-print(f'Fallback active: {pdftract._using_fallback}')
-print(f'Native available: {pdftract._native_available}')
-"
-
-# Restore the native module
-mv _native.abi3.so.backup _native.abi3.so
+# Run the automated test with the CLI on PATH. The test blocks the native
+# import in-process and does not rename an installed extension.
+PATH="$PWD/target/debug:$PATH" python3 crates/pdftract-py/test_fallback_smoke.py
 ```
 
 Or run the automated smoke test:
 
 ```bash
-cd crates/pdftract-py
-python3 test_fallback_smoke.py
+PATH="$PWD/target/debug:$PATH" python3 crates/pdftract-py/test_fallback_smoke.py
 ```
 
 ## Development Installation

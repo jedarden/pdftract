@@ -291,10 +291,20 @@ class Page:
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
+        if "page_number" in native_dict:
+            page = native_dict["page_number"]
+        elif "page" in native_dict:
+            page = native_dict["page"]
+        elif "page_index" in native_dict:
+            page = native_dict["page_index"]
+        elif "index" in native_dict:
+            page = native_dict["index"]
+        else:
+            page = 0
         return cls(
-            page=int(native_dict.get("page") or native_dict.get("page_number", 0)),
-            width=int(native_dict["width"]),
-            height=int(native_dict["height"]),
+            page=int(page),
+            width=int(native_dict.get("width", 0)),
+            height=int(native_dict.get("height", 0)),
             rotation=int(native_dict.get("rotation", 0)),
             spans=tuple(Span.from_native(span_dict) for span_dict in native_dict.get("spans", [])),
             blocks=tuple(Block.from_native(block_dict) for block_dict in native_dict.get("blocks", [])),
@@ -436,9 +446,11 @@ class Classification:
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
         return cls(
-            category=native_dict["category"],
-            confidence=float(native_dict["confidence"]),
-            tags=tuple(native_dict.get("tags", [])),
+            category=native_dict.get("category")
+            or native_dict.get("document_type")
+            or native_dict.get("class_name", "unknown"),
+            confidence=float(native_dict.get("confidence", 0.0)),
+            tags=tuple(native_dict.get("tags") or native_dict.get("reasons", [])),
             heuristics=native_dict.get("heuristics"),
         )
 

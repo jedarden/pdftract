@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -51,19 +52,13 @@ class SubprocessExtractor:
 
     def _find_cli(self) -> str:
         """Find the pdftract binary in PATH."""
-        # Try to find pdftract in PATH
+        # Use the same PATH lookup semantics as the package-level activation
+        # check.  Calling an external ``which`` command is not portable to
+        # Windows and needlessly creates another subprocess.
         for name in ["pdftract", "pdftract.exe"]:
-            try:
-                result = subprocess.run(
-                    ["which", name],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    return result.stdout.strip()
-            except FileNotFoundError:
-                pass
+            path = shutil.which(name)
+            if path:
+                return path
 
         # Try common installation paths
         for path in [
@@ -155,7 +150,7 @@ class SubprocessExtractor:
             PdftractError: If extraction fails
         """
         args = self._build_args("extract", source, options)
-        args.append("--json")  # Always request JSON output
+        args.extend(["--json", "-"])
 
         result = self._run(args)
 
@@ -166,7 +161,7 @@ class SubprocessExtractor:
             data = json.loads(result.stdout)
             return Document.from_native(data)
         except json.JSONDecodeError as e:
-            raise PdftractError(f"Failed to parse JSON output: {e}")
+            raise PdftractError(f"Failed to parse JSON output: {e}") from e
 
     def extract_text(self, source: str, **options) -> str:
         """Extract plain text from a PDF.
@@ -182,7 +177,7 @@ class SubprocessExtractor:
             PdftractError: If extraction fails
         """
         args = self._build_args("extract", source, options)
-        args.append("--text")
+        args.extend(["--text", "-"])
 
         result = self._run(args)
 
@@ -205,7 +200,7 @@ class SubprocessExtractor:
             PdftractError: If extraction fails
         """
         args = self._build_args("extract", source, options)
-        args.append("--md")
+        args.extend(["--md", "-"])
 
         result = self._run(args)
 
@@ -227,22 +222,39 @@ class SubprocessExtractor:
         Raises:
             PdftractError: If extraction fails
         """
+        # The CLI's NDJSON format is one record per block, without page
+        # geometry, so it cannot be converted to the SDK's Page type.  Use
+        # the schema-complete JSON format and yield its pages instead.
         args = self._build_args("extract", source, options)
-        args.append("--ndjson")  # Use NDJSON for streaming
+        args.extend(["--json", "-"])
 
         result = self._run(args)
 
         if result.returncode != 0:
             raise self._map_exit_code_to_exception(result.returncode, result.stderr)
 
-        for line in result.stdout.splitlines():
-            if not line.strip():
-                continue
+        page_data = []
+        try:
+            data = json.loads(result.stdout)
+            if isinstance(data, dict) and "pages" in data:
+                page_data = data["pages"]
+            elif isinstance(data, (dict, list)):
+                page_data = data if isinstance(data, list) else [data]
+        except json.JSONDecodeError:
+            # Accept page-oriented NDJSON from older CLI builds as well. The
+            # current CLI's NDJSON is block-oriented, so the normal path above
+            # intentionally uses schema-complete JSON.
             try:
-                data = json.loads(line)
-                yield Page.from_native(data)
+                page_data = [
+                    json.loads(line)
+                    for line in result.stdout.splitlines()
+                    if line.strip()
+                ]
             except json.JSONDecodeError as e:
-                raise PdftractError(f"Failed to parse NDJSON line: {e}")
+                raise PdftractError(f"Failed to parse JSON output: {e}") from e
+
+        for page in page_data:
+            yield Page.from_native(page)
 
     def search(self, source: str, pattern: str, **options) -> Iterator[Match]:
         """Search for a pattern in a PDF.
@@ -258,16 +270,37 @@ class SubprocessExtractor:
         Raises:
             PdftractError: If extraction fails
         """
-        args = self._build_args("grep", source, options)
-        args.extend(["--pattern", pattern, "--json"])
+        args = ["grep", pattern, source, "--json", "--no-progress"]
+        if options.get("case_insensitive"):
+            args.append("--ignore-case")
+        if options.get("regex"):
+            args.append("--extended-regexp")
+        if options.get("whole_word"):
+            args.append("--word-regexp")
+        if options.get("ocr"):
+            args.append("--ocr")
+        if options.get("pages") is not None:
+            args.extend(["--pages", str(options["pages"])])
 
         result = self._run(args)
 
         if result.returncode != 0:
             raise self._map_exit_code_to_exception(result.returncode, result.stderr)
 
-        data = json.loads(result.stdout)
-        for match_data in data.get("matches", []):
+        try:
+            records = []
+            for line in result.stdout.splitlines():
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                if isinstance(data, dict) and "matches" in data:
+                    records.extend(data.get("matches") or [])
+                else:
+                    records.append(data)
+        except json.JSONDecodeError as e:
+            raise PdftractError(f"Failed to parse JSON-lines output: {e}") from e
+
+        for match_data in records:
             yield Match.from_native(match_data)
 
     def get_metadata(self, source: str, **options) -> Metadata:
@@ -284,7 +317,7 @@ class SubprocessExtractor:
             PdftractError: If extraction fails
         """
         args = self._build_args("extract", source, options)
-        args.append("--metadata-only")
+        args.extend(["--json", "-"])
 
         result = self._run(args)
 
@@ -293,9 +326,14 @@ class SubprocessExtractor:
 
         try:
             data = json.loads(result.stdout)
-            return Metadata.from_native(data)
+            metadata = (
+                data.get("metadata")
+                if isinstance(data, dict) and "metadata" in data
+                else data
+            )
+            return Metadata.from_native(metadata)
         except json.JSONDecodeError as e:
-            raise PdftractError(f"Failed to parse JSON output: {e}")
+            raise PdftractError(f"Failed to parse JSON output: {e}") from e
 
     def hash(self, source: str, **options) -> Fingerprint:
         """Compute fingerprint of a PDF.
@@ -310,7 +348,7 @@ class SubprocessExtractor:
         Raises:
             PdftractError: If extraction fails
         """
-        args = [self.cli_path, "hash", source]
+        args = ["hash", source]
 
         # Add password option if provided
         if password := options.get("password"):
@@ -322,7 +360,13 @@ class SubprocessExtractor:
             raise self._map_exit_code_to_exception(result.returncode, result.stderr)
 
         value = result.stdout.strip()
-        return Fingerprint.from_string(value)
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return Fingerprint.from_string(value)
+        if isinstance(data, dict) and "hash" in data:
+            return Fingerprint.from_native({"fast_hash": "", **data})
+        raise PdftractError("Failed to parse fingerprint JSON output")
 
     def classify(self, source: str) -> Any:
         """Classify a PDF page type.
@@ -336,7 +380,7 @@ class SubprocessExtractor:
         Raises:
             PdftractError: If extraction fails
         """
-        args = [self.cli_path, "classify", source, "--json"]
+        args = ["classify", source]
 
         result = self._run(args)
 
@@ -347,7 +391,7 @@ class SubprocessExtractor:
             data = json.loads(result.stdout)
             return Classification.from_native(data)
         except json.JSONDecodeError as e:
-            raise PdftractError(f"Failed to parse JSON output: {e}")
+            raise PdftractError(f"Failed to parse JSON output: {e}") from e
 
     def verify_receipt(self, path: str, receipt: dict) -> bool:
         """Verify a receipt against a PDF.
@@ -371,7 +415,7 @@ class SubprocessExtractor:
             receipt_path = f.name
 
         try:
-            args = [self.cli_path, "verify-receipt", path, receipt_path]
+            args = ["verify-receipt", path, receipt_path, "--json"]
             result = self._run(args)
 
             if result.returncode == 0:
@@ -398,20 +442,21 @@ class SubprocessExtractor:
         Returns:
             List of CLI arguments
         """
-        args = [self.cli_path, command, source]
+        args = [command, source]
 
         # Map Python options to CLI flags
         option_map = {
             "ocr": "--ocr",
             "ocr_language": "--ocr-language",
-            "include_invisible": "--include-invisible",
-            "extract_forms": "--extract-forms",
-            "extract_attachments": "--extract-attachments",
-            "readability_threshold": "--readability-threshold",
+            "include_invisible": "--include-invisible-text",
             "password": "--password",
-            "max_decompress_gb": "--max-decompress-gb",
-            "full_render": "--full-render",
-            "anchors": "--anchors",
+            "pages": "--pages",
+            "anchors": "--md-anchors",
+            "include_headers": "--include-headers",
+            "include_footers": "--include-footers",
+            "include_headers_footers": "--include-headers-footers",
+            "include_hidden_layers": "--include-hidden-layers",
+            "include_watermarks": "--include-watermarks",
         }
 
         for key, value in options.items():
