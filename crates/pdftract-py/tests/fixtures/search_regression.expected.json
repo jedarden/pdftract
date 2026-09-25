@@ -1,0 +1,11 @@
+{
+  "pattern": "PYTHON_SEARCH_REGRESSION",
+  "matches": [
+    {
+      "page_index": 0,
+      "span_index": 0,
+      "text": "PYTHON_SEARCH_REGRESSION",
+      "bbox": [72.0, 720.0, 244.8000030517578, 732.0]
+    }
+  ]
+}
