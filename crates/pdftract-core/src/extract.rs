@@ -3802,6 +3802,44 @@ startxref
     }
 
     #[test]
+    fn test_extraction_result_assert_exit_code_matching_values() {
+        // Both supported exit codes should succeed when they match the result.
+        let result_for = |error_count| ExtractionResult {
+            fingerprint: "test".to_string(),
+            pages: vec![],
+            metadata: ExtractionMetadata {
+                page_count: 0,
+                receipts_mode: ReceiptsMode::Off,
+                span_count: 0,
+                block_count: 0,
+                cache_status: None,
+                cache_age_seconds: None,
+                error_count,
+                reading_order_algorithm: None,
+                diagnostics: vec![],
+                diagnostics_detailed: vec![],
+                profile_name: None,
+                profile_version: None,
+                profile_fields: None,
+            },
+            signatures: vec![],
+            form_fields: vec![],
+            links: vec![],
+            attachments: vec![],
+            threads: vec![],
+            javascript_actions: vec![],
+        };
+
+        for (error_count, expected_exit_code) in [(0, 0), (1, 1)] {
+            let result = result_for(error_count);
+            assert!(
+                result.assert_exit_code(expected_exit_code).is_ok(),
+                "matching exit code {expected_exit_code} should succeed for {error_count} error(s)"
+            );
+        }
+    }
+
+    #[test]
     fn test_extraction_result_assert_exit_code_mismatch() {
         // Test that assert_exit_code returns Err when exit codes don't match
         let result = ExtractionResult {
