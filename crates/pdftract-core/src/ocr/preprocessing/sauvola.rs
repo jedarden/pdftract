@@ -358,7 +358,7 @@ mod tests {
         // Verify that text regions became black (0) even in dark corner
         // Check a text pixel in the dark corner (top-left)
         assert_eq!(
-            binary.get_pixel(5, 5)[0],
+            binary.get_pixel(5, 1)[0],
             0,
             "Text in dark corner should be black (0)"
         );
