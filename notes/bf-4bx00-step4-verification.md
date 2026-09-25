@@ -1,9 +1,102 @@
 # bf-4bx00 step 4 — STREAM_DECODE_ERROR assertion verification (bf-hyhjnl closeout)
 
 - **Bead:** pdftract-9356414f (split-child of umbrella bf-hyhjnl, grandparent bf-4bx00)
-- **Date:** 2026-09-24 · **HEAD:** `40d23bd3` · **Worker:** claude-code-glm-5.3-glm-pdftract
+- **Date:** 2026-09-24 (Round 1) · **HEAD:** `40d23bd3` · **Worker:** claude-code-glm-5.3-glm-pdftract
+- **Round 2 re-verification:** 2026-09-25 at HEAD `48ac7db0` (pdftract-82ef5e9d) — see the
+  Round 2 section below; every Round 1 outcome reproduced identically
 - **Prerequisite assertion commit:** `da96555a` (bf-4bww6c, 2026-08-01, landed in
   `crates/pdftract-core/tests/test_truncated_flate_recovery.rs:347-395`)
+
+## Round 2 — 2026-09-25 re-verification and consolidation (pdftract-82ef5e9d)
+
+Dispatch chain this round (all at HEAD `48ac7db0` = origin/main; `git rev-list
+origin/main..HEAD` empty): **pdftract-c47fe3a3** (inspect) → **pdftract-e22f24e9**
+(focused test) → **pdftract-a7ad64ba** (regression + warnings) → **pdftract-82ef5e9d**
+(this consolidation). Every outcome below reproduces Round 1 byte-identically —
+nothing on this chain's surface drifted between `40d23bd3` and `48ac7db0`.
+
+### Consolidated sibling results
+
+- **Inspection (pdftract-c47fe3a3).** Integration target
+  `crates/pdftract-core/tests/test_truncated_flate_recovery.rs`, cargo target
+  `test_truncated_flate_recovery`, focused test `test_truncated_flate_emits_stream_decode_error`;
+  exact form: `cargo test -p pdftract-core --test test_truncated_flate_recovery
+  test_truncated_flate_emits_stream_decode_error -- --exact`. Fixture
+  `tests/fixtures/malformed/truncated-flate.pdf` (588 B, sha256
+  `5b866a7b53a65583354490367968b187c5f1a98334c0317b6e3909b188c4179b` — re-verified
+  this round). The sidecar `tests/error_recovery/fixtures/truncated_mid_stream.expected_diagnostics.json`
+  (min_count 1, partial output, no panic) documents the same contract but is **not
+  loaded** by this integration test. Assertion semantics: `extract_pdf` with default
+  options → `ExtractionResult.metadata.diagnostics` (`Vec<String>`); the test passes
+  iff any entry `.contains("STREAM_DECODE_ERROR")`; it fails via `assert!` ("Expected
+  STREAM_DECODE_ERROR diagnostic not found. Got N diagnostics: […]") or earlier at the
+  `.expect` if extraction errors. Neighbor `test_truncated_flate_emits_diagnostics`
+  is a scaffold parse/no-error check and asserts no diagnostics.
+- **Focused test (pdftract-e22f24e9).** `cargo test -p pdftract-core --test
+  test_truncated_flate_recovery test_truncated_flate_emits_stream_decode_error --
+  --nocapture` → **exit 101**; 1 ran / 8 filtered out; output `✓ extract_pdf()
+  succeeded`, `Page count: 1`, `Total diagnostics: 0`, panic at
+  `test_truncated_flate_recovery.rs:387`.
+- **Regression + warnings (pdftract-a7ad64ba).** Working-tree full-target run:
+  9 ran, 8 passed, 1 failed (the assertion test), exit 101. `cargo check -p
+  pdftract-core --tests` → exit 0 with pre-existing warnings only (74 from the
+  pdftract-core lib at build time plus the build-script `glyph-shapes.json`
+  missing/empty-database note); none from the affected test file. Clean extraction
+  `/tmp/tmp.8bb0pnEg8l` (retained): `cargo build --all-targets` exit 0; repository-default
+  `cargo test` exit 101 (353 passed / 9 pre-existing pdftract-cli unit failures);
+  affected target exit 101 with the same 8-pass/1-fail shape; `git rev-list
+  origin/main..HEAD` empty; orphan-process check empty.
+
+### Independent re-derivation at HEAD `48ac7db0` (this dispatch)
+
+Clean `git archive HEAD` extraction `/var/tmp/82ef5e9d-head-EpIw` (retained — the
+bare DoD `cargo test` exits 101 on pre-existing failures). All runs
+`timeout --kill-after=30s 600s`-wrapped.
+
+| # | Command | Result | Exit |
+|---|---------|--------|------|
+| R1 | `cargo build --all-targets` | Finished dev profile, 1m20s | 0 |
+| R2 | `cargo test` (repository-default DoD) | Halts at `pdftract-cli --lib`: **354 passed / 8 failed** — `inspect::api` SVG ×2, `inspect::render::test_extract_columns_from_spans`, `pages` ×2, `url` ×3 — same pre-existing set Round 1 recorded (then 352/9); fail-fast never reaches `pdftract-core`, covered per-target below | 101 |
+| R3 | focused `test_truncated_flate_emits_stream_decode_error -- --nocapture` | `✓ extract_pdf() succeeded`, `Page count: 1`, `Total diagnostics: 0`, panic at `:387` — identical to both siblings' runs | 101 |
+| R4 | full `--test test_truncated_flate_recovery` | 8 passed / 1 failed (assertion test only) | 101 |
+| R5 | `cargo check -p pdftract-core --tests` | 287 `warning:` lines, all pre-existing tree-wide (unused imports/variables, `glyph-shapes.json` build-script note); **zero** name `truncated_flate` | 0 |
+| R6 | `cargo test -p pdftract-core --lib parser::stream` | 171 passed / 0 failed (3513 filtered) | 0 |
+| R7 | `cargo test -p pdftract-core --lib decoder::` | 23 passed / 0 failed (3661 filtered) | 0 |
+| R8 | `--test stream_decoder_fixtures` | `test_each_filter_exercised` ok; `test_all_stream_decoder_fixtures` FAILED with the same 4 pre-existing mismatches: `flate_png_pred15_all_six` (48 B vs 48 B), `lzw_early_change_0/1` (10 B vs 0 B), `filter_array_a85_then_flate` (46 B vs 0 B); `flate_truncated` itself passes | 101 |
+
+### Round-2 child-bead ledger
+
+| Bead | Commit | Contribution |
+|---|---|---|
+| pdftract-c47fe3a3 (inspect) | none (verification-only) | Target/test/fixture identification, sidecar relationship, canonical naming, assertion semantics; clean-extraction observation of the :387 panic. |
+| pdftract-e22f24e9 (focused test) | none (verification-only) | Filtered run exit 101 with `Total diagnostics: 0` — confirms the assert is reached and fails on emptiness, not on extraction error. |
+| pdftract-a7ad64ba (regression + warnings) | none (verification-only) | Full-target 8/1, `cargo check` 0 with pre-existing-warning attribution, clean-extraction DoD record, upstream-current + orphan checks. |
+| pdftract-82ef5e9d (this note) | this commit | Consolidation + independent re-derivation of every command at `48ac7db0`; fixture sha re-verified. |
+
+### Verdict delta vs Round 1
+
+**None.** All five parent (bf-hyhjnl) criteria resolve exactly as the Round 1 table
+below records: assertion test FAIL at HEAD is a stable product gap
+(`decode_stream` discards `DecodeResult.diagnostics`; only `DiagCode::StreamDecodeError`
+emitters are `parser/objstm.rs:97` and `parser/xref.rs:1885`, neither on this
+classic-xref fixture's path); no chain-caused regressions (R4/R6/R7 green elsewhere in
+the suite, R8 mismatches pre-existing and unchanged); compiles cleanly (R1/R5);
+canonical name `STREAM_DECODE_ERROR` (assertion block re-read this round).
+
+### Limitations
+
+- The repository-default DoD (`cargo test`) cannot pass at HEAD: fail-fast stops at
+  8 pre-existing pdftract-cli unit failures (R2) unrelated to this chain. This is a
+  standing condition of HEAD, not of this round; per-target runs R3–R8 cover the
+  affected surface.
+- The focused assertion test itself cannot pass at HEAD for the product-gap reason
+  above; wiring the diagnostic through (Round 1 follow-up #1) is out of scope for a
+  documentation bead.
+- The shared working tree carries unrelated drift from other workers (including a
+  tuple-binding rename in the target test file); every run consolidated here was
+  executed in a pristine extraction, so none of it affects these results.
+
+## Round 1 — 2026-09-24 original verification (pdftract-9356414f)
 
 ## Executive summary
 
