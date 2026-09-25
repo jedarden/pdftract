@@ -21,9 +21,10 @@ fn tesseract_available() -> bool {
 
         std::panic::catch_unwind(|| {
             let opts = TessOpts::default();
-            let _state = borrow_or_init(&opts);
+            borrow_or_init(&opts)
         })
-        .is_ok()
+        .map(|result| result.is_ok())
+        .unwrap_or(false)
     }
 
     #[cfg(not(feature = "ocr"))]
@@ -195,10 +196,13 @@ fn test_wer_threshold_validation() {
         "Perfect match should pass 2% threshold"
     );
 
-    // With one substitution in 10 words
+    // With one substitution in 8 words
     let ocr_one_sub = "Lorem ipsum dolor sit amet consectetur adipiscing elix";
     let wer = calculate_wer(ocr_one_sub, clean_text);
-    assert!(wer >= 0.09 && wer <= 0.11, "One sub in 10 words = 10% WER");
+    assert!(
+        (wer - 0.125).abs() < 0.01,
+        "One sub in 8 words = 12.5% WER, got {wer}"
+    );
 }
 
 /// Performance test: Verify 10-page fixture can be processed in reasonable time.
@@ -268,7 +272,7 @@ fn test_full_page_coordinate_conversion() {
 #[cfg(feature = "ocr")]
 fn test_cell_coordinate_conversion() {
     use image::{GrayImage, ImageBuffer, Luma};
-    use pdftract_core::ocr::run_tesseract_on_cell;
+    use pdftract_core::ocr::{run_tesseract_on_cell, TessOpts};
 
     if !tesseract_available() {
         println!("Skipping: Tesseract not available");
