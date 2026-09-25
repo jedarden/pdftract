@@ -125,6 +125,20 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
             window_size
         );
 
+        // Leptonica needs at least 2 * whsize + 3 pixels in each dimension.
+        // Keep tiny images on a deterministic binary fallback so the OCR path
+        // remains total even when the requested local-statistics window cannot
+        // fit.
+        let whsize = window_size.max(2);
+        let required_dimension = whsize.saturating_mul(2).saturating_add(3);
+        if image.width().min(image.height()) < required_dimension {
+            let mut binary = image.clone();
+            for pixel in binary.pixels_mut() {
+                pixel[0] = if pixel[0] < 128 { 0 } else { 255 };
+            }
+            return binary;
+        }
+
         // Diagnostics recorded when a recoverable leptonica conversion fails.
         //
         // Per the no-panic error model (plan.md §Error model and the Anti-Patterns
@@ -166,9 +180,9 @@ pub fn sauvola_binarize(image: &GrayImage, window_size: u32, k: f32) -> GrayImag
         let status = unsafe {
             pixSauvolaBinarize(
                 pix,
-                window_size as l_int32,
+                whsize as l_int32,
                 k as l_float32,
-                0,
+                1,
                 &mut mean_pix,
                 &mut stddev_pix,
                 &mut threshold_pix,
