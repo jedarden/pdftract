@@ -561,9 +561,8 @@ impl Tool for ExtractTool {
             if let Err(reason) = validate_url_no_ssrf(&tool_args.path) {
                 return Err(ErrorObject::server_error(
                     ERROR_SSRF_BLOCKED,
-                    format!("URL blocked: {}", reason),
-                )
-                .with_data(json!({"code": CODE_SSRF_BLOCKED})));
+                    format!("URL blocked: {}", reason)
+                ).with_data(json!({"code": CODE_SSRF_BLOCKED})));
             }
 
             // URL passed SSRF checks, but remote extraction is not yet implemented
