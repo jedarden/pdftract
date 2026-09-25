@@ -228,6 +228,18 @@ cd crates/pdftract-py
 pip install -e .
 ```
 
+## Focused Search Binding Test
+
+Run the compiled-binding smoke test with one command:
+
+```bash
+./crates/pdftract-py/scripts/test_search_binding.sh
+```
+
+The command builds the PyO3 extension in place and then runs the focused test
+against the checked-in search fixture. It deliberately requires the native
+binding, so it cannot silently exercise the CLI fallback.
+
 ## Platform Support
 
 | Platform | Status |
