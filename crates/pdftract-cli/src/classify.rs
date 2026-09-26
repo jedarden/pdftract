@@ -8,7 +8,11 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 // The profiles feature must be enabled for classification
-#[cfg(feature = "profiles")]
+#[cfg(any(feature = "profiles", feature = "mcp-classify"))]
+use pdftract_core::extract::extract_pdf;
+#[cfg(any(feature = "profiles", feature = "mcp-classify"))]
+use pdftract_core::options::ExtractionOptions;
+#[cfg(any(feature = "profiles", feature = "mcp-classify"))]
 use pdftract_core::profiles::{
     classify, extract_signals_from_results, load_builtins, FeatureSignals, ProfileType,
 };
@@ -40,7 +44,7 @@ pub struct ClassifyArgs {
 }
 
 /// Run classification on a PDF file.
-#[cfg(feature = "profiles")]
+#[cfg(any(feature = "profiles", feature = "mcp-classify"))]
 pub fn run_classify(args: ClassifyArgs) -> Result<ClassificationOutput> {
     // Validate input file exists
     if !args.input.exists() {
@@ -119,7 +123,7 @@ pub fn run_classify(args: ClassifyArgs) -> Result<ClassificationOutput> {
 }
 
 /// Run classification on a PDF file (without profiles feature).
-#[cfg(not(feature = "profiles"))]
+#[cfg(not(any(feature = "profiles", feature = "mcp-classify")))]
 pub fn run_classify(_args: ClassifyArgs) -> Result<ClassificationOutput> {
     anyhow::bail!("Classification requires the 'profiles' feature to be enabled. Build pdftract with: --features profiles")
 }
@@ -134,7 +138,7 @@ pub fn format_json(output: &ClassificationOutput, pretty: bool) -> String {
 }
 
 /// Convert ProfileType to string for JSON output.
-#[cfg(feature = "profiles")]
+#[cfg(any(feature = "profiles", feature = "mcp-classify"))]
 fn profile_type_to_string(profile_type: ProfileType) -> String {
     match profile_type {
         ProfileType::Invoice => "invoice".to_string(),
@@ -187,7 +191,7 @@ fn canonicalize_profiles_dir(dir: &Path) -> Result<PathBuf> {
 ///
 /// If the path is a directory, loads all *.yaml files from it.
 /// If the path is a file, loads just that file.
-#[cfg(feature = "profiles")]
+#[cfg(any(feature = "profiles", feature = "mcp-classify"))]
 fn load_custom_profiles(dir: &Path) -> Result<Vec<pdftract_core::profiles::Profile>> {
     use pdftract_core::profiles::ProfileLoadError;
 
