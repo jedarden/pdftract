@@ -154,6 +154,26 @@ structured object shape:
 {"frame":"footer","extraction_quality":{"overall_quality":"medium","ocr_fraction":0.0},"errors":[{"code":"STREAM_DECODE_ERROR","message":"zlib stream truncated mid-inflation","severity":"warning","page_index":3,"location":{"object_number":12,"generation_number":0},"hint":"Partial output returned for this stream; consider re-saving the PDF through a normalising tool"}]}
 ```
 
+## Migration and compatibility
+
+For new machine-readable integrations, consume
+`metadata.diagnostics_detailed` or the structured `errors` array. Match on
+`code` and `severity`; use `page_index`, `location`, and `hint` when present,
+and tolerate their omission. Messages are for display and diagnostics, not a
+stable classification key.
+
+The legacy `metadata.diagnostics` string array remains supported for existing
+callers. It is not removed or rewritten as part of this contract. Each entry
+is the structured entry's `message` verbatim, preserving bytes, order, length,
+and duplicates; it intentionally has no code or context. A caller migrating
+incrementally can keep its existing string handling and pair each string with
+the structured entry at the same index.
+
+There is no legacy-field removal in this release. Any future deprecation or
+removal must be announced with a release-specific migration path; until then,
+the string array remains a supported compatibility projection while new code
+adopts the structured form.
+
 ## Accessing Error Information
 
 ### From Extraction Result
@@ -164,15 +184,17 @@ use std::path::Path;
 
 let result = extract_pdf(Path::new("test.pdf"), &Default::default())?;
 
-// Access the errors array
-let diagnostics = &result.metadata.diagnostics;
+// The structured array is canonical for machine-readable checks.
+let diagnostics = &result.metadata.diagnostics_detailed;
+// The message-only array remains available for legacy callers.
+let legacy_messages = &result.metadata.diagnostics;
 
 // Get error count
 let error_count = result.metadata.error_count;
 
 // Iterate through all diagnostics
 for diagnostic in diagnostics {
-    println!("{}", diagnostic);
+    println!("{}: {}", diagnostic.code, diagnostic.message);
 }
 ```
 

@@ -273,12 +273,13 @@ For large documents, the `--stream` flag activates NDJSON output: one JSON objec
 ## Error and Diagnostic Schema
 
 Every diagnostic event from the extraction pipeline is recorded as a
-structured object in the full JSON document's `errors` array and in the
-NDJSON footer's `errors` array. The same objects are available on the compact
-Rust result as `metadata.diagnostics_detailed`. Each entry has the canonical
-fields `code`, `message`, and `severity`, plus optional `page_index`,
-`location`, and `hint` fields. The optional fields are omitted from serialized
-output—not written as `null`—when their values are unknown or do not apply.
+structured `DiagnosticJson` object in the full JSON document's `errors` array
+and, after any synthetic page-failure records, in the NDJSON footer's
+`errors` array. The same catalog diagnostics are available on the compact Rust
+result as `metadata.diagnostics_detailed`. Each entry has the canonical fields
+`code`, `message`, and `severity`, plus optional `page_index`, `location`, and
+`hint` fields. The optional fields are omitted from serialized output—not
+written as `null`—when their values are unknown or do not apply.
 
 The compact result retains `metadata.diagnostics: Vec<String>` as a legacy
 compatibility path. Its entries are the corresponding diagnostic messages in
@@ -288,16 +289,17 @@ are namespaced by area: `FONT_*` for encoding failures, `OCR_*` for raster
 fallback events, `STRUCT_*` for structure tree problems, and `XREF_*` for
 cross-reference repairs. Integration developers can key on codes
 programmatically rather than parsing messages, which remain subject to wording
-changes between releases.
+changes between releases. `metadata.diagnostics` is the retained message-only
+compatibility projection; its entries mirror `diagnostics_detailed` by index.
 
 ### Error Entry Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `code` | string | Stable string identifier (e.g., `"FONT_CMAP_MISSING"`) |
+| `code` | string | Stable `SCREAMING_SNAKE_CASE` catalog identifier (e.g., `"FONT_INVALID_CMAP"`) |
 | `message` | string | Human-readable description |
 | `page_index` | integer, omitted when absent | Page index where error occurred |
-| `severity` | string | One of `"fatal"`, `"error"`, `"warning"`, `"info"` |
+| `severity` | string | One of `"info"`, `"warning"`, `"error"`, `"fatal"`, derived from the code |
 | `location` | object, omitted when absent | PDF object reference with `object_number` and `generation_number` |
 | `hint` | string, omitted when absent | Suggested action from the diagnostic code catalog |
 

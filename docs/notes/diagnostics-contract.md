@@ -4,10 +4,11 @@
 **Decided:** 2026-09-26, bead `pdftract-5928d4ce` (child of `pdftract-d79310ab`).
 **Inventory update:** 2026-09-26, bead `pdftract-1702243e` (documentation and
 inventory only; no emitter or serialization implementation changes).
-**Supersedes:** the contradiction between `docs/integrations/diagnostics-codes.md`
-(structured objects) and `docs/errors-array-format.md` (string array) as
-originally shipped; both guides now describe the contract below and must
-continue to agree with it.
+**Supersedes:** the earlier documentation mismatch between
+`docs/integrations/diagnostics-codes.md` (structured objects) and
+`docs/errors-array-format.md` (string array) as originally shipped; both
+guides now describe the same canonical structured surface plus retained
+legacy projection and must continue to agree with it.
 
 This document is the single decision record for what a pdftract diagnostic
 *is*. The enforcement artifacts (types, tests, integration guides) are listed
@@ -39,8 +40,8 @@ Alternatives considered and rejected:
   (`"CODE: message (byte offset N)"`). Rejected: that is `Diagnostic`'s
   `Display` form, which is lossy and unparseable in general (codes and
   offsets inside human text); every downstream consumer would have to
-  substring-guess. This was the historical accident the contradiction came
-  from; freezing it would make it permanent.
+  substring-guess. This was the historical accident behind the documentation
+  mismatch; freezing it would make that ambiguity permanent.
 
 The decision is already implemented and pinned at HEAD; the remaining parent
 scope (`pdftract-0f67a34a`, `pdftract-b4b36e15`, `pdftract-b2506ab5`) is
@@ -241,10 +242,8 @@ Known gaps and hazards for the remaining parent scope (beads
 4. **`error_count` semantics.** `ExtractionMetadata.error_count` counts
    **failed pages** (incremented in `extract.rs` on per-page failure), not
    error/fatal diagnostics. `docs/errors-array-format.md` "Pattern 6"
-   currently asserts otherwise — the doc alignment bead
-   (`pdftract-b2506ab5`) must fix the pattern to match the implementation
-   (or the field be renamed/deprecated explicitly); the contract here
-   records the implemented behavior as intended.
+   records this failed-page behavior; keep that example aligned with the
+   implementation if the field changes.
 5. **Hint population.** Hints come from the catalog policy
    (`suggested_action`), not from emission sites. Every catalog entry
    currently defines one, so structured diagnostics carry `hint` today, but

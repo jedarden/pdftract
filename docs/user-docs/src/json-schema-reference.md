@@ -39,7 +39,7 @@ The `metadata` object contains extraction-level information:
   "block_count": 156,
   "error_count": 0,
   "receipts_mode": "off",
-  "diagnostics": ["STRUCT_INCOMPLETE_COVERAGE: Page 3 StructTree coverage is 54.0% (12/26 MCIDs claimed); below 80% threshold, falling back to XY-cut"],
+  "diagnostics": ["Page 3 StructTree coverage is 54.0% (12/26 MCIDs claimed); below 80% threshold, falling back to XY-cut"],
   "diagnostics_detailed": [
     {
       "code": "STRUCT_INCOMPLETE_COVERAGE",
@@ -362,8 +362,10 @@ Diagnostics appear in two parallel shapes and three output surfaces:
   surface defined by `pdftract_core::diagnostics_compat`).
 - **Structured form** — `metadata.diagnostics_detailed` and the top-level
   `errors` array: objects of the shape below. The two arrays mirror each other
-  one-to-one (same length and order). In NDJSON streaming output the
-  footer frame's `errors` array carries the same objects.
+  one-to-one (same length and order). In NDJSON streaming output the footer
+  frame's `errors` array contains synthetic `page_extraction_error` records
+  for failed pages first, followed by the same document-level objects.
+  `page_extraction_error` is a streaming-only label, not a catalog code.
 
 ```json
 {
@@ -384,7 +386,7 @@ Example of the same diagnostic in both shapes:
 ```json
 {
   "diagnostics": [
-    "STREAM_DECODE_ERROR: zlib stream truncated mid-inflation (byte offset 4096) [12 0 R]"
+    "zlib stream truncated mid-inflation"
   ],
   "diagnostics_detailed": [
     {

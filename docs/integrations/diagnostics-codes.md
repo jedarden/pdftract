@@ -78,6 +78,29 @@ its `errors` array:
 {"frame":"footer","extraction_quality":{"overall_quality":"medium","ocr_fraction":0.0},"errors":[{"code":"STREAM_DECODE_ERROR","message":"zlib stream truncated mid-inflation","severity":"warning","page_index":3,"location":{"object_number":12,"generation_number":0},"hint":"Partial output returned for this stream; consider re-saving the PDF through a normalising tool"}]}
 ```
 
+## Migration and compatibility
+
+New integrations should read the structured surface: use
+`metadata.diagnostics_detailed` for a compact extraction result, the full
+JSON document's top-level `errors`, or the NDJSON footer's `errors`. Match on
+`code` and `severity`, and use `page_index`, `location`, and `hint` when they
+are present. Do not parse human-readable messages or `Diagnostic`'s debug
+`Display` form as a substitute for the structured fields.
+
+Existing integrations may continue reading `metadata.diagnostics`. That field
+is retained as a compatibility surface, not removed or changed by this
+contract: each entry is still the corresponding structured `message` verbatim,
+with the same order, length, and duplicates. During migration, pair the two
+metadata arrays by index when an application needs both the legacy message
+and its structured code or context. The legacy array does not carry a code,
+severity, page, object location, or hint.
+
+This is a compatibility migration, not a legacy-field removal. If a future
+release deprecates or removes the string array, it must announce that change
+with a release-specific migration path; until then, callers may rely on the
+byte-preserving legacy projection while moving new code to the structured
+surface.
+
 ## Code Categories
 
 ### STRUCT_* — PDF Structure Errors
