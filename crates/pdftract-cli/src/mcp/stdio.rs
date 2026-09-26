@@ -13,13 +13,13 @@
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Request, Response};
 use crate::mcp::tools;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::json;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Stdin, Stdout, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Stdout, Write};
 use std::panic::Location;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 /// Global flag indicating whether we should keep running.
@@ -32,6 +32,17 @@ static SHOULD_RUN: AtomicBool = AtomicBool::new(true);
 /// This is the ONLY legitimate way to write to stdout in stdio mode.
 /// All other code paths must use stderr for logging.
 static STDOUT: Mutex<Option<BufWriter<Stdout>>> = Mutex::new(None);
+
+/// Wire framing used by the peer for stdio messages.
+///
+/// The MCP stdio transport uses one JSON-RPC message per line. Older
+/// pdftract clients used the LSP `Content-Length` envelope, so retain support
+/// for both formats and answer in the format selected by the first request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WireFraming {
+    Ndjson,
+    Lsp,
+}
 
 /// Initialize the stdout writer.
 ///
@@ -61,28 +72,35 @@ fn init_stdout() {
 /// CRITICAL: The JSON body is written WITHOUT a trailing newline.
 /// Adding any extra bytes after the JSON body breaks the framing.
 fn write_response(response: &Response) -> Result<()> {
-    let json = serde_json::to_string(response).context("Failed to serialize response")?;
+    write_response_with_framing(response, WireFraming::Lsp)
+}
 
-    let content_length = json.len();
+/// Write a response using the peer's stdio framing.
+fn write_response_with_framing(response: &Response, framing: WireFraming) -> Result<()> {
+    let json = serde_json::to_string(response).context("Failed to serialize response")?;
 
     let mut stdout_guard = STDOUT.lock().unwrap();
     let stdout = stdout_guard
         .as_mut()
         .ok_or_else(|| anyhow!("stdout not initialized"))?;
 
-    // Write headers with \r\n line terminators (LSP spec)
-    //
-    // Note: We use write! (not writeln!) for the header line to avoid
-    // double newlines. We manually add \r\n for each header line.
-    write!(stdout, "Content-Length: {content_length}\r\n")?;
-    write!(stdout, "\r\n")?;
+    match framing {
+        WireFraming::Ndjson => {
+            // MCP's stdio transport is newline-delimited JSON. The newline is
+            // the message delimiter and must be emitted exactly once.
+            writeln!(stdout, "{json}")?;
+        }
+        WireFraming::Lsp => {
+            let content_length = json.len();
 
-    // Write the JSON body WITHOUT a trailing newline
-    //
-    // CRITICAL for INV-9 compliance: Any extra byte after the JSON body
-    // (including a newline) breaks the LSP framing format and will cause
-    // the client to fail parsing the response.
-    write!(stdout, "{json}")?;
+            // Write headers with \r\n line terminators (LSP spec).
+            write!(stdout, "Content-Length: {content_length}\r\n")?;
+            write!(stdout, "\r\n")?;
+
+            // LSP bodies do not carry a trailing newline.
+            write!(stdout, "{json}")?;
+        }
+    }
 
     // Flush immediately to ensure the client receives the response
     stdout.flush().context("Failed to flush stdout")?;
@@ -168,11 +186,10 @@ fn setup_signal_handlers() {
 
 /// Read a single JSON-RPC message from stdin.
 ///
-/// This implements the LSP-style framing:
-/// 1. Read headers line-by-line until an empty line
-/// 2. Parse Content-Length header
-/// 3. Read exactly Content-Length bytes
-/// 4. Parse as JSON
+/// This accepts both stdio framings used by MCP clients:
+/// - newline-delimited JSON, as specified by the MCP stdio transport;
+/// - the legacy LSP-style `Content-Length` envelope used by older pdftract
+///   clients.
 ///
 /// Returns None on EOF (graceful shutdown).
 ///
@@ -182,8 +199,29 @@ fn setup_signal_handlers() {
 /// - If Content-Length value is invalid
 /// - If message body is shorter than Content-Length (unexpected EOF)
 /// - If message body cannot be parsed as JSON-RPC
-fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
+fn read_message<R: BufRead>(stdin: &mut R) -> Result<Option<(Request, WireFraming)>> {
+    // Read the first line separately so a standard MCP NDJSON message can be
+    // recognized without waiting for an LSP header terminator.
+    let mut first_line = String::new();
+    let bytes_read = stdin
+        .read_line(&mut first_line)
+        .context("Failed to read message line")?;
+
+    if bytes_read == 0 {
+        return Ok(None);
+    }
+
+    let first_line = first_line.trim_end_matches(|c| c == '\r' || c == '\n');
+    if first_line.trim_start().starts_with('{') || first_line.trim_start().starts_with('[') {
+        let request = parse_json_message(first_line.as_bytes())?;
+        return Ok(Some((request, WireFraming::Ndjson)));
+    }
+
     let mut content_length: Option<usize> = None;
+
+    // The first line belongs to the LSP header section. Parse it before
+    // reading any additional headers.
+    parse_content_length_header(first_line, &mut content_length)?;
 
     // Read headers until empty line
     loop {
@@ -204,15 +242,7 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
             break;
         }
 
-        // Parse Content-Length header
-        if let Some(value) = line.strip_prefix("Content-Length:") {
-            let value = value.trim();
-            content_length = Some(
-                value
-                    .parse::<usize>()
-                    .with_context(|| format!("Invalid Content-Length: {value}"))?,
-            );
-        }
+        parse_content_length_header(line, &mut content_length)?;
         // Ignore other headers (we don't need Content-Type for now)
     }
 
@@ -236,6 +266,25 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
         }
     }
 
+    let request = parse_json_message(&buffer)?;
+    Ok(Some((request, WireFraming::Lsp)))
+}
+
+/// Parse a `Content-Length` header, ignoring other LSP headers.
+fn parse_content_length_header(line: &str, content_length: &mut Option<usize>) -> Result<()> {
+    if let Some(value) = line.strip_prefix("Content-Length:") {
+        let value = value.trim();
+        *content_length = Some(
+            value
+                .parse::<usize>()
+                .with_context(|| format!("Invalid Content-Length: {value}"))?,
+        );
+    }
+    Ok(())
+}
+
+/// Parse one JSON-RPC message, rejecting unsupported batches.
+fn parse_json_message(buffer: &[u8]) -> Result<Request> {
     // Parse as JSON-RPC BatchMessage (handles both single requests and batches)
     let batch: BatchMessage =
         serde_json::from_slice(&buffer).context("Failed to parse JSON-RPC request")?;
@@ -253,7 +302,7 @@ fn read_message(stdin: &mut BufReader<Stdin>) -> Result<Option<Request>> {
         }
     };
 
-    Ok(Some(request))
+    Ok(request)
 }
 
 /// Handle a JSON-RPC request and return a response.
@@ -454,7 +503,7 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
     // Main request loop
     while SHOULD_RUN.load(Ordering::SeqCst) {
         match read_message(&mut stdin) {
-            Ok(Some(request)) => {
+            Ok(Some((request, framing))) => {
                 // Handle the request
                 let is_notification = request.is_notification();
                 let response = handle_request(request, &registry, root, _audit_writer.as_ref());
@@ -462,7 +511,7 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
                 // JSON-RPC notifications, including notifications/initialized,
                 // must not produce a response or even an error envelope.
                 if !is_notification {
-                    if let Err(e) = write_response(&response) {
+                    if let Err(e) = write_response_with_framing(&response, framing) {
                         eprintln!("Failed to write response: {}", e);
                         return Err(e);
                     }
@@ -509,6 +558,7 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     /// Test that write_response produces properly framed output.
     #[test]
@@ -525,6 +575,39 @@ mod tests {
 
         // Clean up
         *STDOUT.lock().unwrap() = None;
+    }
+
+    #[test]
+    fn test_read_ndjson_message() {
+        let mut input = Cursor::new(
+            br#"{"jsonrpc":"2.0","id":7,"method":"tools/list","params":{}}
+"#,
+        );
+
+        let (request, framing) = read_message(&mut input).unwrap().unwrap();
+
+        assert_eq!(request.method, "tools/list");
+        assert_eq!(request.request_id(), Id::Number(7));
+        assert_eq!(framing, WireFraming::Ndjson);
+    }
+
+    #[test]
+    fn test_read_lsp_message() {
+        let body = br#"{"jsonrpc":"2.0","id":8,"method":"tools/list"}"#;
+        let mut input = Cursor::new(
+            format!(
+                "Content-Length: {}\r\n\r\n{}",
+                body.len(),
+                String::from_utf8_lossy(body)
+            )
+            .into_bytes(),
+        );
+
+        let (request, framing) = read_message(&mut input).unwrap().unwrap();
+
+        assert_eq!(request.method, "tools/list");
+        assert_eq!(request.request_id(), Id::Number(8));
+        assert_eq!(framing, WireFraming::Lsp);
     }
 
     /// Test that unknown methods return method_not_found error.

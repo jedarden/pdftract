@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pdftract": {
+      "type": "stdio",
+      "command": "pdftract",
+      "args": [
+        "mcp",
+        "--stdio",
+        "--root",
+        "${PWD}"
+      ],
+      "env": {}
+    }
+  }
+}
