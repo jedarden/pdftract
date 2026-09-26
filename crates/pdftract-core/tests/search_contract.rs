@@ -7,6 +7,7 @@ use pdftract_core::sdk;
 use serde_json::{json, Value};
 
 const SEARCH_TOKEN: &str = "PYTHON_SEARCH_REGRESSION";
+const ABSENT_TOKEN: &str = "PYTHON_SEARCH_REGRESSION_ABSENT";
 const EXPECTED_BBOX: [f64; 4] = [72.0, 720.0, 244.8000030517578, 732.0];
 
 fn workspace_root() -> PathBuf {
@@ -55,6 +56,13 @@ fn sdk_search_preserves_public_match_shape() {
     assert!(
         x0 < x1 && y0 < y1,
         "bbox must have positive width and height"
+    );
+
+    let absent_matches = sdk::search(&fixture, ABSENT_TOKEN, false, false, false)
+        .expect("searching for an absent token should succeed");
+    assert!(
+        absent_matches.is_empty(),
+        "an absent token must not produce any matches"
     );
 
     let expected: Value = serde_json::from_str(
