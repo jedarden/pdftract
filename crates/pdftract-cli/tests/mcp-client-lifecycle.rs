@@ -5,7 +5,7 @@
 //!
 //! 1. **Spawn:** start `pdftract mcp --stdio` as a subprocess
 //! 2. **Handshake:** send `initialize`, receive capabilities
-//! 3. **List Tools:** call `tools/list` — the 7 implemented tools
+//! 3. **List Tools:** call `tools/list` — the seven advertised tools
 //! 4. **Call Tool:** invoke `tools/call` with a tool name and arguments
 //! 5. **Terminate:** close stdin; server exits cleanly on EOF
 //!
@@ -44,17 +44,26 @@ use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// The tools cataloged by the server (see `ToolRegistry::register_all` and
-/// the tools catalog). `tools/list` must return exactly these.
-const CATALOGED_TOOLS: [&str; 7] = [
-    "extract",
-    "extract_text",
-    "extract_markdown",
-    "search",
-    "get_metadata",
-    "hash",
-    "get_table",
-];
+/// Read the advertised subset of the ten-entry authoritative catalog.
+fn advertised_catalog_names() -> Vec<String> {
+    let catalog: Value = serde_json::from_str(include_str!(
+        "../../../docs/integrations/mcp-tool-catalog.json"
+    ))
+    .expect("authoritative MCP tool catalog must be valid JSON");
+
+    catalog["tools"]
+        .as_array()
+        .expect("authoritative MCP tool catalog must contain tools")
+        .iter()
+        .filter(|tool| tool["advertised"].as_bool() == Some(true))
+        .map(|tool| {
+            tool["name"]
+                .as_str()
+                .expect("advertised catalog entry must have a name")
+                .to_string()
+        })
+        .collect()
+}
 
 /// Upper bound on waiting for any single JSON-RPC response.
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
@@ -463,8 +472,9 @@ fn assert_data_reason<'a>(what: &str, response: &'a Value) -> &'a str {
 // Tests
 // ---------------------------------------------------------------------------
 
-/// The full documented lifecycle: spawn → initialize → tools/list (10
-/// cataloged tools) → tools/call on a fixture → clean exit on stdin EOF.
+/// The full documented lifecycle: spawn → initialize → tools/list (the
+/// advertised subset of the ten-entry catalog) → tools/call on a fixture →
+/// clean exit on stdin EOF.
 #[test]
 fn documented_lifecycle_initialize_list_call_exit_on_eof() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -507,7 +517,7 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
         env!("CARGO_PKG_VERSION")
     );
 
-    // Step 3: List tools — exactly the 7 implemented tools, each with the
+    // Step 3: List tools — exactly the advertised tools, each with the
     // fields clients need (name, description, inputSchema).
     let list = server.request("tools/list", json!({}));
     let list_result = assert_success(&list, "tools/list");
@@ -517,20 +527,21 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
             response = list
         )
     });
-    let mut names: Vec<&str> = tools
+    let mut names: Vec<String> = tools
         .iter()
         .map(|t| {
             t["name"]
                 .as_str()
                 .unwrap_or_else(|| panic!("tool without string name: {t}"))
+                .to_string()
         })
         .collect();
     names.sort_unstable();
-    let mut expected: Vec<&str> = CATALOGED_TOOLS.to_vec();
+    let mut expected = advertised_catalog_names();
     expected.sort_unstable();
     assert_eq!(
         names, expected,
-        "tools/list must return exactly the 7 implemented tools"
+        "tools/list must return exactly the advertised catalog entries"
     );
     for tool in tools {
         assert!(
@@ -774,8 +785,8 @@ fn parse_errors_get_error_responses_and_server_continues() {
         .unwrap_or_else(|| panic!("tools/list result.tools missing after parse errors: {list}"));
     assert_eq!(
         tools.len(),
-        CATALOGED_TOOLS.len(),
-        "tools/list must return the full catalog after parse errors: {list}"
+        advertised_catalog_names().len(),
+        "tools/list must return the advertised catalog after parse errors: {list}"
     );
 
     // One more abuse → recovery cycle, so resilience is not a one-frame

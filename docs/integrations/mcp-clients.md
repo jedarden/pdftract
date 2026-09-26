@@ -12,6 +12,37 @@ pdftract mcp --stdio
 
 Clients discover the binary by absolute path or via `PATH`. The server communicates over standard input/output using the JSON-RPC 2.0 protocol with LSP-style framing (Content-Length headers).
 
+## Authoritative tool catalog
+
+The [MCP tool catalog](./mcp-tool-catalog.json) is the authoritative list of
+the ten tool names registered by pdftract. Each entry records whether the tool
+is advertised by `tools/list`, whether it remains callable for compatibility,
+and its implementation status. Tool names are unprefixed.
+
+The current `tools/list` response contains the seven advertised names:
+
+`extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`,
+`hash`, and `get_table`.
+
+`classify`, `get_form_fields`, and `get_attachments` are registered
+compatibility stubs but are intentionally omitted from `tools/list`. Do not
+select them from a client; direct calls return `NOT_YET_IMPLEMENTED`. The
+advertised `search` and `get_table` entries can also return that in-band error
+until their implementation phases land, so clients should always handle an
+`isError: true` tool result.
+
+Every client should discover tools with `tools/list` after connecting and use
+the returned names rather than assuming that a client-specific prefix or a
+future catalog entry is available. To check the documentation against the
+actual wire response, run:
+
+```bash
+scripts/check-mcp-tool-catalog.py
+```
+
+Set `PDFTRACT_MCP_BIN=/path/to/pdftract` to check a prebuilt binary instead of
+starting one through Cargo.
+
 ## Claude Desktop
 
 ### Configuration File Locations
@@ -55,7 +86,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 1. Restart Claude Desktop
 2. Open a new conversation
 3. Ask: "List available tools"
-4. Verify that the pdftract tools appear. They are named without a prefix — the implemented catalog is `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`
+4. Verify that the seven advertised pdftract tools appear without a prefix: `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`
 
 **Verified against:** Claude Desktop 1.0.0 (2026-05)
 
@@ -86,7 +117,8 @@ If pdftract is not on your `PATH`, use the absolute path:
 1. Restart Cursor
 2. Open the MCP panel (Settings → MCP Servers)
 3. Verify `pdftract` appears as connected
-4. In chat, invoke a tool: `Extract text from document.pdf`
+4. Ask it to list tools and confirm the seven advertised names from the catalog
+5. In chat, invoke a tool: `Extract text from document.pdf`
 
 **Verified against:** Cursor 0.42.0 (2026-05)
 
@@ -113,9 +145,41 @@ mcpServers:
 1. Restart Continue
 2. Open the MCP Servers panel
 3. Verify `pdftract` shows as "Connected"
-4. Test with: "Use pdftract to extract text from a PDF"
+4. Ask it to list tools and confirm the seven advertised names from the catalog
+5. Test with: "Use pdftract to extract text from a PDF"
 
 **Verified against:** Continue 2024.11.0
+
+## Authentication and filesystem boundaries
+
+Stdio mode is a local child process and does not require a bearer token. For
+HTTP mode, use `--auth-token-file PATH` (recommended) or the
+`PDFTRACT_MCP_TOKEN` environment variable. The token is sent by clients as an
+`Authorization: Bearer <token>` header. Do not put a real token directly in a
+command line; the deprecated `--auth-token VALUE` option is rejected unless
+`PDFTRACT_INSECURE_CLI_TOKEN=1` is explicitly set.
+
+Non-loopback HTTP binds such as `0.0.0.0:8080` refuse to start without a
+token. Loopback binds (`127.0.0.1`, `127.0.0.0/8`, or `::1`) are exempt. A
+typical authenticated HTTP invocation is:
+
+```bash
+pdftract mcp --bind 127.0.0.1:8080 --auth-token-file ~/.pdftract-token
+```
+
+Use `--root DIR` to constrain local PDF access for either transport:
+
+```bash
+pdftract mcp --stdio --root /srv/pdftract/input
+```
+
+With a root, every local `path` argument must be relative to that directory.
+Absolute paths, `..` traversal, and symlinks that resolve outside the root are
+rejected with JSON-RPC `-32602` and a `PATH_ESCAPES_ROOT` or
+`ABSOLUTE_PATH_NOT_PERMITTED` data code. The root is canonicalized at startup,
+so it must already exist and be a directory. HTTPS URLs are not resolved under
+the local root; they still pass the server's remote/SSRF checks. Without
+`--root`, local paths run in trust-the-caller mode.
 
 ## Custom Integration (SDK Template)
 
@@ -123,7 +187,6 @@ For SDK builders, here's a generic stdio MCP client harness in Python using `mcp
 
 ```python
 import asyncio
-import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -141,7 +204,13 @@ async def main():
 
             # List available tools
             tools = await session.list_tools()
-            print("Available tools:", [t.name for t in tools.tools])
+            names = sorted(t.name for t in tools.tools)
+            expected = sorted([
+                "extract", "extract_text", "extract_markdown", "search",
+                "get_metadata", "hash", "get_table",
+            ])
+            assert names == expected, (names, expected)
+            print("Available tools:", names)
 
             # Call a tool (example: extract text)
             result = await session.call_tool(
@@ -156,9 +225,9 @@ if __name__ == "__main__":
 
 ### Connection Lifecycle
 
-1. **Spawn:** Start `pdftract mcp --stdio` as a subprocess
+1. **Spawn:** Start `pdftract mcp --stdio` as a subprocess (optionally add `--root DIR`)
 2. **Handshake:** Send `initialize` request, receive capabilities
-3. **List Tools:** Call `tools/list` to discover available tools
+3. **List Tools:** Call `tools/list`; compare the returned names with the advertised entries in [`mcp-tool-catalog.json`](./mcp-tool-catalog.json)
 4. **Call Tool:** Invoke `tools/call` with tool name and arguments
 5. **Terminate:** Close subprocess; server exits on stdin EOF
 
@@ -168,6 +237,7 @@ if __name__ == "__main__":
 - **Malformed requests:** JSON that parses but is not a valid single request — a bare string, an empty batch array, a wrong `jsonrpc` version, or a batch (batches are unsupported) — is likewise answered with an error envelope carrying `id: null`, whose `code` sits in the spec-reserved server-error range (`-32700` through `-32000`); the frame stream stays in sync and the connection remains usable
 - **Invalid params:** Server returns a `-32602` error whose `data` carries a non-empty `reason` string explaining the rejection (e.g. `tools/call` without a `name` field). `--root` boundary rejections instead carry a `code` string in `data` (`PATH_ESCAPES_ROOT`, `ABSOLUTE_PATH_NOT_PERMITTED`)
 - **Unknown tool:** Calling a tool that is not in the `tools/list` catalog returns `-32601` (method not found)
+- **Advertised stubs:** `search` and `get_table` are listed but may return an in-band `NOT_YET_IMPLEMENTED` result; the three compatibility stubs omitted from `tools/list` must not be selected by discovery-based clients
 - **Resilience:** None of the above kill the server — every error response still echoes the request `id`, the server keeps serving valid requests afterwards, and it still exits cleanly on stdin EOF. Only a genuinely broken pipe or a dead subprocess requires restarting.
 
 These behaviors are asserted end-to-end by the `mcp-client-lifecycle` integration test (`crates/pdftract-cli/tests/mcp-client-lifecycle.rs`).
@@ -182,7 +252,7 @@ When running multiple MCP clients, use HTTP mode instead of spawning multiple st
 pdftract mcp --bind 127.0.0.1:8080 --auth-token-file ~/.pdftract-token
 ```
 
-> **TH-03 Compliance:** Public binds (e.g., `0.0.0.0:8080`) **require** `--auth-token-file` or `PDFTRACT_MCP_TOKEN`. Loopback binds (`127.0.0.1`, `::1`) are exempt.
+> **TH-03 Compliance:** Public binds (e.g., `0.0.0.0:8080`) **require** `--auth-token-file` or `PDFTRACT_MCP_TOKEN`. Loopback binds (`127.0.0.1`, `::1`) are exempt. Configure the client to send the token as an `Authorization: Bearer` header.
 
 Configure clients to use HTTP endpoint (client-specific syntax varies; consult client documentation).
 
@@ -246,7 +316,10 @@ body='{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 printf 'Content-Length: %d\r\n\r\n%s' "${#body}" "$body" | pdftract mcp --stdio
 ```
 
-Expected response: a `Content-Length`-framed, valid JSON-RPC body with `result.tools` array.
+Expected response: a `Content-Length`-framed, valid JSON-RPC body with a
+`result.tools` array containing exactly the advertised names in the
+authoritative catalog. A quick automated check is
+`scripts/check-mcp-tool-catalog.py`.
 
 ## References
 

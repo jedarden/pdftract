@@ -1,0 +1,96 @@
+{
+  "catalog_version": 1,
+  "description": "The ten MCP tools registered by pdftract. tools/list exposes only entries whose advertised value is true.",
+  "tools": [
+    {
+      "name": "extract",
+      "advertised": true,
+      "callable": true,
+      "status": "implemented",
+      "description": "Extract text and structure from a PDF file, returning the full document JSON",
+      "required_arguments": ["path"],
+      "optional_arguments": ["pages", "ocr", "formats", "auto_profile", "password", "receipts"]
+    },
+    {
+      "name": "extract_text",
+      "advertised": true,
+      "callable": true,
+      "status": "implemented",
+      "description": "Extract plain text from a PDF file",
+      "required_arguments": ["path"],
+      "optional_arguments": ["pages", "ocr", "password"]
+    },
+    {
+      "name": "extract_markdown",
+      "advertised": true,
+      "callable": true,
+      "status": "implemented",
+      "description": "Extract text from a PDF file and format it as Markdown",
+      "required_arguments": ["path"],
+      "optional_arguments": ["pages", "ocr", "anchors", "password"]
+    },
+    {
+      "name": "search",
+      "advertised": true,
+      "callable": true,
+      "status": "stub",
+      "description": "Search for a regex pattern across the PDF, returning matches with page and bbox coordinates",
+      "required_arguments": ["path", "pattern"],
+      "optional_arguments": ["case_insensitive", "max_matches", "password"]
+    },
+    {
+      "name": "get_metadata",
+      "advertised": true,
+      "callable": true,
+      "status": "implemented",
+      "description": "Get PDF metadata, outline, and fingerprint without full extraction",
+      "required_arguments": ["path"],
+      "optional_arguments": ["password"]
+    },
+    {
+      "name": "hash",
+      "advertised": true,
+      "callable": true,
+      "status": "implemented",
+      "description": "Compute the structural fingerprint of a PDF",
+      "required_arguments": ["path"],
+      "optional_arguments": ["password"]
+    },
+    {
+      "name": "get_table",
+      "advertised": true,
+      "callable": true,
+      "status": "stub",
+      "description": "Extract a single table by page and table index",
+      "required_arguments": ["path", "page", "table_index"],
+      "optional_arguments": ["password"]
+    },
+    {
+      "name": "get_form_fields",
+      "advertised": false,
+      "callable": true,
+      "status": "compatibility_stub",
+      "description": "Extract AcroForm/XFA field values",
+      "required_arguments": ["path"],
+      "optional_arguments": ["password"]
+    },
+    {
+      "name": "get_attachments",
+      "advertised": false,
+      "callable": true,
+      "status": "compatibility_stub",
+      "description": "Extract embedded files from the PDF",
+      "required_arguments": ["path"],
+      "optional_arguments": ["include_data"]
+    },
+    {
+      "name": "classify",
+      "advertised": false,
+      "callable": true,
+      "status": "compatibility_stub",
+      "description": "Run the PDF classifier to categorize the document",
+      "required_arguments": ["path"],
+      "optional_arguments": []
+    }
+  ]
+}
