@@ -1,6 +1,6 @@
 # Errors Array Format and Test Integration Guide
 
-This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The structured diagnostic object is canonical; the string array is a message-only compatibility surface.
+This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The serialized `DiagnosticJson` object is canonical; the string array is a message-only compatibility surface. The complete code registry is maintained in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
 
 ## Overview
 
@@ -36,8 +36,8 @@ pub struct ExtractionMetadata {
     pub cache_age_seconds: Option<u64>,
     pub error_count: usize,              // Number of pages that failed to extract
     pub reading_order_algorithm: Option<String>,
-    pub diagnostics: Vec<String>,        // THE ERRORS ARRAY (legacy string form)
-    pub diagnostics_detailed: Vec<DiagnosticJson>, // THE SAME ERRORS, STRUCTURED
+    pub diagnostics: Vec<String>,        // message-only compatibility array
+    pub diagnostics_detailed: Vec<DiagnosticJson>, // canonical structured array
     pub profile_name: Option<String>,
     pub profile_version: Option<String>,
     pub profile_fields: Option<serde_json::Value>,
@@ -64,9 +64,12 @@ one-to-one (same length, same order, same diagnostics):
     **Prefer this form** for machine consumption.
 
 In the full JSON output (`schema_version` 1.0 document), the structured form is
-additionally the top-level `errors` array; in NDJSON streaming output the
-footer frame's `errors` array carries the same objects (page failures first,
-then document diagnostics).
+additionally the top-level `errors` array. In NDJSON streaming output, the
+footer frame's `errors` array is a union: it contains one synthetic
+`page_extraction_error` record per failed page first, followed by the same
+structured document diagnostics. The synthetic record is
+`{"code":"page_extraction_error","severity":"error","message":"..."}`;
+it is not a `DiagCode` and never appears in either metadata array.
 
 The compatibility guarantee for `metadata.diagnostics` is limited to the
 message bytes, emission order, length, and duplicates. Code, severity,
@@ -81,6 +84,10 @@ Empty-array behavior differs by surface:
   `errors` array are stable schema fields: **always present**, `[]` when
   nothing was emitted.
 - An NDJSON page frame carries `errors` only when that page failed.
+
+`metadata.error_count` is independent of all diagnostic severities: it is the
+number of pages whose `PageResult.error` is set. It is not the number of
+structured diagnostics with `severity` equal to `error` or `fatal`.
 
 ### String Format
 
@@ -117,11 +124,12 @@ output) holds one object per diagnostic, as documented in
 
 ```json
 {
-  "code": "PAGE_OUT_OF_RANGE",
-  "message": "page 12 exceeds document page count (10)",
-  "severity": "error",
-  "page_index": 11,
-  "hint": "Adjust the --pages argument to the actual document page count"
+  "code": "STREAM_DECODE_ERROR",
+  "message": "zlib stream truncated mid-inflation",
+  "severity": "warning",
+  "page_index": 3,
+  "location": {"object_number": 12, "generation_number": 0},
+  "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
 }
 ```
 
@@ -130,8 +138,8 @@ output) holds one object per diagnostic, as documented in
 | `code` | yes | Stable `SCREAMING_SNAKE_CASE` identifier |
 | `message` | yes | Human-readable description; the legacy string entry at the same index is exactly this text |
 | `severity` | yes | `info`, `warning`, `error`, or `fatal` — from the typed code, not a substring guess |
-| `page_index` | no | 0-based page the diagnostic applies to; omitted for document-level diagnostics |
-| `location` | no | `{"object_number": N, "generation_number": G}` when known |
+| `page_index` | no | Zero-based page index when the diagnostic is page-scoped; omitted for document-level diagnostics |
+| `location` | no | `{"object_number": u32, "generation_number": u16}` when an indirect object is known |
 | `hint` | no | Suggested action, from the code's catalog entry; omitted if the entry carries none (every catalog entry currently does) |
 
 Fields that do not apply — `page_index`, `location`, and `hint` — are
@@ -139,7 +147,8 @@ omitted, not `null`. Because `severity`, `page_index`, and `location` come
 from the typed diagnostic itself, prefer the structured form whenever a
 consumer needs more than a substring search.
 
-In NDJSON streaming output, the footer uses the same structured object shape:
+In NDJSON streaming output, a footer with no failed pages uses the same
+structured object shape:
 
 ```ndjson
 {"frame":"footer","extraction_quality":{"overall_quality":"medium","ocr_fraction":0.0},"errors":[{"code":"STREAM_DECODE_ERROR","message":"zlib stream truncated mid-inflation","severity":"warning","page_index":3,"location":{"object_number":12,"generation_number":0},"hint":"Partial output returned for this stream; consider re-saving the PDF through a normalising tool"}]}
@@ -151,8 +160,9 @@ In NDJSON streaming output, the footer uses the same structured object shape:
 
 ```rust
 use pdftract_core::extract::extract_pdf;
+use std::path::Path;
 
-let result = extract_pdf("test.pdf", &Default::default())?;
+let result = extract_pdf(Path::new("test.pdf"), &Default::default())?;
 
 // Access the errors array
 let diagnostics = &result.metadata.diagnostics;
@@ -267,7 +277,7 @@ for (s, d) in result.metadata.diagnostics.iter()
 ```rust
 #[test]
 fn test_clean_pdf_extracts_without_errors() {
-    let result = extract_pdf("tests/fixtures/clean.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/clean.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // Verify no diagnostics were emitted
@@ -287,7 +297,7 @@ fn test_clean_pdf_extracts_without_errors() {
 ```rust
 #[test]
 fn test_truncated_stream_emits_decode_error() {
-    let result = extract_pdf("tests/fixtures/truncated.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/truncated.pdf"), &Default::default())
         .expect("Extraction should succeed (with recovery)");
     
     // Check for STREAM_DECODE_ERROR diagnostic (by code, on the
@@ -308,7 +318,7 @@ fn test_truncated_stream_emits_decode_error() {
 ```rust
 #[test]
 fn test_malformed_pdf_emits_multiple_warnings() {
-    let result = extract_pdf("tests/fixtures/malformed.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/malformed.pdf"), &Default::default())
         .expect("Extraction should succeed (with recovery)");
     
     // Check for multiple expected diagnostics (by code, on the
@@ -337,7 +347,7 @@ fn test_malformed_pdf_emits_multiple_warnings() {
 ```rust
 #[test]
 fn test_pdf_with_unmapped_glyphs() {
-    let result = extract_pdf("tests/fixtures/custom-font.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/custom-font.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // Count unmapped glyph diagnostics
@@ -354,25 +364,27 @@ fn test_pdf_with_unmapped_glyphs() {
 }
 ```
 
-### Pattern 5: Verify Error Message Content
+### Pattern 5: Verify a Fatal Diagnostic Envelope
 
 ```rust
 #[test]
-fn test_encryption_error_message() {
-    let result = extract_pdf_encrypted("tests/fixtures/encrypted.pdf", None)
-        .expect("Should produce error result");
-    
-    // Find the encryption error diagnostic
-    let encryption_diag = result.metadata.diagnostics_detailed.iter()
-        .find(|d| d.code == "ENCRYPTION_UNSUPPORTED")
-        .expect("Expected ENCRYPTION_UNSUPPORTED diagnostic");
+fn test_encryption_diagnostic_envelope() {
+    use pdftract_core::diagnostics::{DiagCode, Diagnostic};
+    use pdftract_core::schema::DiagnosticJson;
 
-    // Verify message contains expected text
-    assert!(
-        encryption_diag.message.contains("no password supplied") ||
-        encryption_diag.message.contains("Unsupported encryption"),
-        "Encryption error message should mention password or unsupported algorithm"
+    // Fatal encryption failures may return Err from extract_pdf. When a
+    // typed diagnostic is available, its machine-readable envelope is still
+    // derived from registry policy, not from a formatted string.
+    let diagnostic = Diagnostic::with_static_no_offset(
+        DiagCode::EncryptionUnsupported,
+        "Unsupported encryption or no password supplied",
     );
+    let envelope = DiagnosticJson::from(&diagnostic);
+
+    assert_eq!(envelope.code, "ENCRYPTION_UNSUPPORTED");
+    assert_eq!(envelope.severity, "fatal");
+    assert_eq!(envelope.message, "Unsupported encryption or no password supplied");
+    assert!(envelope.hint.is_some());
 }
 ```
 
@@ -381,18 +393,18 @@ fn test_encryption_error_message() {
 ```rust
 #[test]
 fn test_partial_extraction_error_count() {
-    let result = extract_pdf("tests/fixtures/partial-corrupt.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/partial-corrupt.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
-    // Verify error_count field matches actual diagnostics
-    let actual_error_count = result.metadata.diagnostics_detailed.iter()
-        .filter(|d| d.severity == "error" || d.severity == "fatal")
+    // Verify error_count matches failed pages, not diagnostic severity.
+    let failed_page_count = result.pages.iter()
+        .filter(|page| page.error.is_some())
         .count();
     
     assert_eq!(
-        result.metadata.error_count as usize,
-        actual_error_count,
-        "error_count field should match number of ERROR/FATAL diagnostics"
+        result.metadata.error_count,
+        failed_page_count,
+        "error_count should match the number of pages with an extraction error"
     );
 }
 ```
@@ -402,7 +414,7 @@ fn test_partial_extraction_error_count() {
 ```rust
 #[test]
 fn test_extraction_has_no_fatal_errors() {
-    let result = extract_pdf("tests/fixtures/complex.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/complex.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // Ensure no fatal-level diagnostics were emitted (by typed severity,
@@ -423,7 +435,7 @@ fn test_extraction_has_no_fatal_errors() {
 ```rust
 #[test]
 fn test_specific_diagnostic_count() {
-    let result = extract_pdf("tests/fixtures/known-issues.pdf", &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/known-issues.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // If we know this PDF produces exactly 3 warnings
@@ -445,7 +457,7 @@ fn test_specific_diagnostic_count() {
 #[test]
 fn test_truncated_flate_stream_recovery() {
     let fixture_path = "tests/fixtures/malformed/truncated-flate.pdf";
-    let result = extract_pdf(fixture_path, &Default::default())
+    let result = extract_pdf(std::path::Path::new(fixture_path), &Default::default())
         .expect("Extraction should succeed with recovery");
     
     // Should have emitted a stream decode error (by code, on the
@@ -477,18 +489,11 @@ fn test_truncated_flate_stream_recovery() {
 #[test]
 fn test_encrypted_pdf_without_password() {
     let fixture_path = "tests/fixtures/encrypted/livecycle.pdf";
-    let result = extract_pdf_encrypted(fixture_path, None);
+    let result = extract_pdf(std::path::Path::new(fixture_path), &Default::default());
     
-    // Should fail with encryption error
+    // Fatal encryption failures are returned as Err by this extraction API;
+    // callers should not expect a successful result containing diagnostics.
     assert!(result.is_err(), "Should fail when encrypted PDF lacks password");
-    
-    // Check the error contains ENCRYPTION_UNSUPPORTED
-    if let Err(e) = result {
-        let error_str = e.to_string();
-        assert!(error_str.contains("ENCRYPTION_UNSUPPORTED") ||
-                error_str.contains("encryption"),
-                "Error should mention unsupported encryption: {}", error_str);
-    }
 }
 ```
 
@@ -498,7 +503,7 @@ fn test_encrypted_pdf_without_password() {
 #[test]
 fn test_custom_font_with_unmapped_glyphs() {
     let fixture_path = "tests/fixtures/fonts/custom-subset.pdf";
-    let result = extract_pdf(fixture_path, &Default::default())
+    let result = extract_pdf(std::path::Path::new(fixture_path), &Default::default())
         .expect("Extraction should succeed");
     
     // Should have FONT_GLYPH_UNMAPPED diagnostics
@@ -574,8 +579,8 @@ The errors array provides comprehensive visibility into the PDF extraction proce
 - **String form**: `result.metadata.diagnostics` — `Vec<String>`, each entry the diagnostic's message verbatim (compatibility surface; see `pdftract_core::diagnostics_compat`)
 - **Structured form**: `result.metadata.diagnostics_detailed` — `Vec<DiagnosticJson>` with `code` / `message` / `severity` / `page_index`? / `location`? / `hint`?; mirrors the string array one-to-one and is the top-level `errors` array of the full JSON output
 - **Access**: `result.metadata.diagnostics` and `result.metadata.diagnostics_detailed`
-- **Error Count**: `result.metadata.error_count`
+- **Failed-page Count**: `result.metadata.error_count` (the number of pages with `PageResult.error`, independent of diagnostic severity)
 - **Assertion Patterns**: Check for specific codes, count errors, verify messages, filter by typed severity, ensure recovery
-- **Categories**: STRUCT, STREAM, XREF, ENCRYPTION, PAGE, FONT, OCR, REMOTE, GSTATE, LAYOUT, MCP, CACHE, etc. — full catalog with severities and hints in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md)
+- **Categories and codes**: the complete registry, severities, phases, and catalog hints are in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md)
 
 This unified diagnostic system allows tests to verify that errors are properly detected, reported, and recovered from during PDF extraction.

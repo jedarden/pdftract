@@ -1,6 +1,6 @@
 # pdftract Diagnostic Codes
 
-This document catalogs all diagnostic codes emitted by pdftract during PDF extraction. The canonical machine-readable surface is the typed diagnostic object: each entry has a stable SCREAMING_SNAKE_CASE identifier, a severity level, and a catalog hint. The legacy string array remains available for compatibility.
+This document catalogs all diagnostic codes emitted by pdftract during PDF extraction. The canonical machine-readable surface is the serialized `DiagnosticJson` object (the in-process equivalent is `Diagnostic`): each entry has a stable `SCREAMING_SNAKE_CASE` identifier, a severity level, and a catalog hint. The legacy string array remains available for compatibility.
 
 ## Diagnostic Format
 
@@ -18,15 +18,17 @@ every optional field populated):
 }
 ```
 
-The `severity` value is one of `info`, `warning`, `error`, or `fatal`.
+The wire `severity` value is one of `info`, `warning`, `error`, or `fatal`.
 
 `code`, `message`, and `severity` are always present. `page_index`,
 `location`, and `hint` are **omitted, never serialized as `null`**, when they
 do not apply: `page_index` for document-level diagnostics, `location` when no
 object reference is known, and `hint` when the code's catalog entry carries
-no suggested action. Every catalog entry currently carries an action, so
-emitted diagnostics include a hint today — consumers should nonetheless
-tolerate its absence. These field rules and the severity enum are pinned by
+no suggested action. `page_index` is zero-based. `location`, when present, is
+`{"object_number": u32, "generation_number": u16}`. Every catalog entry
+currently carries an action, so emitted diagnostics include a hint today —
+consumers should nonetheless tolerate its absence. These field names,
+omission rules, and the severity enum are pinned by
 `crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
 
 ### Where structured diagnostics appear
@@ -35,8 +37,11 @@ tolerate its absence. These field rules and the severity enum are pinned by
    result's metadata. Mirrors `metadata.diagnostics` one-to-one.
 2. **`errors`** — the top-level array of the full JSON output, populated from
    `metadata.diagnostics_detailed`.
-3. **NDJSON footer frame `errors`** — document-level structured diagnostics,
-   appended after any per-page failure entries.
+3. **NDJSON footer frame `errors`** — a union array containing one synthetic
+   page-failure record per failed page, followed by the document-level
+   structured diagnostics. A page-failure record has the shape
+   `{"code":"page_extraction_error","severity":"error","message":"..."}`;
+   this lowercase code is a streaming-only label, not a catalog code.
 
 Empty-array behavior differs by surface: `metadata.diagnostics` and
 `metadata.diagnostics_detailed` are omitted entirely when there are no
@@ -45,6 +50,10 @@ footer's `errors` array are stable schema fields — always present, `[]` when
 nothing was emitted. An NDJSON page frame carries `errors` only when that
 page failed. See
 [`docs/errors-array-format.md`](../errors-array-format.md#location).
+
+`metadata.error_count` is separate from the diagnostic arrays: it counts
+pages whose `PageResult.error` is set, not diagnostics whose severity is
+`error` or `fatal`.
 
 The legacy string form is still emitted as `metadata.diagnostics` for
 existing callers: one plain string per diagnostic, in emission order, each
@@ -57,11 +66,13 @@ legacy entries carry no code, identify a diagnostic through
 (see [`docs/errors-array-format.md`](../errors-array-format.md)).
 
 The compatibility guarantee is intentionally narrow: legacy entries preserve
-message bytes, emission order, length, and duplicates. Code, severity, page,
-location, and hint are available only on the canonical structured entry; new
-diagnostic information is added there without changing the legacy strings.
+message bytes, emission order, length, and duplicates. Code, severity,
+page/location context, and hint are available only on the canonical
+structured entry; new diagnostic information is added there without changing
+the legacy strings.
 
-An NDJSON footer carries the same canonical objects in its `errors` array:
+An NDJSON footer with no failed pages carries the same canonical objects in
+its `errors` array:
 
 ```ndjson
 {"frame":"footer","extraction_quality":{"overall_quality":"medium","ocr_fraction":0.0},"errors":[{"code":"STREAM_DECODE_ERROR","message":"zlib stream truncated mid-inflation","severity":"warning","page_index":3,"location":{"object_number":12,"generation_number":0},"hint":"Partial output returned for this stream; consider re-saving the PDF through a normalising tool"}]}
