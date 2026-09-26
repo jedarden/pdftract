@@ -174,8 +174,9 @@ impl JpxDecoder {
     ///
     /// * `diagnostics` - Buffer to receive emitted diagnostics
     pub fn emit_invalid_magic_diagnostic(&self, diagnostics: &mut Vec<Diagnostic>) {
-        diagnostics.push(Diagnostic::with_static_no_offset(
+        diagnostics.push(Diagnostic::with_static(
             DiagCode::StreamInvalidJpx,
+            0,
             "JP2 box magic signature not found; raw J2K codestream (no JP2 wrapper) or corrupted data; data is passed through anyway",
         ));
     }

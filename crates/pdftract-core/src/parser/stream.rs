@@ -1267,19 +1267,20 @@ impl JpxStreamDecoder {
     ///
     /// This validates the JP2 signature at the start of the data and emits
     /// appropriate diagnostics for missing support or invalid magic.
-    fn validate_and_emit_diagnostics(input: &[u8], _params: Option<&PdfObject>) -> Vec<Diagnostic> {
-        let mut diagnostics = Vec::new();
+    fn emit_diagnostics(
+        input: &[u8],
+        _params: Option<&PdfObject>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
         let decoder = crate::decoder::jpx::JpxDecoder::new();
 
         // Emit OCR_JPX_UNSUPPORTED if no JPX support is available
-        decoder.emit_unsupported_diagnostic(&mut diagnostics);
+        decoder.emit_unsupported_diagnostic(diagnostics);
 
         // Validate JP2 box magic
         if !crate::decoder::jpx::JpxDecoder::validate_jp2_magic(input) {
-            decoder.emit_invalid_magic_diagnostic(&mut diagnostics);
+            decoder.emit_invalid_magic_diagnostic(diagnostics);
         }
-
-        diagnostics
     }
 }
 
@@ -1287,16 +1288,10 @@ impl StreamDecoder for JpxStreamDecoder {
     fn decode(
         &self,
         input: &[u8],
-        params: Option<&PdfObject>,
+        _params: Option<&PdfObject>,
         doc_counter: &mut u64,
         max_bytes: u64,
     ) -> Result<Vec<u8>, FilterError> {
-        // Validate JP2 magic and emit diagnostics
-        // Note: Diagnostics are currently dropped because StreamDecoder trait
-        // doesn't provide a way to return them. In a future change, we may
-        // extend the trait to accept a diagnostics buffer.
-        let _diagnostics = Self::validate_and_emit_diagnostics(input, params);
-
         // Pass through raw bytes unchanged, enforcing bomb limit
         let len = input.len() as u64;
         *doc_counter += len;
@@ -1306,6 +1301,18 @@ impl StreamDecoder for JpxStreamDecoder {
             return Ok(input[..remaining.min(len) as usize].to_vec());
         }
         Ok(input.to_vec())
+    }
+
+    fn decode_with_diagnostics(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Result<Vec<u8>, FilterError> {
+        Self::emit_diagnostics(input, params, diagnostics);
+        self.decode(input, params, doc_counter, max_bytes)
     }
 
     fn name(&self) -> &'static str {
@@ -1554,8 +1561,9 @@ impl DCTDecoder {
         let has_eoi = input.len() >= 2 && input[input.len() - 2..] == Self::JPEG_EOI;
 
         if !has_soi {
-            diagnostics.push(Diagnostic::with_static_no_offset(
+            diagnostics.push(Diagnostic::with_static(
                 DiagCode::StreamInvalidJpeg,
+                0,
                 "Missing SOI (Start Of Image) marker at start of JPEG data",
             ));
         }
@@ -1579,22 +1587,10 @@ impl StreamDecoder for DCTDecoder {
     fn decode(
         &self,
         input: &[u8],
-        params: Option<&PdfObject>,
+        _params: Option<&PdfObject>,
         doc_counter: &mut u64,
         max_bytes: u64,
     ) -> Result<Vec<u8>, FilterError> {
-        // Parse /ColorTransform from /DecodeParms (for downstream consumers)
-        let _color_transform = Self::parse_color_transform(params);
-
-        // Validate SOI/EOI markers (emit diagnostics if missing, but pass through anyway)
-        let mut diagnostics = Vec::new();
-        let (_has_soi, _has_eoi) = Self::validate_markers(input, &mut diagnostics);
-
-        // TODO: Store diagnostics somewhere for downstream consumers
-        // For now, we'll just drop them since the StreamDecoder trait doesn't
-        // provide a way to emit them. In a future change, we may extend the
-        // trait to accept a diagnostics buffer.
-
         // Pass through raw bytes unchanged, enforcing bomb limit
         let len = input.len() as u64;
         *doc_counter += len;
@@ -1604,6 +1600,25 @@ impl StreamDecoder for DCTDecoder {
             return Ok(input[..remaining.min(len) as usize].to_vec());
         }
         Ok(input.to_vec())
+    }
+
+    fn decode_with_diagnostics(
+        &self,
+        input: &[u8],
+        params: Option<&PdfObject>,
+        doc_counter: &mut u64,
+        max_bytes: u64,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Result<Vec<u8>, FilterError> {
+        // Parse /ColorTransform from /DecodeParms (for downstream consumers).
+        let _color_transform = Self::parse_color_transform(params);
+
+        // The extraction-facing entry point retains marker diagnostics rather
+        // than constructing a private buffer that the compatibility `decode`
+        // method cannot return.
+        Self::validate_markers(input, diagnostics);
+
+        self.decode(input, params, doc_counter, max_bytes)
     }
 
     fn name(&self) -> &'static str {
@@ -4007,48 +4022,6 @@ fn decode_stream_impl(
             }
         }
 
-        // Check for DCTDecode and emit diagnostics for missing SOI/EOI markers
-        if normalized_name == "DCTDecode" {
-            use crate::parser::stream::DCTDecoder;
-
-            // Validate SOI marker at start
-            let has_soi = current_bytes.len() >= 2 && &current_bytes[0..2] == &DCTDecoder::JPEG_SOI;
-            if !has_soi {
-                diagnostics.push(Diagnostic::with_static_no_offset(
-                    DiagCode::StreamInvalidJpeg,
-                    "Missing SOI (Start Of Image) marker at start of JPEG data",
-                ));
-            }
-
-            // Validate EOI marker at end
-            let has_eoi = current_bytes.len() >= 2
-                && &current_bytes[current_bytes.len() - 2..] == &DCTDecoder::JPEG_EOI;
-            if !has_eoi {
-                diagnostics.push(Diagnostic::with_dynamic(
-                    DiagCode::StreamInvalidJpeg,
-                    current_bytes.len().saturating_sub(2) as u64,
-                    format!(
-                        "Missing EOI (End Of Image) marker at end of JPEG data (length: {})",
-                        current_bytes.len()
-                    ),
-                ));
-            }
-        }
-
-        // Check for JPXDecode and emit diagnostics per EC-12
-        if normalized_name == "JPXDecode" {
-            use crate::decoder::jpx::JpxDecoder;
-
-            // Emit OCR_JPX_UNSUPPORTED if full-render AND libopenjp2 are unavailable
-            let decoder = JpxDecoder::new();
-            decoder.emit_unsupported_diagnostic(&mut diagnostics);
-
-            // Validate JP2 box magic and emit STREAM_INVALID_JPX if it doesn't match
-            if !JpxDecoder::validate_jp2_magic(&current_bytes) {
-                decoder.emit_invalid_magic_diagnostic(&mut diagnostics);
-            }
-        }
-
         match get_decoder(&normalized_name) {
             Some(decoder) => {
                 let counter_before = *doc_decompress_counter;
@@ -4349,6 +4322,54 @@ mod integration_tests {
         assert_eq!(diagnostic.object_ref, Some(crate::diagnostics::ObjRef::new(19, 2)));
         assert_eq!(diagnostic.page_index, Some(4));
         assert_eq!(diagnostic.severity().to_string(), "warning");
+    }
+
+    #[test]
+    fn test_decode_stream_context_retains_decoder_diagnostics() {
+        let data = b"not-a-jpeg";
+        let source = MemorySource::new(data.to_vec());
+
+        let mut dict = IndexMap::new();
+        dict.insert("/Filter".into(), PdfObject::Name("DCTDecode".into()));
+        dict.insert("/Length".into(), PdfObject::Integer(data.len() as i64));
+        let stream = PdfStream::new(dict, 0, Some(data.len() as u64));
+
+        let mut counter = 0;
+        let result = decode_stream_with_context(
+            &stream,
+            &source,
+            &ExtractionOptions::default(),
+            &mut counter,
+            Some(ObjRef::new(23, 1)),
+            Some(6),
+        );
+
+        assert_eq!(result.bytes, data);
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == DiagCode::StreamInvalidJpeg)
+                .count(),
+            2
+        );
+        let soi = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.message.starts_with("Missing SOI"))
+            .expect("missing SOI diagnostic");
+        assert_eq!(soi.byte_offset, Some(0));
+        assert_eq!(soi.object_ref, Some(crate::diagnostics::ObjRef::new(23, 1)));
+        assert_eq!(soi.page_index, Some(6));
+
+        let eoi = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.message.starts_with("Missing EOI"))
+            .expect("missing EOI diagnostic");
+        assert_eq!(eoi.byte_offset, Some(data.len().saturating_sub(2) as u64));
+        assert_eq!(eoi.object_ref, Some(crate::diagnostics::ObjRef::new(23, 1)));
+        assert_eq!(eoi.page_index, Some(6));
     }
 
     #[test]
