@@ -367,7 +367,10 @@ impl FontEncoding {
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Self {
         // Get the /Encoding entry
-        let encoding_obj = match font_dict.get("/Encoding") {
+        let encoding_obj = match font_dict
+            .get("/Encoding")
+            .or_else(|| font_dict.get("Encoding"))
+        {
             Some(obj) => obj,
             None => return Self::new(default_base),
         };
@@ -384,6 +387,7 @@ impl FontEncoding {
                 // Parse /BaseEncoding (if present)
                 let base = encoding_dict
                     .get("/BaseEncoding")
+                    .or_else(|| encoding_dict.get("BaseEncoding"))
                     .and_then(|obj| obj.as_name())
                     .and_then(|name| NamedEncoding::from_name(name.as_ref()))
                     .or(default_base);
@@ -391,6 +395,7 @@ impl FontEncoding {
                 // Parse /Differences (if present)
                 let differences = encoding_dict
                     .get("/Differences")
+                    .or_else(|| encoding_dict.get("Differences"))
                     .map(|diff| DifferencesOverlay::parse(diff, diagnostics))
                     .unwrap_or_default();
 

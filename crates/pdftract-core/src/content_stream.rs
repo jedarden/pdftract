@@ -28,7 +28,10 @@
 //! on typical content streams. This is measured by the acceptance criteria tests.
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::font::{parse_to_unicode, ToUnicodeMap};
+use crate::font::{
+    parse_to_unicode, unicode_for_glyph_name, unicode_for_glyph_name_multi, FontEncoding,
+    NamedEncoding, ToUnicodeMap,
+};
 use crate::graphics_state::ColorSpace;
 use crate::parser::lexer::Lexer;
 use crate::parser::lexer::Token;
@@ -91,6 +94,17 @@ impl ResourceStack {
             }
         }
         None
+    }
+
+    /// Check whether a font name is available as either an indirect or direct
+    /// resource in the current scope stack.
+    pub fn has_font(&self, name: &str) -> bool {
+        self.lookup_font(name).is_some()
+            || self
+                .scopes
+                .iter()
+                .rev()
+                .any(|scope| scope.direct_fonts.contains_key(name))
     }
 
     /// Look up an XObject name in the current resource scope.
@@ -913,7 +927,7 @@ fn process_string(
     resources: &ResourceDict,
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
-    _diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Vec<Diagnostic>,
     marked_content_stack: Option<&MarkedContentStack>,
     resolver: Option<&crate::parser::xref::XrefResolver>,
 ) {
@@ -930,7 +944,13 @@ fn process_string(
 
     match mode {
         ProcessingMode::Normal => {
-            let (text, mapped) = decode_text_string(bytes, text_matrix, resources, resolver);
+            let (text, mapped) = decode_text_string(
+                bytes,
+                text_matrix.font_name.as_deref(),
+                resources,
+                resolver,
+                diagnostics,
+            );
             for (index, ch) in text.into_iter().enumerate() {
                 let x_offset = index as f64 * font_size * 0.6;
                 let glyph_bbox = [
@@ -954,48 +974,102 @@ fn process_string(
 /// CMap when the resolver has a backing source.
 fn decode_text_string(
     bytes: &[u8],
-    text_matrix: &TextMatrix,
+    font_name: Option<&str>,
     resources: &ResourceDict,
     resolver: Option<&crate::parser::xref::XrefResolver>,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> (Vec<char>, bool) {
-    let Some(font_name) = text_matrix.font_name.as_deref() else {
-        return (String::from_utf8_lossy(bytes).chars().collect(), false);
+    let Some(font_name) = font_name else {
+        return (replacement_chars(bytes), false);
     };
-    let Some(font_ref) = resources.fonts.get(font_name) else {
-        return (String::from_utf8_lossy(bytes).chars().collect(), false);
+    let font_ref = resources.fonts.get(font_name).copied();
+    let font = if let Some(font_ref) = font_ref {
+        resolver.and_then(|resolver| resolver.resolve(font_ref).ok())
+    } else {
+        resources.direct_fonts.get(font_name).cloned()
     };
-    let Some(resolver) = resolver else {
-        return (String::from_utf8_lossy(bytes).chars().collect(), false);
+    let Some(font) = font else {
+        return (replacement_chars(bytes), false);
     };
-    let Some(source) = resolver.source() else {
-        return (String::from_utf8_lossy(bytes).chars().collect(), false);
+
+    let map = if let (Some(font_ref), Some(resolver)) = (font_ref, resolver) {
+        resolver
+            .source()
+            .and_then(|source| load_to_unicode_map(resolver, source, font_ref))
+    } else {
+        None
     };
-    let Some(map) = load_to_unicode_map(resolver, source, *font_ref) else {
-        return (String::from_utf8_lossy(bytes).chars().collect(), false);
-    };
+    let encoding = load_font_encoding(&font, diagnostics);
 
     let mut text = Vec::new();
     let mut mapped = false;
     let mut offset = 0;
     while offset < bytes.len() {
         let mut found = None;
-        let max_width = (bytes.len() - offset).min(4);
-        for width in (1..=max_width).rev() {
-            if let Some(chars) = map.lookup(&bytes[offset..offset + width]) {
-                found = Some((width, chars));
-                break;
+        if let Some(map) = map.as_ref() {
+            let max_width = (bytes.len() - offset).min(4);
+            for width in (1..=max_width).rev() {
+                if let Some(chars) = map.lookup(&bytes[offset..offset + width]) {
+                    found = Some((width, chars.to_vec()));
+                    break;
+                }
             }
         }
         if let Some((width, chars)) = found {
-            text.extend(chars.iter().copied());
+            text.extend(chars);
             mapped = true;
             offset += width;
+        } else if let Some(encoding) = encoding.as_ref() {
+            if let Some(chars) = unicode_for_encoded_byte(bytes[offset], encoding) {
+                text.extend(chars);
+                mapped = true;
+            } else {
+                text.push('\u{FFFD}');
+            }
+            offset += 1;
         } else {
-            text.extend(String::from_utf8_lossy(&bytes[offset..offset + 1]).chars());
+            text.push('\u{FFFD}');
             offset += 1;
         }
     }
     (text, mapped)
+}
+
+/// Return one replacement character per byte when no font mapping is usable.
+///
+/// Passing arbitrary PDF character codes through `from_utf8_lossy` is unsafe
+/// for extraction: ASCII control bytes are valid UTF-8 and therefore leak into
+/// MCP/plain-text output instead of signalling an unresolved glyph.
+fn replacement_chars(bytes: &[u8]) -> Vec<char> {
+    std::iter::repeat('\u{FFFD}').take(bytes.len()).collect()
+}
+
+/// Resolve a single-byte code through the font's encoding vector and AGL.
+fn unicode_for_encoded_byte(code: u8, encoding: &FontEncoding) -> Option<Vec<char>> {
+    let glyph_name = encoding.glyph_name_for(code)?;
+    if let Some(chars) = unicode_for_glyph_name_multi(&glyph_name) {
+        return Some(chars.to_vec());
+    }
+    unicode_for_glyph_name(&glyph_name).map(|ch| vec![ch])
+}
+
+/// Load the encoding vector for a font when its `/ToUnicode` map is absent or
+/// incomplete. This intentionally handles the direct font dictionaries used by
+/// normal page resources; indirect `/Encoding` dictionaries remain a future
+/// extension of the parser.
+fn load_font_encoding(font: &PdfObject, diagnostics: &mut Vec<Diagnostic>) -> Option<FontEncoding> {
+    let font_dict = font.as_dict()?;
+    let subtype = font_dict
+        .get("/Subtype")
+        .or_else(|| font_dict.get("Subtype"))
+        .and_then(|obj| obj.as_name());
+    let default_base = (subtype == Some("/Type1") || subtype == Some("Type1"))
+        .then_some(NamedEncoding::Standard);
+    Some(FontEncoding::parse_from_font(
+        font_dict,
+        default_base,
+        diagnostics,
+    ))
 }
 
 fn load_to_unicode_map(
@@ -1004,7 +1078,11 @@ fn load_to_unicode_map(
     font_ref: ObjRef,
 ) -> Option<ToUnicodeMap> {
     let font = resolver.resolve(font_ref).ok()?;
-    let cmap_ref = font.as_dict()?.get("ToUnicode")?.as_ref()?;
+    let font_dict = font.as_dict()?;
+    let cmap_ref = font_dict
+        .get("ToUnicode")
+        .or_else(|| font_dict.get("/ToUnicode"))?
+        .as_ref()?;
     let cmap = resolver.resolve(cmap_ref).ok()?;
     let stream = cmap.as_stream()?;
     let mut decompressed = 0;
@@ -1094,6 +1172,7 @@ pub fn execute_with_do(
     let mut diagnostics = Vec::new();
     let mut in_text_block = false;
     let mut operand_buffer: Vec<Token> = Vec::new();
+    let mut current_font_name: Option<String> = None;
 
     // Graphics state tracking
     use crate::graphics_state::{GraphicsState, GraphicsStateStack};
@@ -1558,6 +1637,7 @@ pub fn execute_with_do(
                             if let Token::Name(font_bytes) = font_token {
                                 if let Ok(font_str) = std::str::from_utf8(font_bytes) {
                                     let font_key = font_str.trim_start_matches('/');
+                                    current_font_name = Some(font_key.to_string());
                                     let mut size = operand_buffer
                                         .get(1)
                                         .and_then(|t| match t {
@@ -1580,7 +1660,7 @@ pub fn execute_with_do(
                                     }
 
                                     // Look up font in ResourceStack
-                                    if let Some(_font_ref) = resource_stack.lookup_font(font_key) {
+                                    if resource_stack.has_font(font_key) {
                                         // Font found in resources.
                                         // TODO: Resolve font_ref to Arc<Font>
                                         // Full font resolution requires access to the document structure
@@ -1613,10 +1693,12 @@ pub fn execute_with_do(
                                             bytes,
                                             &gstate,
                                             resource_stack.current(),
+                                            current_font_name.as_deref(),
                                             mode,
                                             glyphs,
                                             &mut diagnostics,
                                             Some(&mc_stack),
+                                            resolver,
                                         );
                                     });
                                 }
@@ -1647,10 +1729,12 @@ pub fn execute_with_do(
                                             array_elements,
                                             &mut gstate,
                                             resource_stack.current(),
+                                            current_font_name.as_deref(),
                                             mode,
                                             glyphs,
                                             &mut diagnostics,
                                             Some(&mc_stack),
+                                            resolver,
                                         );
                                     });
                                 } else {
@@ -1685,10 +1769,12 @@ pub fn execute_with_do(
                                             bytes,
                                             &gstate,
                                             resource_stack.current(),
+                                            current_font_name.as_deref(),
                                             mode,
                                             glyphs,
                                             &mut diagnostics,
                                             Some(&mc_stack),
+                                            resolver,
                                         );
                                     });
                                 }
@@ -1724,10 +1810,12 @@ pub fn execute_with_do(
                                                     bytes,
                                                     &gstate,
                                                     resource_stack.current(),
+                                                    current_font_name.as_deref(),
                                                     mode,
                                                     glyphs,
                                                     &mut diagnostics,
                                                     Some(&mc_stack),
+                                                    resolver,
                                                 );
                                             },
                                         );
@@ -2074,11 +2162,13 @@ fn compute_unit_square_bbox(ctm: &crate::graphics_state::Matrix3x3) -> [f32; 4] 
 fn process_string_with_ctm(
     bytes: &[u8],
     gstate: &crate::graphics_state::GraphicsState,
-    _resources: &ResourceDict,
+    resources: &ResourceDict,
+    font_name: Option<&str>,
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
-    _diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Vec<Diagnostic>,
     marked_content_stack: Option<&MarkedContentStack>,
+    resolver: Option<&crate::parser::xref::XrefResolver>,
 ) {
     // Get text origin from gstate.text_matrix
     let (x, y) = gstate.text_matrix.transform_point(0.0, 0.0);
@@ -2097,12 +2187,24 @@ fn process_string_with_ctm(
 
     match mode {
         ProcessingMode::Normal => {
-            // Try to resolve Unicode via ToUnicode
-            // Note: font resolution is not yet implemented in this bead
-            // For now, emit a placeholder with low confidence
-            let text = String::from_utf8_lossy(bytes);
-            let ch = text.chars().next().unwrap_or('?');
-            glyphs.push(Glyph::new(ch, 0.3, bbox).with_mcid(mcid));
+            let (text, mapped) = decode_text_string(
+                bytes,
+                font_name,
+                resources,
+                resolver,
+                diagnostics,
+            );
+            for (index, ch) in text.into_iter().enumerate() {
+                let x_offset = index as f64 * font_size * 0.6;
+                let glyph_bbox = [
+                    bbox[0] + x_offset,
+                    bbox[1],
+                    bbox[2] + x_offset,
+                    bbox[3],
+                ];
+                let confidence = if mapped { 1.0 } else { 0.3 };
+                glyphs.push(Glyph::new(ch, confidence, glyph_bbox).with_mcid(mcid));
+            }
         }
         ProcessingMode::PositionHint => {
             // Emit position-hint glyph
@@ -2131,11 +2233,13 @@ fn process_string_with_ctm(
 fn process_tj_array(
     array_elements: &[Token],
     gstate: &mut crate::graphics_state::GraphicsState,
-    _resources: &ResourceDict,
+    resources: &ResourceDict,
+    font_name: Option<&str>,
     mode: ProcessingMode,
     glyphs: &mut Vec<Glyph>,
     diagnostics: &mut Vec<Diagnostic>,
     marked_content_stack: Option<&MarkedContentStack>,
+    resolver: Option<&crate::parser::xref::XrefResolver>,
 ) {
     let font_size = gstate.font_size;
     let horiz_scaling = gstate.horiz_scaling / 100.0;
@@ -2161,30 +2265,40 @@ fn process_tj_array(
 
                 let mcid = marked_content_stack.and_then(|s| s.innermost_mcid());
 
-                let glyph = match mode {
+                let text = match mode {
                     ProcessingMode::Normal => {
-                        // Try to resolve Unicode via ToUnicode
-                        let text = String::from_utf8_lossy(bytes);
-                        let ch = text.chars().next().unwrap_or('?');
-                        let mut g = Glyph::new(ch, 0.3, bbox).with_mcid(mcid);
-                        // Apply pending word boundary flag
-                        if pending_word_boundary {
-                            g.is_word_boundary = true;
-                            pending_word_boundary = false;
-                        }
-                        g
+                        let (text, mapped) = decode_text_string(
+                            bytes,
+                            font_name,
+                            resources,
+                            resolver,
+                            diagnostics,
+                        );
+                        text.into_iter()
+                            .map(|ch| (ch, if mapped { 1.0 } else { 0.3 }))
+                            .collect::<Vec<_>>()
                     }
                     ProcessingMode::PositionHint => {
-                        let mut g = Glyph::position_hint(bbox).with_mcid(mcid);
-                        // PositionHint mode also tracks word boundaries
-                        if pending_word_boundary {
-                            g.is_word_boundary = true;
-                            pending_word_boundary = false;
-                        }
-                        g
+                        std::iter::repeat(('\u{FFFD}', 0.0))
+                            .take(bytes.len())
+                            .collect()
                     }
                 };
-                glyphs.push(glyph);
+                for (index, (ch, confidence)) in text.into_iter().enumerate() {
+                    let x_offset = index as f64 * font_size * 0.6;
+                    let glyph_bbox = [
+                        bbox[0] + x_offset,
+                        bbox[1],
+                        bbox[2] + x_offset,
+                        bbox[3],
+                    ];
+                    let mut glyph = Glyph::new(ch, confidence, glyph_bbox).with_mcid(mcid);
+                    if pending_word_boundary {
+                        glyph.is_word_boundary = true;
+                        pending_word_boundary = false;
+                    }
+                    glyphs.push(glyph);
+                }
 
                 // Advance text matrix by approximate string width.
                 // A full implementation would sum actual glyph advances.

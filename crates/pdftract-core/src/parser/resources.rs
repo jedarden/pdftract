@@ -24,6 +24,12 @@ use crate::parser::object::PdfDict;
 pub struct ResourceDict {
     /// /Font namespace: maps font names to font dictionaries
     pub fonts: IndexMap<Arc<str>, ObjRef>,
+    /// Direct inline font dictionaries in the /Font namespace.
+    ///
+    /// PDF permits both indirect and direct font objects in a resource
+    /// dictionary. Keep direct dictionaries available to text extraction
+    /// instead of silently dropping them while merging resources.
+    pub direct_fonts: IndexMap<Arc<str>, PdfObject>,
     /// /XObject namespace: maps XObject names to form/image XObjects
     pub xobjects: IndexMap<Arc<str>, ObjRef>,
     /// /ExtGState namespace: maps graphics state names to ExtGState dictionaries
@@ -51,6 +57,7 @@ impl Default for ResourceDict {
     fn default() -> Self {
         ResourceDict {
             fonts: IndexMap::new(),
+            direct_fonts: IndexMap::new(),
             xobjects: IndexMap::new(),
             ext_gstates: IndexMap::new(),
             color_spaces: IndexMap::new(),
@@ -71,6 +78,7 @@ impl ResourceDict {
     /// Check if this ResourceDict is completely empty (no resources in any namespace).
     pub fn is_empty(&self) -> bool {
         self.fonts.is_empty()
+            && self.direct_fonts.is_empty()
             && self.xobjects.is_empty()
             && self.ext_gstates.is_empty()
             && self.color_spaces.is_empty()
@@ -83,6 +91,7 @@ impl ResourceDict {
     /// Get the total number of resources across all namespaces.
     pub fn total_count(&self) -> usize {
         self.fonts.len()
+            + self.direct_fonts.len()
             + self.xobjects.len()
             + self.ext_gstates.len()
             + self.color_spaces.len()
@@ -184,9 +193,11 @@ pub fn merge_resources(ancestor: &ResourceDict, child: &PdfObject) -> ResourceDi
             for (name, obj) in font_dict.iter() {
                 if let Some(ref_) = obj.as_ref() {
                     merged.fonts.insert(name.clone(), ref_);
+                    merged.direct_fonts.shift_remove(name);
+                } else if obj.as_dict().is_some() {
+                    merged.fonts.shift_remove(name);
+                    merged.direct_fonts.insert(name.clone(), obj.clone());
                 }
-                // Direct dictionaries in /Font are rare but legal; we skip them
-                // because they should have been indirect in a well-formed PDF
             }
         }
     }
