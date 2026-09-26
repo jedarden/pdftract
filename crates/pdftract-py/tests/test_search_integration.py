@@ -62,3 +62,14 @@ def test_search_result_shape_matches_sdk():
         assert public_match.page == sdk_match["page_index"]
         assert public_match.text == sdk_match["text"]
         assert list(public_match.bbox) == sdk_match["bbox"]
+
+
+def test_search_non_matching_pattern_is_empty():
+    """A pattern absent from the fixture must not produce a false match."""
+    non_matching_pattern = "PATTERN_NOT_PRESENT_IN_FIXTURE"
+
+    native_result = pdftract._native.search(str(FIXTURE), non_matching_pattern)
+    assert native_result["pattern"] == non_matching_pattern
+    assert native_result["matches"] == []
+
+    assert list(pdftract.search(str(FIXTURE), non_matching_pattern)) == []
