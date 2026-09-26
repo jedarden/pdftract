@@ -197,6 +197,10 @@ spec:
             template: setup
             dependencies: [post-pending-forgejo]
 
+          - name: sdk-conformance
+            template: sdk-conformance
+            dependencies: [setup]
+
           - name: build-matrix
             template: build-matrix
             dependencies: [setup]
@@ -283,7 +287,7 @@ spec:
 
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, verify-provenance]
+            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, verify-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
@@ -501,6 +505,402 @@ spec:
         artifacts:
           - name: workflow-metadata
             path: /workspace/workflow-metadata.json
+
+    # === SDK Conformance Matrix ===
+    # Run the report-producing runner for every SDK. Individual runners are
+    # allowed to finish so that a red run still retains all ten diagnostics;
+    # sdk-conformance-validate is the single matrix gate.
+    - name: sdk-conformance
+      dag:
+        failFast: false
+        tasks:
+          - name: rust
+            template: sdk-conformance-rust
+            continueOn:
+              failed: true
+          - name: python
+            template: sdk-conformance-python
+            continueOn:
+              failed: true
+          - name: node
+            template: sdk-conformance-node
+            continueOn:
+              failed: true
+          - name: go
+            template: sdk-conformance-go
+            continueOn:
+              failed: true
+          - name: java
+            template: sdk-conformance-java
+            continueOn:
+              failed: true
+          - name: dotnet
+            template: sdk-conformance-dotnet
+            continueOn:
+              failed: true
+          - name: c
+            template: sdk-conformance-c
+            continueOn:
+              failed: true
+          - name: ruby
+            template: sdk-conformance-ruby
+            continueOn:
+              failed: true
+          - name: php
+            template: sdk-conformance-php
+            continueOn:
+              failed: true
+          - name: swift
+            template: sdk-conformance-swift
+            continueOn:
+              failed: true
+          - name: validate
+            template: sdk-conformance-validate
+            dependencies: [rust, python, node, go, java, dotnet, c, ruby, php, swift]
+      outputs:
+        artifacts:
+          - name: sdk-conformance-reports
+            from: "{{tasks.validate.outputs.artifacts.sdk-conformance-reports}}"
+          - name: sdk-conformance-exit-codes
+            from: "{{tasks.validate.outputs.artifacts.sdk-conformance-exit-codes}}"
+
+    - name: sdk-conformance-rust
+      activeDeadlineSeconds: 1800
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            export CARGO_HOME=/cache/cargo/registry
+            export CARGO_TARGET_DIR=/cache/cargo/target-sdk-conformance
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-rust \
+              /workspace/sdk-conformance/reports/pdftract-rust/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-rust.exit \
+              cargo run --locked --package pdftract-cli --bin pdftract-sdk-conformance -- \
+                tests/sdk-conformance/cases.json \
+                /workspace/sdk-conformance/reports/pdftract-rust/conformance-report.json
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-rust/conformance-report.json
+
+    - name: sdk-conformance-python
+      activeDeadlineSeconds: 900
+      container:
+        image: python:3.11-slim-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-py \
+              /workspace/sdk-conformance/reports/pdftract-py/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-py.exit \
+              python3 tests/conformance/test_conformance.py \
+                tests/sdk-conformance/cases.json \
+                /workspace/sdk-conformance/reports/pdftract-py/conformance-report.json
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-py/conformance-report.json
+
+    - name: sdk-conformance-node
+      activeDeadlineSeconds: 900
+      container:
+        image: node:22.14.0-slim
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-node \
+              /workspace/sdk-conformance/reports/pdftract-node/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-node.exit \
+              npx --yes --package=tsx@4.19.3 tsx \
+                tests/conformance/conformance.test.ts \
+                tests/sdk-conformance/cases.json \
+                /workspace/sdk-conformance/reports/pdftract-node/conformance-report.json
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1500m
+            memory: 2Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-node/conformance-report.json
+
+    - name: sdk-conformance-go
+      activeDeadlineSeconds: 900
+      container:
+        image: golang:1.22.12-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-go \
+              /workspace/sdk-conformance/reports/pdftract-go/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-go.exit \
+              env GO111MODULE=off go run tests/conformance/conformance_test.go \
+                tests/sdk-conformance/cases.json \
+                /workspace/sdk-conformance/reports/pdftract-go/conformance-report.json
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-go/conformance-report.json
+
+    - name: sdk-conformance-java
+      activeDeadlineSeconds: 1200
+      container:
+        image: maven:3.9.9-eclipse-temurin-17
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-java \
+              /workspace/sdk-conformance/reports/pdftract-java/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-java.exit \
+              bash -c 'set -e; mvn -q -f pdftract-java/pom.xml dependency:build-classpath -Dmdep.outputFile=/tmp/pdftract-java-classpath; mkdir -p /tmp/pdftract-java-classes; javac -cp "$(cat /tmp/pdftract-java-classpath)" -d /tmp/pdftract-java-classes tests/conformance/ConformanceTest.java; java -cp "/tmp/pdftract-java-classes:$(cat /tmp/pdftract-java-classpath)" ConformanceTest tests/sdk-conformance/cases.json /workspace/sdk-conformance/reports/pdftract-java/conformance-report.json'
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1500m
+            memory: 2Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-java/conformance-report.json
+
+    - name: sdk-conformance-dotnet
+      activeDeadlineSeconds: 1200
+      container:
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-dotnet \
+              /workspace/sdk-conformance/reports/pdftract-dotnet/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-dotnet.exit \
+              bash -c 'set -e; test_dir=/tmp/pdftract-dotnet-conformance; rm -rf "$test_dir"; mkdir -p "$test_dir"; cp tests/conformance/ConformanceTests.cs "$test_dir/"; printf "%s\n" "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net8.0</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable><Nullable>enable</Nullable></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.NET.Test.Sdk\" Version=\"17.12.0\" /><PackageReference Include=\"xunit\" Version=\"2.9.2\" /><PackageReference Include=\"xunit.runner.visualstudio\" Version=\"2.8.2\" /></ItemGroup></Project>" >"$test_dir/ConformanceTests.csproj"; set +e; dotnet test "$test_dir/ConformanceTests.csproj" --nologo --verbosity minimal; test_exit=$?; set -e; report=$(find "$test_dir" -name conformance-report.json -type f -print -quit); if [ -n "$report" ]; then cp "$report" /workspace/sdk-conformance/reports/pdftract-dotnet/conformance-report.json; fi; exit "$test_exit"'
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1500m
+            memory: 3Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-dotnet/conformance-report.json
+
+    - name: sdk-conformance-c
+      activeDeadlineSeconds: 1800
+      container:
+        image: ronaldraygun/pdftract-test-glibc:1.78
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-libpdftract \
+              /workspace/sdk-conformance/reports/pdftract-libpdftract/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-libpdftract.exit \
+              bash -c 'set -e; cargo build --locked --release --package pdftract-libpdftract; gcc -std=c11 -Icrates/pdftract-libpdftract/include tests/conformance/conformance.c -Ltarget/release -Wl,-rpath,/workspace/target/release -lpdftract -ljson-c -lm -o /tmp/pdftract-c-conformance; /tmp/pdftract-c-conformance tests/sdk-conformance/cases.json /workspace/sdk-conformance/reports/pdftract-libpdftract/conformance-report.json'
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2500m
+            memory: 5Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-libpdftract/conformance-report.json
+
+    - name: sdk-conformance-ruby
+      activeDeadlineSeconds: 900
+      container:
+        image: ruby:3.2.6-slim
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-ruby \
+              /workspace/sdk-conformance/reports/pdftract-ruby/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-ruby.exit \
+              ruby tests/conformance/conformance_test.rb \
+                tests/sdk-conformance/cases.json \
+                /workspace/sdk-conformance/reports/pdftract-ruby/conformance-report.json
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-ruby/conformance-report.json
+
+    - name: sdk-conformance-php
+      activeDeadlineSeconds: 1200
+      container:
+        image: composer:2.6.6
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-php \
+              /workspace/sdk-conformance/reports/pdftract-php/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-php.exit \
+              bash -c 'set -e; composer install --working-dir=sdk/php --no-interaction --no-progress --prefer-dist; vendor=sdk/php/vendor/bin/phpunit; set +e; "$vendor" tests/conformance/ConformanceTest.php; test_exit=$?; set -e; if [ -s conformance-report.json ]; then cp conformance-report.json /workspace/sdk-conformance/reports/pdftract-php/conformance-report.json; fi; exit "$test_exit"'
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1500m
+            memory: 2Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-php/conformance-report.json
+
+    - name: sdk-conformance-swift
+      activeDeadlineSeconds: 900
+      container:
+        image: swift:5.10-jammy
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            bash scripts/run-sdk-conformance.sh \
+              pdftract-swift \
+              /workspace/sdk-conformance/reports/pdftract-swift/conformance-report.json \
+              /workspace/sdk-conformance/exit-codes/pdftract-swift.exit \
+              swift tests/conformance/ConformanceTests.swift \
+                tests/sdk-conformance/cases.json \
+                /workspace/sdk-conformance/reports/pdftract-swift/conformance-report.json
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1500m
+            memory: 2Gi
+      outputs:
+        artifacts:
+          - name: conformance-report
+            path: /workspace/sdk-conformance/reports/pdftract-swift/conformance-report.json
+
+    - name: sdk-conformance-validate
+      activeDeadlineSeconds: 300
+      container:
+        image: python:3.11-slim-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -eo pipefail
+            cd /workspace
+            python3 scripts/validate-sdk-conformance-report.py \
+              --reports-root /workspace/sdk-conformance/reports \
+              --exit-codes-root /workspace/sdk-conformance/exit-codes
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      outputs:
+        artifacts:
+          - name: sdk-conformance-reports
+            path: /workspace/sdk-conformance/reports
+          - name: sdk-conformance-exit-codes
+            path: /workspace/sdk-conformance/exit-codes
 
     # === Build Matrix ===
     # Cross-compile for 5 targets using cross (Docker-based)

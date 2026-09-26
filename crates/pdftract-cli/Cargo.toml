@@ -16,6 +16,10 @@ name = "pdftract"
 path = "src/main.rs"
 test = true
 
+[[bin]]
+name = "pdftract-sdk-conformance"
+path = "tests/conformance.rs"
+
 
 [[bin]]
 name = "gen_lexer_golden"
