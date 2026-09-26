@@ -126,7 +126,9 @@ def main() -> int:
         cwd=ROOT,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # Keep compiler diagnostics out of a pipe that the checker never
+        # drains; otherwise a cargo fallback can block before the handshake.
+        stderr=None,
     )
     try:
         assert process.stdin is not None
