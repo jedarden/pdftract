@@ -27,3 +27,6 @@ thiserror = "1.0"
 tracing = "0.1"
 unicode-normalization = "0.1"
 unicode-bidi = "0.3"
+
+[profile.dev]
+debug = "line-tables-only"
