@@ -199,6 +199,45 @@ Homebrew's `bin` — the exact template is pdftract-2ba6e643's deliverable
   release cascade and edits are overwritten — hand fixes go to
   `packaging/homebrew/pdftract.rb.template` in this repo.
 
+### Formula-generation handoff contract
+
+The next packaging child consumes one immutable release tuple and its release
+integrity metadata. For a release tag `vX.Y.Z`, the required inputs and their
+canonical URLs are:
+
+| Input | Required value |
+|---|---|
+| Release tag | `vX.Y.Z`, where `X.Y.Z` is non-prerelease semver; the tag must resolve to the release commit and must not be rewritten. |
+| Formula version | `X.Y.Z` — the tag with its leading `v` removed. |
+| Source archive | `https://github.com/jedarden/pdftract/archive/refs/tags/vX.Y.Z.tar.gz`; the generator downloads these exact bytes and computes the formula's 64-hex `<SHA256>`. |
+| Aggregate checksums | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS`; consume the file as published, with no append or rewrite. |
+| Checksum signature | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS.sig` and the matching `SHA256SUMS.pem`; verify these against the downloaded `SHA256SUMS` before accepting the release metadata. |
+| Formula source | `packaging/homebrew/pdftract.rb.template` from the same `vX.Y.Z` tag. |
+
+`SHA256SUMS` is the release-integrity input, not the source of the formula's
+`sha256`: the current release contract lists the built binary archives, Python
+wheels/sdist, and CycloneDX SBOM in that aggregate, while GitHub's generated tag
+archive is not an attached release asset. Therefore the generator must not look
+for or invent a source-archive line in `SHA256SUMS`, and must never alter the
+signed file to add one. If the release is missing `SHA256SUMS`, its signature or
+certificate, or the required checksum verification fails, formula generation
+stops.
+
+The handoff to the formula-rendering child is the resolved tuple
+`{RELEASE_TAG, VERSION, SOURCE_ARCHIVE_URL, SOURCE_ARCHIVE_SHA256,
+SHA256SUMS_URL, SHA256SUMS_SIG_URL, SHA256SUMS_PEM_URL}` plus the tagged
+template path above. That child must emit the rendered formula at
+`Formula/pdftract.rb` for the tap and preserve the generated-file warning; tap
+publication and client-facing install verification are later outputs, not inputs
+to rendering.
+
+The following refs are prohibited in every input or output of this channel:
+`:latest`, `latest`, `releases/latest`, branch names such as `main`, bare git
+SHAs, unversioned archive paths, and any other moving or unversioned ref. This
+includes release URLs, formula URLs/version fields, source/template fetches, tap
+commits, and verification images. A release that cannot satisfy the immutable
+`vX.Y.Z` tuple is skipped rather than guessed.
+
 ## 6. Version policy — versioned tags only, `:latest` explicitly rejected
 
 - Formulas are rendered **only** from versioned release tags `vX.Y.Z` (semver,
