@@ -192,7 +192,6 @@ pub fn deskew(image: &GrayImage) -> Result<(GrayImage, f64, Vec<Diagnostic>)> {
 /// that need to interface with leptonica FFI functions.
 pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
     use leptonica_plumbing::leptonica_sys::{pixCreate, pixDestroy, pixGetData, pixGetWpl};
-    use std::ptr;
 
     let width = image.width() as i32;
     let height = image.height() as i32;
@@ -210,7 +209,7 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
         }
 
         // Get the data pointer from the Pix
-        let pix_data = pixGetData(pix).cast::<u8>();
+        let pix_data = pixGetData(pix);
 
         if pix_data.is_null() {
             pixDestroy(&mut pix);
@@ -222,17 +221,26 @@ pub fn grayimage_to_pix(image: &GrayImage) -> Result<*mut Pix> {
         }
 
         // Pix stores data as l_uint32* with each row padded to a whole word.
-        // Treating that pointer as a contiguous pixel array overruns the
-        // allocation because pointer arithmetic would advance by four bytes.
+        // Pixels are ordered from MSB to LSB within each word.  Constructing
+        // the word from big-endian bytes gives Leptonica that logical order
+        // on both big- and little-endian hosts.
         let raw_data = image.as_raw();
         let width = width as usize;
         let height = height as usize;
-        let row_stride = (pixGetWpl(pix) as usize).saturating_mul(std::mem::size_of::<u32>());
+        let wpl = pixGetWpl(pix) as usize;
 
         for y in 0..height {
-            let src_offset = y * width;
-            let dst = pix_data.add(y * row_stride);
-            ptr::copy_nonoverlapping(raw_data.as_ptr().add(src_offset), dst, width);
+            let row = pix_data.add(y * wpl);
+            let src_row = &raw_data[y * width..(y + 1) * width];
+
+            for word_index in 0..wpl {
+                let pixel_offset = word_index * 4;
+                let mut bytes = [0u8; 4];
+                let pixel_count = (width - pixel_offset).min(bytes.len());
+                bytes[..pixel_count]
+                    .copy_from_slice(&src_row[pixel_offset..pixel_offset + pixel_count]);
+                *row.add(word_index) = u32::from_be_bytes(bytes);
+            }
         }
 
         Ok(pix)
@@ -249,7 +257,6 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
     use leptonica_plumbing::leptonica_sys::{
         pixGetData, pixGetDepth, pixGetHeight, pixGetWidth, pixGetWpl,
     };
-    use std::ptr;
 
     unsafe {
         if pix.is_null() {
@@ -272,7 +279,7 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
             return Err(diagnostics);
         }
 
-        let data_ptr = pixGetData(pix).cast::<u8>();
+        let data_ptr = pixGetData(pix);
 
         if data_ptr.is_null() {
             let diagnostics = vec![Diagnostic::with_static_no_offset(
@@ -283,18 +290,25 @@ pub fn pix_to_grayimage(pix: *mut Pix) -> Result<GrayImage> {
         }
 
         // Pix rows are padded to a whole number of 32-bit words, while the
-        // GrayImage buffer is tightly packed. Copy only the active pixels in
-        // each row and skip Leptonica's padding bytes.
+        // GrayImage buffer is tightly packed. Unpack each word in Leptonica's
+        // MSB-to-LSB pixel order and skip its padding bytes.
         let width = width as usize;
         let height = height as usize;
-        let row_stride = (pixGetWpl(pix) as usize).saturating_mul(std::mem::size_of::<u32>());
+        let wpl = pixGetWpl(pix) as usize;
         let len = width.saturating_mul(height);
         let mut buffer = vec![0u8; len];
 
         for y in 0..height {
-            let src = data_ptr.add(y * row_stride);
-            let dst = buffer.as_mut_ptr().add(y * width);
-            ptr::copy_nonoverlapping(src, dst, width);
+            let row = data_ptr.add(y * wpl);
+            let dst_row = &mut buffer[y * width..(y + 1) * width];
+
+            for word_index in 0..wpl {
+                let pixel_offset = word_index * 4;
+                let pixel_count = (width - pixel_offset).min(4);
+                let bytes = (*row.add(word_index)).to_be_bytes();
+                dst_row[pixel_offset..pixel_offset + pixel_count]
+                    .copy_from_slice(&bytes[..pixel_count]);
+            }
         }
 
         GrayImage::from_raw(width as u32, height as u32, buffer).ok_or_else(|| {
@@ -371,6 +385,16 @@ pub fn preprocess(image: &GrayImage, source: ImageSource) -> Result<(GrayImage, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    fn gray_image_strategy() -> impl Strategy<Value = GrayImage> {
+        (1u32..=32, 1u32..=16).prop_flat_map(|(width, height)| {
+            let len = width as usize * height as usize;
+            proptest::collection::vec(any::<u8>(), len).prop_map(move |raw| {
+                GrayImage::from_raw(width, height, raw).expect("strategy dimensions are valid")
+            })
+        })
+    }
 
     /// Create a simple test pattern with horizontal lines.
     fn create_horizontal_lines_image() -> GrayImage {
@@ -456,8 +480,39 @@ mod tests {
             pixDestroy(&mut pix);
         }
 
-        assert_eq!(converted.width(), img.width());
-        assert_eq!(converted.height(), img.height());
+        assert_eq!(converted, img);
+    }
+
+    proptest! {
+        #[test]
+        fn test_grayimage_pix_roundtrip_preserves_pixels(image in gray_image_strategy()) {
+            let mut pix = grayimage_to_pix(&image).expect("Failed to convert to Pix");
+
+            let mut pix_pixels = Vec::with_capacity(image.as_raw().len());
+            let mut status = 0;
+            unsafe {
+                use leptonica_plumbing::leptonica_sys::pixGetPixel;
+
+                for y in 0..image.height() {
+                    for x in 0..image.width() {
+                        let mut value = 0;
+                        status |= pixGetPixel(pix, x as i32, y as i32, &mut value);
+                        pix_pixels.push(value as u8);
+                    }
+                }
+            }
+
+            let converted = pix_to_grayimage(pix).expect("Failed to convert back");
+
+            unsafe {
+                use leptonica_plumbing::leptonica_sys::pixDestroy;
+                pixDestroy(&mut pix);
+            }
+
+            prop_assert_eq!(status, 0);
+            prop_assert_eq!(pix_pixels, image.as_raw().clone());
+            prop_assert_eq!(converted, image);
+        }
     }
 
     /// Create a test image with horizontal text-like lines at a specified skew angle.
