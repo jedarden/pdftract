@@ -23,6 +23,9 @@ pub const STYLE_CSS: &[u8] = include_bytes!("../static/style.css");
 /// JavaScript application code for the inspector UI.
 pub const APP_JS: &[u8] = include_bytes!("../static/app.js");
 
+/// Agentation bootstrap module for the inspector UI.
+pub const AGENTATION_JS: &[u8] = include_bytes!("../static/agentation.js");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -33,5 +36,9 @@ mod tests {
         assert!(!INDEX_HTML.is_empty(), "INDEX_HTML should not be empty");
         assert!(!STYLE_CSS.is_empty(), "STYLE_CSS should not be empty");
         assert!(!APP_JS.is_empty(), "APP_JS should not be empty");
+        assert!(
+            !AGENTATION_JS.is_empty(),
+            "AGENTATION_JS should not be empty"
+        );
     }
 }

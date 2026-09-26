@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inspector JSON-Tree Click Navigation Demo</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react-dom": "https://esm.sh/react-dom@18.3.1",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+        "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+        "agentation": "https://esm.sh/agentation@3.0.2?external=react,react-dom"
+      }
+    }
+    </script>
     <style>
         * {
             box-sizing: border-box;
@@ -269,5 +280,6 @@
             });
         });
     </script>
+    <script type="module" src="agentation.js"></script>
 </body>
 </html>

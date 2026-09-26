@@ -1,7 +1,7 @@
 # pdftract Makefile
 # Top-level build automation for pdftract project
 
-.PHONY: help validate-corpus download-grep-corpus test clean
+.PHONY: help validate-corpus download-grep-corpus agentation-smoke test clean
 
 # Default target
 help:
@@ -10,6 +10,7 @@ help:
 	@echo "  validate-corpus       - Verify grep-corpus integrity against manifest"
 	@echo "  download-grep-corpus   - Download/generate PDFs for grep-corpus"
 	@echo "  test                   - Run all tests"
+	@echo "  agentation-smoke       - Verify Agentation mounts in a browser"
 	@echo "  clean                  - Clean build artifacts"
 	@echo ""
 	@echo "Corpus management:"
@@ -31,6 +32,10 @@ download-grep-corpus:
 # Run tests
 test:
 	cargo test --all-targets
+
+# Run the browser smoke test for every HTML entry point
+agentation-smoke:
+	python3 scripts/agentation-smoke.py
 
 # Clean build artifacts
 clean:

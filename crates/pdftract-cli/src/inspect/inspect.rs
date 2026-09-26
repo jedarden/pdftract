@@ -162,6 +162,7 @@ fn create_router_with_audit(state: InspectorState) -> Router {
         // Static assets (Phase 7.9.3)
         .route("/static/style.css", get(static_style_handler))
         .route("/static/app.js", get(static_app_handler))
+        .route("/static/agentation.js", get(static_agentation_handler))
         // API endpoints (Phase 7.9.2)
         .route("/api/document", get(api::api_document))
         .route("/api/page/:i", get(api::api_page))
@@ -205,6 +206,20 @@ async fn static_style_handler() -> impl IntoResponse {
 /// Handler for static app.js (Phase 7.9.3).
 async fn static_app_handler() -> impl IntoResponse {
     let js = String::from_utf8(include_bytes!("frontend/app.js").to_vec()).unwrap();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .body(axum::body::Body::from(js))
+        .unwrap()
+}
+
+/// Handler for the local Agentation bootstrap module.
+async fn static_agentation_handler() -> impl IntoResponse {
+    let js = String::from_utf8(include_bytes!("agentation.js").to_vec()).unwrap();
     Response::builder()
         .status(StatusCode::OK)
         .header(

@@ -1,8 +1,8 @@
 //! Content Security Policy middleware for the inspector.
 //!
 //! Implements TH-09 XSS mitigation by adding strict CSP headers to all
-//! inspector responses. The policy permits only same-origin scripts and
-//! default sources, preventing execution of any injected content.
+//! inspector responses. The policy permits only local scripts plus the pinned
+//! Agentation module origin and prevents execution of any injected content.
 
 use axum::{extract::Request, middleware::Next, response::Response};
 
@@ -10,9 +10,11 @@ use axum::{extract::Request, middleware::Next, response::Response};
 ///
 /// Per TH-09 (plan line 898), the inspector MUST set:
 /// - `default-src 'self'` - only allow resources from same origin
-/// - `script-src 'self'` - only allow scripts from same origin
-/// - No `unsafe-inline` or external sources
-const CSP_HEADER_VALUE: &str = "default-src 'self'; script-src 'self'";
+/// - `script-src 'self' https://esm.sh` - local scripts plus Agentation's
+///   pinned module CDN
+/// - `style-src 'self' 'unsafe-inline'` - Agentation injects its component CSS
+const CSP_HEADER_VALUE: &str =
+    "default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' 'unsafe-inline'";
 
 /// CSP middleware that adds security headers to all responses.
 ///

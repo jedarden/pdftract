@@ -22,6 +22,7 @@ fn main() {
     let html_path = frontend_dir.join("index.html");
     let css_path = frontend_dir.join("style.css");
     let js_path = frontend_dir.join("app.js");
+    let agentation_path = frontend_dir.join("agentation.js");
 
     // Read all frontend files
     let html = fs::read_to_string(&html_path).unwrap_or_else(|e| {
@@ -36,8 +37,12 @@ fn main() {
         panic!("Failed to read {}: {}", js_path.display(), e);
     });
 
+    let agentation = fs::read_to_string(&agentation_path).unwrap_or_else(|e| {
+        panic!("Failed to read {}: {}", agentation_path.display(), e);
+    });
+
     // Concatenate into a single bundle
-    let bundle = format!("{}\n{}\n{}", html, css, js);
+    let bundle = format!("{}\n{}\n{}\n{}", html, css, js, agentation);
 
     // Compute gzipped size
     let gzipped_bytes = gzip_compress(&bundle);
