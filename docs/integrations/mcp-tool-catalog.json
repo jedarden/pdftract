@@ -18,7 +18,7 @@
       "status": "implemented",
       "description": "Extract plain text from a PDF file",
       "required_arguments": ["path"],
-      "optional_arguments": ["pages", "ocr", "password"]
+      "optional_arguments": ["pages", "ocr", "password", "receipts"]
     },
     {
       "name": "extract_markdown",
@@ -27,7 +27,7 @@
       "status": "implemented",
       "description": "Extract text from a PDF file and format it as Markdown",
       "required_arguments": ["path"],
-      "optional_arguments": ["pages", "ocr", "anchors", "password"]
+      "optional_arguments": ["pages", "ocr", "anchors", "password", "receipts"]
     },
     {
       "name": "search",
@@ -43,7 +43,7 @@
       "advertised": true,
       "callable": true,
       "status": "implemented",
-      "description": "Get PDF metadata, outline, and fingerprint without full extraction",
+      "description": "Get PDF metadata, outline, and fingerprint without full extraction (fast, < 250ms for 100-page PDFs)",
       "required_arguments": ["path"],
       "optional_arguments": ["password"]
     },
@@ -52,7 +52,7 @@
       "advertised": true,
       "callable": true,
       "status": "implemented",
-      "description": "Compute the structural fingerprint of a PDF",
+      "description": "Compute the structural fingerprint of a PDF (fast, < 100ms for 100-page PDFs)",
       "required_arguments": ["path"],
       "optional_arguments": ["password"]
     },

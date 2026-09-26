@@ -1,7 +1,7 @@
 # pdftract Makefile
 # Top-level build automation for pdftract project
 
-.PHONY: help validate-corpus download-grep-corpus agentation-smoke test clean
+.PHONY: help validate-corpus download-grep-corpus agentation-smoke mcp-verify test clean
 
 # Default target
 help:
@@ -11,6 +11,7 @@ help:
 	@echo "  download-grep-corpus   - Download/generate PDFs for grep-corpus"
 	@echo "  test                   - Run all tests"
 	@echo "  agentation-smoke       - Verify Agentation mounts in a browser"
+	@echo "  mcp-verify             - Check the MCP catalog and all tool call contracts"
 	@echo "  clean                  - Clean build artifacts"
 	@echo ""
 	@echo "Corpus management:"
@@ -29,8 +30,13 @@ download-grep-corpus:
 	@echo "Generating grep-corpus ($(COUNT) PDFs)..."
 	@bash scripts/download-grep-corpus.sh $(COUNT)
 
-# Run tests
-test:
+# Verify the documented MCP catalog against a real server and smoke-test every
+# advertised tool. PDFTRACT_MCP_BIN may point at a prebuilt binary.
+mcp-verify:
+	python3 scripts/check-mcp-tool-catalog.py
+
+# Run tests, including the real-binary MCP contract check.
+test: mcp-verify
 	cargo test --all-targets
 
 # Run the browser smoke test for every HTML entry point

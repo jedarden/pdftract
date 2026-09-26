@@ -207,7 +207,8 @@ async def main():
             names = sorted(t.name for t in tools.tools)
             expected = sorted([
                 "extract", "extract_text", "extract_markdown", "search",
-                "get_metadata", "hash", "get_table",
+                "get_metadata", "hash", "get_table", "get_form_fields",
+                "get_attachments", "classify",
             ])
             assert names == expected, (names, expected)
             print("Available tools:", names)

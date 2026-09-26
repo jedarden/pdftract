@@ -64,7 +64,7 @@ opening the same PDF and extracting page text with `sort=True`.
 The extraction gate is met: every class is above the 90% parity bar and the
 20-document run produced zero server wedges. MCP initialization and `tools/list`
 also passed in the same run. The Claude Code session successfully discovered
-the seven advertised tools and called `get_metadata` on a real PDF.
+the ten advertised tools and called `get_metadata` on a real PDF.
 
 ## Defects and recommendation
 
