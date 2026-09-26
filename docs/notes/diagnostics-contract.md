@@ -2,6 +2,8 @@
 
 **Status:** Decided — canonical contract for machine-readable diagnostics.
 **Decided:** 2026-09-26, bead `pdftract-5928d4ce` (child of `pdftract-d79310ab`).
+**Inventory update:** 2026-09-26, bead `pdftract-1702243e` (documentation and
+inventory only; no emitter or serialization implementation changes).
 **Supersedes:** the contradiction between `docs/integrations/diagnostics-codes.md`
 (structured objects) and `docs/errors-array-format.md` (string array) as
 originally shipped; both guides now describe the contract below and must
@@ -248,6 +250,160 @@ Known gaps and hazards for the remaining parent scope (beads
    currently defines one, so structured diagnostics carry `hint` today, but
    consumers and tests must tolerate its absence per the omission rule.
 
++## Code inventory and emitter map
+
+The published catalog in
+[`docs/integrations/diagnostics-codes.md`](../integrations/diagnostics-codes.md)
+is the complete 113-row inventory. The audit manifest below repeats every row
+with the machine severity and the committed source modules that emit it. This
+makes the documentation decision reviewable without treating a planned code as
+implemented.
+
+The context columns use this vocabulary:
+
+- `optional`: the serialized field is available when the emitting layer knows
+  the value; the value is zero-based for `page_index`, and
+  `location` is an indirect PDF object with `object_number` and
+  `generation_number`. It is not a promise that every occurrence has that
+  context.
+- `—`: no production emitter exists in HEAD, so no occurrence currently
+  supplies context. This is not implementation work; the row remains in the
+  public catalog for compatibility/planning.
+- `catalog`: the hint comes from the code policy's
+  `DIAGNOSTIC_CATALOG.suggested_action`, not from an ad hoc emitter string.
+  Every current catalog row has a hint; consumers must still tolerate an
+  omitted JSON `hint` for forward compatibility.
+
+When an active emitter has no page or object context, it uses the same fallback
+as a document-level event: the field is omitted from JSON/NDJSON. A source
+path below is an emitter map, not a list of tests or a claim that all
+call-sites have been context-threaded.
+
+| Code | Severity | page_index | location | hint | Emitter module(s) in HEAD |
+|---|---|---|---|---|---|
+| `STRUCT_INVALID_NAME` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_INVALID_HEX` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_INVALID_OCTAL` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_INVALID_STREAM_HEADER` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_UNEXPECTED_BYTE` | warning | optional | optional | catalog | `document.rs`, `conformance.rs`, `parser/lexer/mod.rs`, `parser/object/parser.rs` |
+| `STRUCT_UNEXPECTED_EOF` | warning | optional | optional | catalog | `attachment/name_tree.rs`, `attachment/associated_files.rs`, `attachment/filespec.rs`, `threads/mod.rs`, `parser/lexer/mod.rs`, `parser/struct_tree.rs`, `parser/inline_image.rs`, `parser/ocg.rs`, `parser/outline.rs`, `parser/object/parser.rs`, `parser/catalog.rs`, `forms/mod.rs`, `forms/xfa.rs`, `forms/combiner.rs`, `signature/mod.rs` |
+| `STRUCT_UNTERMINATED_STRING` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_MISSING_KEY` | warning | optional | optional | catalog | `threads/mod.rs`, `attachment/filespec.rs`, `document.rs`, `render/pdfium_path.rs`, `encryption/mod.rs`, `render/image_compositing.rs`, `encryption/decryptor.rs`, `content_stream.rs`, `parser/struct_tree.rs`, `parser/inline_image.rs`, `parser/catalog.rs`, `parser/ocg.rs`, `parser/object/parser.rs`, `parser/objstm.rs`, `parser/outline.rs`, `parser/pages.rs` |
+| `STRUCT_CIRCULAR_REF` | warning | optional | optional | catalog | `parser/struct_tree.rs`, `parser/objstm.rs`, `parser/outline.rs`, `parser/xref.rs`, `parser/object/cache.rs`, `parser/pages.rs` |
+| `STRUCT_XOBJECT_CYCLE` | warning | optional | optional | catalog | `content_stream.rs`, `font/type3_rasterizer.rs` |
+| `STRUCT_DEPTH_EXCEEDED` | warning | optional | optional | catalog | `content_stream.rs`, `parser/pages.rs`, `parser/xref.rs`, `parser/object/cache.rs`, `parser/outline.rs`, `parser/object/parser.rs`, `parser/objstm.rs` |
+| `STRUCT_INVALID_DICT_VALUE` | warning | optional | optional | catalog | `content_stream.rs`, `parser/inline_image.rs`, `parser/object/parser.rs` |
+| `STRUCT_INVALID_DICT_KEY` | warning | optional | optional | catalog | `content_stream.rs`, `parser/inline_image.rs`, `parser/object/parser.rs` |
+| `STRUCT_INVALID_INDIRECT_HEADER` | warning | optional | optional | catalog | `parser/object/parser.rs` |
+| `STRUCT_INTEGER_OVERFLOW` | warning | optional | optional | catalog | `parser/lexer/mod.rs`, `parser/object/parser.rs` |
+| `STRUCT_REAL_INVALID` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_INVALID_NUMBER` | warning | optional | optional | catalog | `parser/lexer/mod.rs` |
+| `STRUCT_INVALID_ASCII85` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `STRUCT_INVALID_OBJSTM` | warning | optional | optional | catalog | `parser/objstm.rs` |
+| `STRUCT_INVALID_GEOMETRY` | warning | optional | optional | catalog | `fingerprint/canonicalize.rs` |
+| `STRUCT_INVALID_TYPE` | warning | optional | optional | catalog | `content_stream.rs`, `attachment/name_tree.rs`, `attachment/associated_files.rs`, `attachment/filespec.rs`, `render/pdfium_path.rs`, `render/image_compositing.rs`, `parser/struct_tree.rs`, `parser/inline_image.rs` |
+| `STRUCT_INVALID_UTF16` | warning | optional | optional | catalog | `signature/mod.rs`, `parser/outline.rs` |
+| `STRUCT_UNRESOLVED_DESTINATION` | warning | optional | optional | catalog | `parser/outline.rs` |
+| `STRUCT_NON_GOTO_OUTLINE` | warning | optional | optional | catalog | `parser/outline.rs` |
+| `STRUCT_INVALID_PDFDOC_ENCODING` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `STRUCT_HYBRID_CONFLICT` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `STRUCT_INCOMPLETE_COVERAGE` | info | optional | optional | catalog | `parser/struct_tree.rs` |
+| `STRUCT_INVALID_PREV_OFFSET` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `STRUCT_INVALID_HINT_STREAM` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `STRUCT_INVALID_BDC_OPERAND` | info | optional | optional | catalog | `content_stream.rs`, `parser/marked_content_operators.rs` |
+| `XREF_INVALID_HEADER` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_INVALID_ENTRY` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_INVALID_SUBSECTION_HEADER` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_OBJECT_ZERO_NOT_FREE` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_TRAILER_NOT_FOUND` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_TRUNCATED` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_REPAIRED` | info | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_LINEARIZED_NO_FORWARD_SCAN` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_REMOTE_NO_FORWARD_SCAN` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_INVALID_STREAM_FORMAT` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `XREF_INVALID_STREAM_ENTRY` | warning | optional | optional | catalog | `parser/xref.rs` |
+| `STREAM_DECODE_ERROR` | warning | optional | optional | catalog | `parser/xref.rs`, `parser/objstm.rs` |
+| `STREAM_BOMB` | error | optional | optional | catalog | `parser/stream.rs`, `render/image_compositing.rs` |
+| `STREAM_UNKNOWN_FILTER` | warning | optional | optional | catalog | `parser/stream.rs` |
+| `STREAM_INVALID_PARAMS` | warning | optional | optional | catalog | `parser/stream.rs` |
+| `STREAM_INVALID_JPEG` | warning | optional | optional | catalog | `parser/stream.rs` |
+| `STREAM_INVALID_CCITT` | warning | optional | optional | catalog | `parser/stream.rs` |
+| `STREAM_TRUNCATED` | warning | optional | optional | catalog | `render/image_compositing.rs` |
+| `STREAM_INVALID_JPX` | warning | optional | optional | catalog | `decoder/jpx.rs` |
+| `ENCRYPTION_UNSUPPORTED` | fatal | optional | optional | catalog | `encryption/mod.rs`, `encryption/decryptor.rs`, `parser/stream.rs` |
+| `ENCRYPTION_WRONG_PASSWORD` | fatal | optional | optional | catalog | `encryption/mod.rs`, `encryption/decryptor.rs`, `parser/stream.rs` |
+| `ENCRYPTION_INVALID_DICT` | fatal | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `PAGE_OUT_OF_RANGE` | error | optional | optional | catalog | `pages.rs` |
+| `PAGE_INVALID_COUNT` | warning | optional | optional | catalog | `parser/pages.rs` |
+| `PAGE_INVALID_ROTATE` | warning | optional | optional | catalog | `content_stream.rs`, `parser/pages.rs` |
+| `FONT_GLYPH_UNMAPPED` | warning | optional | optional | catalog | `font/resolver.rs` |
+| `FONT_NOT_FOUND` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `FONT_INVALID_CMAP` | warning | optional | optional | catalog | `font/cmap.rs`, `font/codespace.rs` |
+| `FONT_PARSE_FAILED` | warning | optional | optional | catalog | `font/type3.rs`, `font/type0.rs`, `font/embedded.rs` |
+| `FONT_UNSUPPORTED` | warning | optional | optional | catalog | `font/embedded.rs` |
+| `FONT_CIDTOGIDMAP_TRUNCATED` | warning | optional | optional | catalog | `font/type0.rs` |
+| `ENCODING_DIFFERENCE_OUT_OF_RANGE` | warning | optional | optional | catalog | `font/encoding.rs` |
+| `FONT_TYPE3_WIDTHS_LENGTH_MISMATCH` | warning | optional | optional | catalog | `font/type3.rs` |
+| `CMAP_INVALID_CODESPACE` | warning | optional | optional | catalog | `cmap/codespace.rs` |
+| `CJK_DECODE_MALFORMED` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `CJK_TOKENIZE_UNKNOWN_BYTE` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `OCR_JBIG2_UNSUPPORTED` | warning | optional | optional | catalog | `decoder/jbig2.rs`, `parser/stream.rs` |
+| `OCR_JPX_UNSUPPORTED` | warning | optional | optional | catalog | `decoder/jpx.rs` |
+| `OCR_CCITT_UNSUPPORTED` | warning | optional | optional | catalog | `parser/stream.rs` |
+| `OCR_TESSERACT_FAILED` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `OCR_BROKENVECTOR_UNAVAILABLE` | warning | optional | optional | catalog | `classify.rs` |
+| `OCR_LANGUAGE_UNAVAILABLE` | warning | optional | optional | catalog | `ocr.rs` |
+| `IMG_SOFTMASK_UNSUPPORTED` | warning | optional | optional | catalog | `render/image_compositing.rs` |
+| `IMG_UNSUPPORTED_FORMAT` | warning | optional | optional | catalog | `preprocess.rs`, `render/pdfium_path.rs`, `render/image_compositing.rs` |
+| `IMG_DESKEW_OUT_OF_RANGE` | warning | optional | optional | catalog | `preprocess.rs` |
+| `IMG_SOURCE_MIXED` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `REMOTE_FETCH_INTERRUPTED` | error | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `REMOTE_NO_RANGE_SUPPORT` | warning | optional | optional | catalog | `source/mod.rs` |
+| `REMOTE_TLS_FAILED` | fatal | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `REMOTE_DNS_FAILED` | fatal | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `REMOTE_URL_PRIVATE_NETWORK` | error | optional | optional | catalog | `url_validation.rs` |
+| `REMOTE_INSUFFICIENT_DISK` | error | optional | optional | catalog | `source/http_range.rs` |
+| `GSTATE_STACK_OVERFLOW` | warning | optional | optional | catalog | `content_stream.rs`, `render/image_compositing.rs`, `font/type3_rasterizer.rs` |
+| `GSTATE_STACK_UNDERFLOW` | warning | optional | optional | catalog | `content_stream.rs`, `font/type3_rasterizer.rs` |
+| `GSTATE_BT_ET_MISMATCH` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `CM_ARG_COUNT` | warning | optional | optional | catalog | `render/image_compositing.rs`, `font/type3_rasterizer.rs` |
+| `CM_DEGENERATE` | warning | optional | optional | catalog | `render/image_compositing.rs`, `font/type3_rasterizer.rs` |
+| `HORIZ_SCALING_ZERO` | warning | optional | optional | catalog | `content_stream.rs` |
+| `TEXT_RENDERING_MODE_CLAMPED` | warning | optional | optional | catalog | `content_stream.rs` |
+| `TSTAR_ZERO_LEADING` | warning | optional | optional | catalog | `content_stream.rs` |
+| `FONT_RESOURCE_NOT_FOUND` | warning | optional | optional | catalog | `content_stream.rs` |
+| `FONT_SIZE_ZERO_OR_NEGATIVE` | warning | optional | optional | catalog | `content_stream.rs` |
+| `BT_NESTED` | warning | optional | optional | catalog | `content_stream.rs` |
+| `ET_WITHOUT_BT` | warning | optional | optional | catalog | `content_stream.rs` |
+| `TEXT_SHOW_OUTSIDE_BT` | warning | optional | optional | catalog | `content_stream.rs` |
+| `TAGGED_PDF_STRUCT_TREE_DEFERRED` | info | optional | optional | catalog | `extract.rs` |
+| `LAYOUT_READING_ORDER_AMBIGUOUS` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `LAYOUT_LOW_READABILITY` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `MCP_TOOL_INVALID_PARAMS` | error | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `MCP_PATH_TRAVERSAL` | error | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `CACHE_ENTRY_CORRUPT` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `CACHE_WRITE_FAILED` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `CACHE_INTEGRITY_FAIL` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `EMC_WITHOUT_BMC` | info | optional | optional | catalog | `parser/marked_content_stack.rs` |
+| `MARKED_CONTENT_DEPTH_EXCEEDED` | info | optional | optional | catalog | `parser/marked_content_stack.rs` |
+| `UNKNOWN_MARKED_CONTENT_PROPS` | info | optional | optional | catalog | `parser/marked_content_operators.rs` |
+| `MCID_REDEFINED` | info | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `INLINE_IMAGE_ID_WHITESPACE_MISSING` | warning | optional | optional | catalog | `parser/inline_image.rs` |
+| `INLINE_IMAGE_NO_EI` | warning | optional | optional | catalog | `parser/inline_image.rs` |
+| `PROFILE_SECRETS_FORBIDDEN` | error | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `PROFILE_INVALID` | error | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `REPAIR_RESCUED_FROM_BACKWARDS_XREF` | info | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `JAVASCRIPT_PRESENT` | info | optional | optional | catalog | `javascript.rs` |
+
+Rows shown as `none in HEAD` are intentionally not silently assigned a fake
+emitter. Some are explicitly marked `(reserved)` in the published catalog;
+the remaining gaps (for example `STRUCT_INVALID_HINT_STREAM` and
+`ENCRYPTION_INVALID_DICT`) are recorded as contract/inventory findings for
+future implementation beads, outside this task. The dead
+`crates/pdftract-core/src/parser/diagnostic.rs` type is excluded: production
+code re-exports the canonical `crate::diagnostics` model and must not bind to
+the legacy duplicate.
+
 ## What pins this contract
 
 | Artifact | Pins |
@@ -264,6 +420,19 @@ Known gaps and hazards for the remaining parent scope (beads
 | `crates/pdftract-core/tests/diagnostics_surface_mirror.rs` | string↔structured one-to-one mirror across surfaces |
 | `crates/pdftract-core/tests/diagnostics_{page_extraction,parser_decoder}_context.rs` | per-layer context threading |
 | `docs/integrations/diagnostics-codes.md`, `docs/errors-array-format.md` | published guides (must agree with this contract) |
+
+The required regression cases are contract tests, not emitter implementation
+work: (1) serialize a diagnostic with every field and assert the exact JSON
+field names and lowercase severity; (2) serialize a document-level diagnostic
+and assert absent page/location/hint fields are omitted rather than `null`;
+(3) assert all 113 catalog rows round-trip with the documented severity and
+hint; (4) assert the legacy and detailed metadata arrays have equal length,
+order, duplicates, and message bytes; (5) assert compact metadata omission,
+full-JSON top-level `errors: []`, NDJSON page-error presence, and footer
+synthetic-page-error-before-document-diagnostic ordering; (6) assert page and
+object context survives the parser, decoder, page, and classification paths;
+and (7) run the catalog drift check with default and `cjk` feature sets so
+feature-gated rows are handled explicitly.
 
 SDK models follow this envelope (e.g. `pdftract-dotnet`
 `Models/Error.cs` — whose `Error` and `ObjectLocation` records mirror
