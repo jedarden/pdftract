@@ -3600,6 +3600,7 @@ name = "pdftract-wasm"
 version = "0.1.0"
 dependencies = [
  "pdftract-core",
+ "serde_json",
  "wasm-bindgen",
 ]
 

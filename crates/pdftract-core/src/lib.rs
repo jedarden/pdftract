@@ -106,6 +106,7 @@
 //! | `serde` | JSON serialization support | ✓ |
 //! | `decrypt` | Decryption of encrypted PDFs | ✓ |
 //! | `quick-xml` | Conformance detection via XML metadata | ✓ |
+//! | `cache` | Filesystem-backed compressed extraction cache | ✓ (native only) |
 //! | `ocr` | Tesseract OCR for scanned documents | - |
 //! | `full-render` | PDFium-based rendering (requires external library) | - |
 //! | `remote` | HTTP range fetching for remote PDFs | - |
@@ -113,6 +114,12 @@
 //! | `receipts` | Cryptographic receipt generation | - |
 //! | `cjk` | CJK text extraction via predefined CMap registry | - |
 //! | `schemars` | JSON Schema generation | - |
+//!
+//! The supported `wasm32-unknown-unknown` profile is provided by the
+//! `pdftract-wasm` workspace member and enables exactly `serde`, `decrypt`,
+//! and `quick-xml`. It reads complete PDFs from memory. `cache`, `remote`,
+//! `ocr`, and `full-render` remain native-only because they require a real
+//! filesystem, native HTTP/TLS or Unix facilities, or system libraries.
 //!
 //! # JSON Schema
 //!
@@ -230,7 +237,7 @@ pub use confidence::{map_confidence_source, ConfidenceSource};
 pub use document::{Document, PageExtraction, PageIter, PdfExtractor};
 pub use page_helper::{extract_all_pages, extract_page, extract_page_range, page_count, PageError};
 pub use extract::{
-    extract_pdf, extract_pdf_streaming, extract_text, ExtractionMetadata,
+    extract_pdf, extract_pdf_from_bytes, extract_pdf_streaming, extract_text, ExtractionMetadata,
     ExtractionResult, PageResult, page_helpers,
 };
 // serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).

@@ -18,15 +18,11 @@
 //! - Serial page processing. `rayon` page-parallelism is OCR-only in
 //!   `pdftract-core` and not part of the wasm build.
 //!
-//! # Status
-//!
-//! Scaffold only: this crate proves the `pdftract-core` wasm32 compilation
-//! edge (enforced in CI by the `wasm32-check` leg of `pdftract-ci`) and pins
-//! the public binding surface. The extraction bindings and the static demo
-//! page are follow-up work, gated on the native extraction pipeline going
-//! green on the regression corpus (see ADR-011).
+//! The public surface intentionally accepts bytes and returns JSON. Browser
+//! callers own file loading and can pass a `Uint8Array` without giving the
+//! parser access to a browser filesystem or a native path.
 
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 /// Returns the pdftract version this binding was built against.
 ///
@@ -37,11 +33,44 @@ pub fn pdftract_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Extract vector text from an in-memory PDF and return the structured result
+/// as JSON.
+///
+/// The wasm build supports vector-text extraction only. Scanned-page OCR,
+/// full-page PDFium rendering, remote HTTP sources, the filesystem cache, and
+/// the `pdftract serve` process mode are native-only features.
+#[wasm_bindgen]
+pub fn extract_vector_text(pdf_bytes: &[u8]) -> Result<String, JsValue> {
+    let mut options = pdftract_core::ExtractionOptions::default();
+    options.max_parallel_pages = 1;
+
+    let result = pdftract_core::extract_pdf_from_bytes(pdf_bytes, &options)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+
+    serde_json::to_string(&result)
+        .map_err(|error| JsValue::from_str(&format!("failed to serialize extraction: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_is_non_empty() {
         assert!(!super::pdftract_version().is_empty());
         assert!(super::pdftract_version().contains('.'));
+    }
+
+    #[test]
+    fn vector_extraction_smoke_uses_in_memory_pdf() {
+        let pdf = include_bytes!("../../../tests/fixtures/test-minimal.pdf");
+        let json = super::extract_vector_text(pdf).expect("vector fixture should extract");
+        let value: serde_json::Value =
+            serde_json::from_str(&json).expect("binding should return valid JSON");
+
+        assert_eq!(value["metadata"]["page_count"], 1);
+        assert!(value["pages"][0]["spans"]
+            .as_array()
+            .expect("page spans should be an array")
+            .iter()
+            .any(|span| span["text"] == "Dummy PDF file"));
     }
 }

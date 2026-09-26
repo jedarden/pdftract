@@ -26,7 +26,8 @@ use crate::page_extraction_error::PageExtractionError;
 use crate::parser::catalog::ReadingOrderAlgorithm;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
-use crate::source::FileSource;
+use crate::source::PdfSource as SourcePdfSource;
+use crate::source::{FileSource, MemorySource};
 #[cfg(feature = "decrypt")]
 use secrecy::ExposeSecret;
 // Import both PdfSource traits with aliases to avoid ambiguity
@@ -40,7 +41,6 @@ use crate::schema::{
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
 use crate::signature::{discover, extract_signatures};
-use crate::source::PdfSource as SourcePdfSource;
 use crate::table::TableCell as Cell;
 use crate::table::{detect_two_page_tables, grid_to_table_json, GridCandidate, TableDetector};
 
@@ -631,12 +631,39 @@ pub fn extract_pdf(
     pdf_path: &std::path::Path,
     options: &ExtractionOptions,
 ) -> Result<ExtractionResult> {
+    let file_source = Arc::new(FileSource::open(pdf_path).context("Failed to open PDF file")?);
+    let source: Arc<dyn ParserPdfSource> = file_source.clone();
+    extract_pdf_from_source(source, options, Some(file_source.as_ref()))
+}
+
+/// Extract text, tables, and metadata from an in-memory PDF.
+///
+/// This is the browser/WASM entry point. It uses the same vector-text
+/// extraction pipeline as [`extract_pdf`] but never opens a file, memory maps a
+/// path, or accesses the filesystem. The bytes must contain a PDF document.
+/// OCR is not performed by this function; enable the native OCR feature and
+/// use a native file-based entry point when scanned-page extraction is needed.
+///
+/// # Errors
+///
+/// Returns an error when the bytes do not contain a parseable PDF or when the
+/// document cannot be extracted.
+pub fn extract_pdf_from_bytes(
+    pdf_bytes: &[u8],
+    options: &ExtractionOptions,
+) -> Result<ExtractionResult> {
+    let source: Arc<dyn ParserPdfSource> = Arc::new(MemorySource::from_slice(pdf_bytes));
+    extract_pdf_from_source(source, options, None)
+}
+
+fn extract_pdf_from_source(
+    source: Arc<dyn ParserPdfSource>,
+    options: &ExtractionOptions,
+    prefetch_source: Option<&dyn SourcePdfSource>,
+) -> Result<ExtractionResult> {
     use crate::parser::catalog::parse_catalog;
     use crate::parser::pages::LazyPageIter;
     use crate::parser::xref::{load_xref_with_prev_chain, XrefResolver};
-
-    // Open the PDF file
-    let source = Arc::new(FileSource::open(pdf_path).context("Failed to open PDF file")?);
 
     // Find the startxref offset
     let startxref_offset =
@@ -793,7 +820,7 @@ pub fn extract_pdf(
     // Phase 1.8: Hint stream prefetch for linearized PDFs
     // If the PDF is linearized and has a hint stream, prefetch the pages
     // that will be extracted. This reduces latency by pipelining HTTP requests.
-    if let Some(ref page_filter) = page_filter {
+    if let (Some(prefetch_source), Some(ref page_filter)) = (prefetch_source, &page_filter) {
         use crate::parser::hint_stream::prefetch_from_hint_stream;
         use crate::parser::xref::detect_linearization;
 
@@ -805,7 +832,7 @@ pub fn extract_pdf(
                 // Prefetch the pages that will be extracted
                 // page_filter contains 0-based page indices
                 prefetch_from_hint_stream(
-                    source.as_ref(),
+                    prefetch_source,
                     hint_offset,
                     hint_length,
                     page_filter.iter().copied(),
@@ -1005,7 +1032,7 @@ pub fn extract_pdf(
     // Phase 7.3: Extract digital signature metadata
     // Discover signature fields and extract metadata from them
     let sig_fields = discover(&resolver_arc, &catalog);
-    let file_size = Some(SourcePdfSource::len(source.as_ref()));
+    let file_size = Some(source.len()?);
     let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
     let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
 
@@ -2415,8 +2442,8 @@ where
 /// Find the startxref offset in a PDF file.
 ///
 /// Scans the last 1024 bytes of the file for "startxref" keyword.
-fn find_startxref(source: &FileSource) -> anyhow::Result<u64> {
-    let len = SourcePdfSource::len(source) as usize;
+fn find_startxref(source: &dyn ParserPdfSource) -> anyhow::Result<u64> {
+    let len = source.len()? as usize;
     let scan_start = len.saturating_sub(1024);
     let scan_end = len;
 

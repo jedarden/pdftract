@@ -206,6 +206,26 @@ pdftract mcp
 
 ## Features
 
+### Browser / WASM
+
+The `pdftract-wasm` workspace member supports in-browser vector-text
+extraction from an in-memory `Uint8Array`. Its supported core feature set is
+exactly `serde`, `decrypt`, and `quick-xml`; the filesystem cache is disabled
+so the `zstd-sys` native C dependency is not included.
+
+Build the binding for the browser target with:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo check -p pdftract-wasm --locked --target wasm32-unknown-unknown
+```
+
+The browser binding does not support scanned-page OCR, PDFium/full-page
+rendering, remote HTTP sources, the filesystem cache, profiles, optional CJK
+or receipt tiers, or the `pdftract serve` HTTP process. Those features remain
+native-only. A scanned page is therefore outside the WASM contract rather
+than silently falling back to OCR.
+
 The default extraction pipeline compiles from source; extraction *correctness*
 is mid-stabilization — see the development-status note above for what is
 currently verified. Optional features unlock heavier dependencies when their

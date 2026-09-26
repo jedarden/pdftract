@@ -2216,7 +2216,13 @@ spec:
             # also needs a real filesystem and Unix permission bits). The
             # binding crate pulls in core with serde+decrypt+quick-xml, so
             # those features keep their wasm32 coverage here.
-            cargo check -p pdftract-wasm --locked --target wasm32-unknown-unknown
+            cargo check -p pdftract-wasm --tests --locked --target wasm32-unknown-unknown
+
+            # Exercise the exported bytes-to-JSON path on the host. A wasm32
+            # cargo check cannot execute a wasm test binary, so this smoke test
+            # shares the exact dependency feature set and catches regressions
+            # in the vector extraction binding itself.
+            cargo test -p pdftract-wasm --lib --locked
 
             echo "=== wasm32 check passed ==="
         volumeMounts:
