@@ -177,3 +177,60 @@ Outcomes and failure text were **identical in A and B** for every command.
    this is what converts criterion 1's FAIL into PASS.
 2. Investigate the 4 pre-existing `stream_decoder_fixtures` mismatches at HEAD
    (`lzw_early_change_*`, `filter_array_a85_then_flate`, `flate_png_pred15_all_six`).
+
+## Round 3 — 2026-09-25 post-fix re-verification and resolution
+
+The diagnostic-plumbing fix child **pdftract-a2e5e10b** closed with fix commits
+`9634a6ef` (`fix(pdftract-a2e5e10b): emit truncated flate diagnostics`) and
+`50e9d654` (`fix(pdftract-a2e5e10b): retain decode diagnostics on empty recovery`).
+The re-verification child **pdftract-1effa6c8** then closed at fixed verification
+HEAD `50e9d654`. Both fix commits are ancestors of the current branch and were
+pushed to `origin/main` before this consolidation. The clean git-archive
+extraction used for this round was `.verify-pdftract-head.0mpacP`; the shared
+dirty worktree was not used for the results below.
+
+Every cargo command in this round was wrapped as
+`timeout --kill-after=30s 600s <command>`.
+
+### Post-fix commands and outcomes
+
+| Command | Outcome | Exit |
+|---|---|---|
+| `cargo test -p pdftract-core --test test_truncated_flate_recovery test_truncated_flate_emits_stream_decode_error -- --exact` | **1 passed / 0 failed**; extraction remained non-fatal, page count was 1, and `STREAM_DECODE_ERROR` was present | 0 |
+| `cargo test -p pdftract-core --test test_truncated_flate_recovery` | **9 passed / 0 failed** | 0 |
+| `cargo test -p pdftract-core --lib parser::stream` | **171 passed / 0 failed** | 0 |
+| `cargo test -p pdftract-core --lib decoder::` | **23 passed / 0 failed** | 0 |
+| `cargo test -p pdftract-core --test stream_decoder_fixtures` | **13/17 fixtures passed**; the same four Round-2 baseline mismatches remained: `flate_png_pred15_all_six`, `lzw_early_change_0`, `lzw_early_change_1`, and `filter_array_a85_then_flate`; `flate_truncated` passed | 101 |
+| `cargo check -p pdftract-core --tests` | Passed with pre-existing warnings; no warning named `truncated_flate` | 0 |
+| `cargo build --all-targets` | Completed successfully | 0 |
+| `cargo test` | **354 passed / 8 unrelated pre-existing `pdftract-cli` failures**; same standing limitation as Round 2 | 101 |
+
+The focused assertion and full affected target are therefore green after the
+fix. The fixture-target exit 101 is unchanged from Round 2 and is attributable
+to the four pre-existing mismatches, not to the diagnostic-plumbing commits.
+The repository-default `cargo test` exit 101 likewise stops on the known
+unrelated `pdftract-cli` failures; the relevant core targets above are green.
+The final bracketed orphan-process checks were empty.
+
+### Round-3 child ledger
+
+| Bead | Commit | Contribution |
+|---|---|---|
+| pdftract-a2e5e10b | `9634a6ef`, `50e9d654` | Plumbed truncated-FlateDecode diagnostics through extraction while retaining non-fatal partial recovery; focused and full target passed. |
+| pdftract-1effa6c8 | none (verification-only) | Re-ran the fixed HEAD in a clean archive; confirmed the assertion and affected target pass, with no new regression. |
+| pdftract-31d79e17 | this append | Consolidates Round 3 and updates the umbrella verdicts. |
+
+### Umbrella bf-hyhjnl criteria after the fix
+
+| Parent criterion | Post-fix verdict | Evidence |
+|---|---|---|
+| Test passes with new assertion | **PASS** | Focused test: 1/1 passed, exit 0. Full `test_truncated_flate_recovery`: 9/9 passed, exit 0. |
+| No regressions in other tests | **PASS**, with pre-existing failures recorded | `parser::stream` 171/0 and `decoder::` 23/0 passed. The fixture target retained exactly the four Round-2 mismatches and introduced no new failure. |
+| Test compiles cleanly | **PASS** | `cargo build --all-targets` and `cargo check -p pdftract-core --tests` exited 0; warnings were pre-existing and none named `truncated_flate`. |
+| Assertion correctly validates STREAM_DECOMPRESS_ERROR presence | **PASS**, with naming correction | The repository's canonical code is `STREAM_DECODE_ERROR` / `DiagCode::StreamDecodeError`; the focused test now observes that diagnostic after the fix. `STREAM_DECOMPRESS_ERROR` remains the stale title spelling. |
+| Verification documented in `notes/bf-4bx00-step4-verification.md` | **PASS** | This Round 3 section records the fix commits, clean-extraction commands, outcomes, and resolved verdicts. |
+
+**Round-3 conclusion:** the prior product-gap FAIL is resolved. The umbrella
+criterion “Test passes with new assertion” flips **FAIL → PASS** at fixed HEAD
+`50e9d654`; the remaining exit-101 results are unchanged, explicitly attributed
+pre-existing conditions.
