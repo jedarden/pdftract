@@ -346,6 +346,72 @@ fn block_to_markdown_emits_requested_page_and_block_index() {
     );
 }
 
+#[test]
+fn every_documented_block_kind_round_trips_through_anchors() {
+    // Keep this list in sync with the block-kind dispatch table in
+    // markdown.rs. Header, footer, and watermark blocks are normally
+    // suppressed, so opt them in here to verify that their anchors still
+    // carry the original kind when they are emitted.
+    let kinds = [
+        "heading",
+        "paragraph",
+        "list",
+        "code",
+        "formula",
+        "table",
+        "caption",
+        "figure",
+        "header",
+        "footer",
+        "watermark",
+        "block_quote",
+        "toc",
+        "note",
+        "footnote",
+        "reference",
+    ];
+    let blocks: Vec<BlockJson> = kinds
+        .iter()
+        .enumerate()
+        .map(|(index, kind)| {
+            let mut block = block(
+                kind,
+                &format!("{kind} block"),
+                [
+                    -12.345 + index as f64,
+                    100.05 + index as f64,
+                    200.05 + index as f64,
+                    300.05 + index as f64,
+                ],
+            );
+            if *kind == "heading" {
+                block.level = Some(2);
+            }
+            block
+        })
+        .collect();
+    let options = MarkdownOptions::default()
+        .with_headers_footers(true)
+        .with_watermarks(true);
+
+    let markdown = page_to_markdown_with_options(&blocks, &[], 3, true, &options);
+    let anchors = parse_anchors(&markdown);
+
+    assert_eq!(anchors.len(), kinds.len());
+    for (index, (anchor, kind)) in anchors.iter().zip(kinds).enumerate() {
+        assert_eq!(anchor.page, 3);
+        assert_eq!(anchor.block, index);
+        assert_eq!(anchor.kind, kind);
+        let expected_x0 = (-12.345 + index as f64) as f32;
+        assert!(
+            (anchor.bbox[0] - expected_x0).abs() <= 0.051,
+            "bbox x0 should round to one decimal place: {} vs {}",
+            anchor.bbox[0],
+            expected_x0
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 3. Round-trip — emission → parse_anchors → recovered block list
 // ---------------------------------------------------------------------------

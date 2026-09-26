@@ -36,7 +36,7 @@ The anchor format is parseable with this stable regex:
 
 ```bash
 # Enable anchors in markdown output
-pdftract extract input.pdf --format markdown --md-anchors > output.md
+pdftract extract input.pdf --format markdown -o output --md-anchors
 ```
 
 ### Rust API
@@ -127,16 +127,29 @@ import re
 ANCHOR_RE = re.compile(
     r'<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->'
 )
+FENCE_RE = re.compile(r'^( {0,3})(`{3,}|~{3,})(.*)$')
 
 def extract_anchors(md_text):
     """Return list of (page, block, bbox, kind) tuples."""
     anchors = []
-    for match in ANCHOR_RE.finditer(md_text):
-        page = int(match.group(1))
-        block = int(match.group(2))
-        bbox = [float(x) for x in match.group(3).split(',')]
-        kind = match.group(4)
-        anchors.append((page, block, bbox, kind))
+    fence = None
+    for line in md_text.splitlines():
+        marker = FENCE_RE.match(line)
+        if fence:
+            if (marker and marker.group(2)[0] == fence[0]
+                    and len(marker.group(2)) >= fence[1]
+                    and not marker.group(3).strip()):
+                fence = None
+            continue
+        if marker:
+            fence = (marker.group(2)[0], len(marker.group(2)))
+            continue
+        for match in ANCHOR_RE.finditer(line):
+            page = int(match.group(1))
+            block = int(match.group(2))
+            bbox = [float(x) for x in match.group(3).split(',')]
+            kind = match.group(4)
+            anchors.append((page, block, bbox, kind))
     return anchors
 ```
 
@@ -144,17 +157,33 @@ def extract_anchors(md_text):
 
 ```javascript
 const ANCHOR_RE = /<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->/g;
+const FENCE_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 
 function extractAnchors(md) {
     const anchors = [];
-    let match;
-    while ((match = ANCHOR_RE.exec(md)) !== null) {
-        anchors.push({
-            page: parseInt(match[1]),
-            block: parseInt(match[2]),
-            bbox: match[3).split(',').map(Number),
-            kind: match[4]
-        });
+    let fence = null;
+    for (const line of md.split(/\r?\n/)) {
+        const marker = line.match(FENCE_RE);
+        if (fence) {
+            if (marker && marker[2][0] === fence[0]
+                    && marker[2].length >= fence[1]
+                    && marker[3].trim() === '') {
+                fence = null;
+            }
+            continue;
+        }
+        if (marker) {
+            fence = [marker[2][0], marker[2].length];
+            continue;
+        }
+        for (const match of line.matchAll(ANCHOR_RE)) {
+            anchors.push({
+                page: parseInt(match[1]),
+                block: parseInt(match[2]),
+                bbox: match[3].split(',').map(Number),
+                kind: match[4]
+            });
+        }
     }
     return anchors;
 }

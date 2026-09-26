@@ -2336,7 +2336,7 @@ Each block emits a single-line HTML comment immediately before its content:
 
 Comment format is a stable schema parseable with one regex:
 ```
-<!-- pdftract: page=(\d+) block=(\d+) bbox=\[([\d.,]+)\] kind=(\w+) -->
+<!--\s*pdftract:\s*page=(\d+)\s+block=(\d+)\s+bbox=\[([-\d.,]+)\]\s+kind=(\w+)\s*-->
 ```
 
 HTML comments are passthrough in every major Markdown renderer (GitHub, GitLab, Obsidian, Notion import, `pulldown-cmark`, `marked`, `markdown-it`), so anchored output is still human-readable.
