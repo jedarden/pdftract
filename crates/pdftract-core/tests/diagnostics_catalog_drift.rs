@@ -34,6 +34,12 @@ struct DocRow {
     reserved: bool,
 }
 
+struct DocHint {
+    code: String,
+    hint: String,
+    line_no: usize,
+}
+
 struct EmissionSite {
     ident: String,
     path: PathBuf,
@@ -206,6 +212,83 @@ fn doc_rows_by_code() -> BTreeMap<String, DocRow> {
     rows_by_code
 }
 
+fn parse_doc_hints() -> Vec<DocHint> {
+    let document = fs::read_to_string(DOC_PATH).expect("cannot read diagnostics-codes.md");
+    let mut rows = Vec::new();
+    let mut in_hint_section = false;
+
+    for (index, line) in document.lines().enumerate() {
+        if line.trim() == "## Catalog Hints" {
+            in_hint_section = true;
+            continue;
+        }
+        if in_hint_section && line.starts_with("## ") {
+            break;
+        }
+        if !in_hint_section {
+            continue;
+        }
+
+        let Some(rest) = line.strip_prefix("| `") else {
+            continue;
+        };
+        let Some((code, after_code)) = rest.split_once('`') else {
+            continue;
+        };
+        if code.is_empty()
+            || !code.chars().all(|character| {
+                character.is_ascii_uppercase() || character == '_' || character.is_ascii_digit()
+            })
+        {
+            continue;
+        }
+
+        let cells: Vec<&str> = after_code.split('|').collect();
+        if cells.len() != 3 {
+            panic!(
+                "diagnostics-codes.md hint row for {code} must have exactly two cells (line {})",
+                index + 1
+            );
+        }
+        let hint = cells[1].trim();
+        if hint.is_empty() {
+            panic!(
+                "diagnostics-codes.md hint row for {code} is empty (line {})",
+                index + 1
+            );
+        }
+        rows.push(DocHint {
+            code: code.to_string(),
+            hint: hint.to_string(),
+            line_no: index + 1,
+        });
+    }
+
+    assert!(
+        rows.len() >= 100,
+        "parsed only {} catalog hints; diagnostics-codes.md hint parsing is broken",
+        rows.len()
+    );
+    rows
+}
+
+fn doc_hints_by_code() -> BTreeMap<String, DocHint> {
+    let mut hints_by_code = BTreeMap::new();
+    for hint in parse_doc_hints() {
+        if let Some(previous) = hints_by_code.insert(hint.code.clone(), hint) {
+            let current_line = hints_by_code
+                .get(&previous.code)
+                .map(|hint| hint.line_no)
+                .expect("inserted duplicate hint row is present");
+            panic!(
+                "diagnostics-codes.md documents hint {} twice (lines {} and {})",
+                previous.code, previous.line_no, current_line
+            );
+        }
+    }
+    hints_by_code
+}
+
 fn debug_ident(code: DiagCode) -> String {
     format!("{code:?}")
         .rsplit("::")
@@ -239,6 +322,15 @@ fn feature_is_disabled(features: &BTreeMap<String, Option<String>>, ident: &str)
         .and_then(|feature| feature.as_deref())
         .and_then(feature_enabled)
         == Some(false)
+}
+
+fn is_canonical_wire_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.chars().all(|character| {
+            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+        })
+        && !code.starts_with('_')
+        && !code.ends_with('_')
 }
 
 fn source_files(path: &Path, files: &mut Vec<PathBuf>) {
@@ -614,8 +706,92 @@ fn actionable_catalog_codes_have_structured_hints() {
 }
 
 #[test]
+fn typed_wire_codes_are_canonical_uppercase() {
+    let docs = doc_rows_by_code();
+    let catalog = catalog_by_ident();
+
+    for &code in DiagCode::ALL {
+        let wire_code = code.name();
+        assert!(
+            is_canonical_wire_code(wire_code),
+            "{} is not a canonical SCREAMING_SNAKE_CASE wire code",
+            wire_code
+        );
+        assert_eq!(
+            DiagCode::from_name(wire_code),
+            Some(code),
+            "{} must round-trip through DiagCode::from_name",
+            wire_code
+        );
+
+        let ident = debug_ident(code);
+        let info = catalog
+            .get(&ident)
+            .unwrap_or_else(|| panic!("{ident} has no catalog entry"));
+        let diagnostic = Diagnostic::with_static_no_offset(code, "wire-code test");
+        let structured = DiagnosticJson::from(&diagnostic);
+        assert_eq!(structured.code, wire_code);
+        assert!(
+            is_canonical_wire_code(&structured.code),
+            "serialized {} code is not canonical",
+            wire_code
+        );
+        assert_eq!(structured.severity, code.severity().to_string());
+        assert_eq!(structured.hint.as_deref(), Some(info.suggested_action));
+        assert!(
+            docs.contains_key(wire_code),
+            "serialized code {} has no documentation row",
+            wire_code
+        );
+    }
+}
+
+#[test]
+fn streaming_page_failure_code_is_the_only_lowercase_exception() {
+    const STREAMING_CODE: &str = "page_extraction_error";
+    let document = fs::read_to_string(DOC_PATH).expect("cannot read diagnostics-codes.md");
+    assert!(
+        document.contains(&format!("`{STREAMING_CODE}`")),
+        "the streaming-only exception must remain documented"
+    );
+    assert!(
+        document.contains("lowercase code is a streaming-only label, not a catalog code"),
+        "the documentation must scope the lowercase exception to streaming page failures"
+    );
+    assert!(
+        doc_rows_by_code().keys().all(|code| code != STREAMING_CODE),
+        "the streaming-only label must not become a catalog row"
+    );
+
+    let mut files = Vec::new();
+    source_files(Path::new(SRC_DIR), &mut files);
+    for path in files {
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
+        if source.contains(&format!("\"code\": \"{STREAMING_CODE}\"")) {
+            assert_eq!(
+                path,
+                Path::new(SRC_DIR).join("output/ndjson/pipeline.rs"),
+                "{STREAMING_CODE} may only be emitted by the NDJSON streaming pipeline"
+            );
+        }
+    }
+
+    let streaming_source = fs::read_to_string(Path::new(SRC_DIR).join("output/ndjson/pipeline.rs"))
+        .expect("cannot read NDJSON streaming pipeline");
+    assert_eq!(
+        streaming_source
+            .matches("\"code\": \"page_extraction_error\"")
+            .count(),
+        2,
+        "the streaming pipeline should create one page-failure shape in each path"
+    );
+}
+
+#[test]
 fn every_documented_code_round_trips_its_published_contract() {
     let catalog = catalog_by_ident();
+    let hints = doc_hints_by_code();
 
     for row in doc_rows_by_code().values() {
         if row.feature.as_deref().and_then(feature_enabled) == Some(false) {
@@ -631,6 +807,14 @@ fn every_documented_code_round_trips_its_published_contract() {
             info.code.severity().to_string(),
             expected_severity,
             "{}: documented severity must match the typed code",
+            row.code
+        );
+        let documented_hint = hints
+            .get(&row.code)
+            .unwrap_or_else(|| panic!("{} has no documented catalog hint", row.code));
+        assert_eq!(
+            documented_hint.hint, info.suggested_action,
+            "{}: documented hint must match the typed catalog",
             row.code
         );
 
@@ -708,10 +892,76 @@ fn every_documented_code_round_trips_its_published_contract() {
 }
 
 #[test]
+fn catalog_hints_have_matching_code_rows_and_no_stale_entries() {
+    let catalog = catalog_by_ident();
+    let docs = doc_rows_by_code();
+    let hints = doc_hints_by_code();
+    let features = variant_features();
+    let mut problems = String::new();
+
+    for hint in hints.values() {
+        let Some(row) = docs.get(&hint.code) else {
+            let _ = writeln!(
+                problems,
+                "{} (hint line {}) has a hint but no diagnostic code row",
+                hint.code, hint.line_no
+            );
+            continue;
+        };
+        if row.feature.as_deref().and_then(feature_enabled) == Some(false) {
+            continue;
+        }
+        let Some(info) = catalog.values().find(|info| info.code.name() == hint.code) else {
+            let _ = writeln!(
+                problems,
+                "{} (hint line {}) has a hint but no DIAGNOSTIC_CATALOG entry",
+                hint.code, hint.line_no
+            );
+            continue;
+        };
+        if feature_is_disabled(&features, &debug_ident(info.code)) {
+            continue;
+        }
+        if hint.hint != info.suggested_action {
+            let _ = writeln!(
+                problems,
+                "{}: hint line {} disagrees with DIAGNOSTIC_CATALOG (code row at line {})",
+                hint.code, hint.line_no, row.line_no
+            );
+        }
+    }
+
+    for info in catalog.values() {
+        if feature_is_disabled(&features, &debug_ident(info.code)) {
+            continue;
+        }
+        let code = info.code.name();
+        if !docs.contains_key(code) {
+            let _ = writeln!(
+                problems,
+                "{code}: catalog entry has no diagnostics-codes.md row"
+            );
+        }
+        if !hints.contains_key(code) {
+            let _ = writeln!(
+                problems,
+                "{code}: catalog entry has no documented catalog hint"
+            );
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "diagnostic catalog hint drift:\n{problems}"
+    );
+}
+
+#[test]
 fn emission_sites_are_documented_with_matching_severity() {
     let catalog = catalog_by_ident();
     let features = variant_features();
     let docs = doc_rows_by_code();
+    let hints = doc_hints_by_code();
     let mut problems = String::new();
 
     for site in emission_sites() {
@@ -746,6 +996,36 @@ fn emission_sites_are_documented_with_matching_severity() {
                 problems,
                 "{code}: docs line {} says severity {:?}, but the emission code is {:?}",
                 row.line_no, row.severity, actual
+            );
+        }
+
+        match hints.get(code) {
+            Some(hint) if hint.hint == info.suggested_action => {}
+            Some(hint) => {
+                let _ = writeln!(
+                    problems,
+                    "{code}: hint line {} disagrees with the emitted catalog policy",
+                    hint.line_no
+                );
+            }
+            None => {
+                let _ = writeln!(
+                    problems,
+                    "{code}: emitted code has no documented catalog hint"
+                );
+            }
+        }
+
+        let structured = DiagnosticJson::from(&Diagnostic::with_static_no_offset(
+            info.code,
+            "emission-site catalog check",
+        ));
+        if structured.severity != actual
+            || structured.hint.as_deref() != Some(info.suggested_action)
+        {
+            let _ = writeln!(
+                problems,
+                "{code}: serialized severity/hint does not preserve the emitted catalog policy"
             );
         }
     }

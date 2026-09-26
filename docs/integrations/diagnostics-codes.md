@@ -349,6 +349,131 @@ Security-related diagnostics.
 |------|----------|-------------|-------|
 | `JAVASCRIPT_PRESENT` | Info | JavaScript present in PDF (never executed) | 1.2 |
 
+## Catalog Hints
+
+The `hint` field is the exact suggested action serialized for each catalog
+code. Keeping these values in a separate two-column table makes the wire
+contract reviewable while allowing the catalog-drift test to compare every
+emitted code's hint byte-for-byte. A code row and a hint row must be added
+together. The lowercase `page_extraction_error` streaming-only label is not
+part of this table because it is not a `DiagCode`.
+
+| Code | Hint |
+|------|------|
+| `STRUCT_INVALID_NAME` | None — the offending name was truncated to 127 bytes per spec |
+| `STRUCT_INVALID_HEX` | Inspect the source PDF for malformed hex escapes |
+| `STRUCT_INVALID_OCTAL` | Inspect the source PDF for malformed octal escapes |
+| `STRUCT_INVALID_STREAM_HEADER` | The stream keyword must be followed by CRLF or LF |
+| `STRUCT_UNEXPECTED_BYTE` | Inspect the source PDF for syntax errors |
+| `STRUCT_UNEXPECTED_EOF` | The file may be truncated |
+| `STRUCT_UNTERMINATED_STRING` | The literal string is missing a closing parenthesis |
+| `STRUCT_MISSING_KEY` | Inspect the source PDF; missing keys are typically substituted with safe defaults |
+| `STRUCT_CIRCULAR_REF` | None — cycle broken at the second visit; affected object returned as null |
+| `STRUCT_XOBJECT_CYCLE` | Investigate the source PDF for a producer bug; cycle is broken at depth 20 |
+| `STRUCT_DEPTH_EXCEEDED` | The PDF has excessively nested structures |
+| `STRUCT_INVALID_DICT_VALUE` | A dictionary key was not followed by a value |
+| `STRUCT_INVALID_DICT_KEY` | A dictionary key is not a name object |
+| `STRUCT_INVALID_INDIRECT_HEADER` | The indirect object header (N G obj) is malformed |
+| `STRUCT_INTEGER_OVERFLOW` | An integer value exceeded the i64 range and was clamped |
+| `STRUCT_REAL_INVALID` | A real number literal could not be parsed as f64; the value was clamped to 0.0 |
+| `STRUCT_INVALID_NUMBER` | A numeric literal was malformed (e.g., --5, bare sign, 1.2.3); the value was clamped to 0 |
+| `STRUCT_INVALID_ASCII85` | The ASCII85 stream has invalid characters, overflow, or misuse of the 'z' shortcut; the offending byte was skipped |
+| `STRUCT_INVALID_OBJSTM` | The object stream has a malformed header or invalid data |
+| `STRUCT_INVALID_GEOMETRY` | NaN or Inf in MediaBox/CropBox/Rotate; canonicalized to 0 for fingerprint computation |
+| `STRUCT_INVALID_UTF16` | UTF-16BE string has odd length or invalid encoding; the string was replaced with a placeholder |
+| `STRUCT_INVALID_PDFDOC_ENCODING` | PDFDocEncoding string could not be decoded to UTF-8; the string was replaced with a placeholder |
+| `STRUCT_INVALID_TYPE` | Object is not the expected type; the object was treated as null |
+| `STRUCT_INVALID_BDC_OPERAND` | BDC operator's second operand was neither a dictionary nor a name; the MCID was set to None |
+| `STRUCT_HYBRID_CONFLICT` | Traditional table entry takes precedence; object marked as Free per traditional table |
+| `STRUCT_INCOMPLETE_COVERAGE` | StructTree coverage below 80% with /Suspects true; falling back to XY-cut reading order |
+| `STRUCT_UNRESOLVED_DESTINATION` | Named destination resolution is deferred to a future enhancement; the outline destination was recorded as None |
+| `STRUCT_NON_GOTO_OUTLINE` | The outline action is not GoTo (e.g., URI); the outline destination was recorded as None |
+| `STRUCT_INVALID_HINT_STREAM` | Prefetch optimization was disabled for this document; extraction continues correctly, just slower (without prefetch) |
+| `XREF_INVALID_HEADER` | The xref table doesn't start with the xref keyword |
+| `XREF_INVALID_ENTRY` | An xref entry doesn't match the 20-byte format |
+| `XREF_INVALID_SUBSECTION_HEADER` | An xref subsection header is malformed |
+| `XREF_OBJECT_ZERO_NOT_FREE` | Object 0 is not free (violates PDF spec) |
+| `XREF_TRAILER_NOT_FOUND` | The trailer dictionary couldn't be located |
+| `XREF_TRUNCATED` | The xref table ends unexpectedly |
+| `XREF_REPAIRED` | None — the xref was reconstructed via forward scan; output may be incomplete on truncated files |
+| `XREF_LINEARIZED_NO_FORWARD_SCAN` | Forward scan is disabled for linearized PDFs |
+| `XREF_REMOTE_NO_FORWARD_SCAN` | Forward scan is disabled for HTTP sources (would fetch entire file) |
+| `XREF_INVALID_STREAM_FORMAT` | The xref stream has a malformed header or invalid /W array; the stream is skipped |
+| `XREF_INVALID_STREAM_ENTRY` | An xref stream entry cannot be parsed due to invalid data |
+| `STRUCT_INVALID_PREV_OFFSET` | A trailer's /Prev offset points to invalid data; the xref chain is truncated at this point |
+| `STREAM_DECODE_ERROR` | Partial output returned for this stream; consider re-saving the PDF through a normalising tool |
+| `STREAM_BOMB` | Increase --max-decompress-gb if the PDF is trusted; otherwise treat as a hostile file |
+| `STREAM_UNKNOWN_FILTER` | The filter name is not supported by this version of pdftract |
+| `STREAM_INVALID_PARAMS` | The /DecodeParms dictionary is malformed; default parameters are used |
+| `STREAM_INVALID_JPEG` | JPEG data is missing SOI/EOI markers; data is passed through anyway |
+| `STREAM_INVALID_CCITT` | CCITT data is missing required /Columns parameter; data is passed through anyway |
+| `STREAM_INVALID_JPX` | JP2 box magic signature not found; raw J2K codestream (no JP2 wrapper) or corrupted data; data is passed through anyway |
+| `ENCRYPTION_UNSUPPORTED` | Supply the correct password via --password, or use an Adobe-side decryption tool first |
+| `ENCRYPTION_WRONG_PASSWORD` | The supplied password is incorrect |
+| `ENCRYPTION_INVALID_DICT` | The /Encrypt dictionary has invalid or malformed entries; the PDF may be corrupted |
+| `PAGE_OUT_OF_RANGE` | Adjust the --pages argument to the actual document page count |
+| `PAGE_INVALID_COUNT` | The /Count key in the /Pages tree is invalid |
+| `PAGE_INVALID_ROTATE` | The /Rotate value is not a multiple of 90; it was normalized |
+| `FONT_GLYPH_UNMAPPED` | The glyph could not be resolved by any of the four levels; output contains U+FFFD |
+| `FONT_NOT_FOUND` | A referenced font is missing from the PDF; a fallback font is used |
+| `FONT_INVALID_CMAP` | The CMap stream is malformed; it's treated as empty |
+| `FONT_PARSE_FAILED` | The embedded font program is corrupt or invalid; the font is treated as having no glyph mappings |
+| `FONT_UNSUPPORTED` | A font type was encountered that doesn't support embedded font program loading |
+| `FONT_CIDTOGIDMAP_TRUNCATED` | The CIDToGIDMap stream has an odd byte count; the trailing byte was discarded |
+| `ENCODING_DIFFERENCE_OUT_OF_RANGE` | A /Differences array contains a character code outside 0-255; the code was clamped |
+| `FONT_TYPE3_WIDTHS_LENGTH_MISMATCH` | The /Widths array length did not match LastChar - FirstChar + 1; the array was clamped or padded with zeros |
+| `CMAP_INVALID_CODESPACE` | The codespace range had malformed lo/hi bounds; the range was skipped and CMap parsing continued |
+| `CJK_DECODE_MALFORMED` | The CJK byte sequence contained malformed bytes, replaced with U+FFFD |
+| `CJK_TOKENIZE_UNKNOWN_BYTE` | The byte did not match any codespace range; U+FFFD was emitted for it (once per font and byte value) |
+| `OCR_JBIG2_UNSUPPORTED` | Build with --features full-render to enable JBIG2 decoding via PDFium |
+| `OCR_JPX_UNSUPPORTED` | Build with --features full-render, or install libopenjp2 system library |
+| `OCR_CCITT_UNSUPPORTED` | Install libtiff system library, or build with --features full-render |
+| `OCR_TESSERACT_FAILED` | Tesseract crashed or returned an error; the page is treated as vector |
+| `OCR_BROKENVECTOR_UNAVAILABLE` | Build with --features ocr to enable OCR recovery on broken-vector pages |
+| `OCR_LANGUAGE_UNAVAILABLE` | Requested language pack not installed; extraction proceeded with eng fallback. Run 'pdftract doctor tesseract-langs' to verify installed languages. |
+| `IMG_SOFTMASK_UNSUPPORTED` | Soft-masked images not supported in direct compositing; use --features full-render for proper rendering |
+| `IMG_UNSUPPORTED_FORMAT` | Image format or bits-per-component not supported; image is skipped |
+| `IMG_DESKEW_OUT_OF_RANGE` | Skew angle exceeds detection range (typically +/- 15 deg); image returned unchanged |
+| `IMG_SOURCE_MIXED` | Page contains both vector and raster images in an unexpected combination; extraction quality may be degraded |
+| `STREAM_TRUNCATED` | Stream has less data than expected; partial data is used |
+| `REMOTE_FETCH_INTERRUPTED` | Retry the request; check network connectivity |
+| `REMOTE_NO_RANGE_SUPPORT` | None — pdftract falls back to whole-file download; consider hosting on a Range-supporting server |
+| `REMOTE_TLS_FAILED` | The TLS handshake failed; check the server's certificate |
+| `REMOTE_DNS_FAILED` | The hostname could not be resolved; check the URL |
+| `REMOTE_URL_PRIVATE_NETWORK` | URL targets a private network address. Use --allow-private-networks to enable (WARNING: security risk in multi-tenant deployments) |
+| `REMOTE_INSUFFICIENT_DISK` | Free disk space on the temp file system (set TMPDIR to a different path if needed), or retry when more space is available |
+| `GSTATE_STACK_OVERFLOW` | Investigate the source PDF for a malformed content stream |
+| `GSTATE_STACK_UNDERFLOW` | The content stream has more Q operators than q operators |
+| `GSTATE_BT_ET_MISMATCH` | The content stream has mismatched BT/ET operators |
+| `CM_ARG_COUNT` | The cm operator requires exactly 6 numeric arguments |
+| `CM_DEGENERATE` | The cm operator received a degenerate matrix; clamped to identity |
+| `HORIZ_SCALING_ZERO` | The Tz operator received 0; clamped to 1.0% to avoid zero-width glyphs |
+| `TEXT_RENDERING_MODE_CLAMPED` | The Tr operator received a value outside 0-7; clamped to valid range |
+| `TSTAR_ZERO_LEADING` | The T* operator was called with leading == 0; no vertical movement occurred |
+| `FONT_RESOURCE_NOT_FOUND` | The Tf operator referenced a font name not found in the resource dictionary; text-show ops will produce no glyphs until a valid font is bound |
+| `FONT_SIZE_ZERO_OR_NEGATIVE` | The Tf operator received a font_size <= 0; clamped to 1.0 to avoid zero-height glyphs |
+| `BT_NESTED` | BT operator called while already inside a text block; text matrices reset to identity |
+| `ET_WITHOUT_BT` | ET operator called without a matching BT; operator ignored |
+| `TEXT_SHOW_OUTSIDE_BT` | Text-showing operator (Tj, TJ, ', ") called outside BT/ET block; no glyphs produced |
+| `TAGGED_PDF_STRUCT_TREE_DEFERRED` | None — Phase 7.1 will replace this fallback in v1.0.0 |
+| `LAYOUT_READING_ORDER_AMBIGUOUS` | The reading order may be incorrect for complex multi-column layouts |
+| `LAYOUT_LOW_READABILITY` | The page has low readability; may indicate mojibake or encoding issues |
+| `MCP_TOOL_INVALID_PARAMS` | Adjust the tool-call arguments to match the schema in tools/list |
+| `MCP_PATH_TRAVERSAL` | The requested path escapes --root; either fix the path or restart the server without --root |
+| `CACHE_ENTRY_CORRUPT` | None — the entry was deleted and extraction re-ran |
+| `CACHE_INTEGRITY_FAIL` | Cache entry failed HMAC verification; possibly poisoned or corrupted. Entry treated as miss and extraction re-ran. |
+| `CACHE_WRITE_FAILED` | Check available disk space; extraction succeeded but the result wasn't cached |
+| `EMC_WITHOUT_BMC` | The unmatched EMC operator was ignored; extraction continues |
+| `MARKED_CONTENT_DEPTH_EXCEEDED` | BMC/BDC nesting exceeded the maximum depth of 64; the excess frame was discarded and extraction continues |
+| `UNKNOWN_MARKED_CONTENT_PROPS` | The BDC property name was not found in the page's /Properties dictionary; the MCID was set to None |
+| `MCID_REDEFINED` | Multiple /MCID keys appeared in the same BDC property dict; the last value wins |
+| `INLINE_IMAGE_ID_WHITESPACE_MISSING` | The inline image ID keyword was not followed by exactly one whitespace byte; the raw-bytes scanner started immediately and recovery was automatic |
+| `INLINE_IMAGE_NO_EI` | The inline image data did not end with the EI keyword; all remaining bytes were consumed as image data |
+| `PROFILE_SECRETS_FORBIDDEN` | Remove the forbidden key from the profile YAML. Keys like password, token, secret, api_key are not allowed in profiles checked into source control. |
+| `PROFILE_INVALID` | Fix the profile YAML syntax or values. Refer to the profile schema for valid options. |
+| `REPAIR_RESCUED_FROM_BACKWARDS_XREF` | None — the xref was reconstructed by scanning backwards from end of file; output may be incomplete on truncated files |
+| `JAVASCRIPT_PRESENT` | The PDF contains embedded JavaScript. Review the document metadata.javascript_actions array for details. pdftract never executes embedded JS. |
+
 ## Adding New Diagnostic Codes
 
 When adding a new diagnostic code:
