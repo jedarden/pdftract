@@ -16,7 +16,9 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::ObjRef;
-use crate::parser::stream::{ExtractionOptions, PdfSource, DEFAULT_MAX_DECOMPRESS_BYTES};
+use crate::parser::stream::{
+    decode_stream_with_context, ExtractionOptions, PdfSource, DEFAULT_MAX_DECOMPRESS_BYTES,
+};
 use crate::parser::xref::XrefResolver;
 
 use base64::engine::Engine;
@@ -31,6 +33,24 @@ const MAX_ATTACHMENT_SIZE: u64 = 50 * 1024 * 1024;
 
 /// Result type for Filespec extraction.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
+
+/// Preserve the Filespec as the fallback object location for diagnostics
+/// emitted by helpers that only receive its dictionary.  A more specific
+/// stream/object location is retained by `with_available_context`.
+fn with_filespec_context(diagnostics: Vec<Diagnostic>, filespec_ref: ObjRef) -> Vec<Diagnostic> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            diagnostic.with_available_context(
+                Some(crate::diagnostics::ObjRef::new(
+                    filespec_ref.object,
+                    filespec_ref.generation,
+                )),
+                None,
+            )
+        })
+        .collect()
+}
 
 /// An extracted attachment with all metadata and decoded content.
 ///
@@ -153,14 +173,15 @@ pub fn extract_one(
     filespec_ref: ObjRef,
     source: Option<&dyn PdfSource>,
 ) -> Result<AttachmentBuilder> {
-    let diagnostics = Vec::new();
+    let mut diagnostics = Vec::new();
 
     // Resolve the Filespec dictionary
     let filespec_obj = resolver.resolve(filespec_ref).map_err(|e| {
         vec![Diagnostic::with_dynamic_no_offset(
             DiagCode::StructUnexpectedEof,
             format!("Failed to resolve Filespec {}: {}", filespec_ref, e),
-        )]
+        )
+        .with_object_ref_parts(filespec_ref.object, filespec_ref.generation)]
     })?;
 
     let filespec_dict = filespec_obj.as_dict().ok_or_else(|| {
@@ -171,11 +192,13 @@ pub fn extract_one(
                 filespec_ref,
                 filespec_obj.type_name()
             ),
-        )]
+        )
+        .with_object_ref_parts(filespec_ref.object, filespec_ref.generation)]
     })?;
 
     // Extract filename: /UF (Unicode, preferred) or /F (system-independent)
-    let name = extract_filename(filespec_dict)?;
+    let name = extract_filename(filespec_dict)
+        .map_err(|diagnostics| with_filespec_context(diagnostics, filespec_ref))?;
 
     // Create attachment builder
     let mut attachment = AttachmentBuilder::new(name);
@@ -184,14 +207,16 @@ pub fn extract_one(
     attachment.description = extract_description(filespec_dict);
 
     // Extract /EF dictionary → /F stream reference
-    let ef_stream_ref = extract_ef_stream_ref(filespec_dict)?;
+    let ef_stream_ref = extract_ef_stream_ref(filespec_dict)
+        .map_err(|diagnostics| with_filespec_context(diagnostics, filespec_ref))?;
 
     // Resolve the EF stream
     let stream_obj = resolver.resolve(ef_stream_ref).map_err(|e| {
         vec![Diagnostic::with_dynamic_no_offset(
             DiagCode::StructUnexpectedEof,
             format!("Failed to resolve EF stream {}: {}", ef_stream_ref, e),
-        )]
+        )
+        .with_object_ref_parts(ef_stream_ref.object, ef_stream_ref.generation)]
     })?;
 
     let stream_dict = stream_obj.as_stream().ok_or_else(|| {
@@ -202,7 +227,8 @@ pub fn extract_one(
                 ef_stream_ref,
                 stream_obj.type_name()
             ),
-        )]
+        )
+        .with_object_ref_parts(ef_stream_ref.object, ef_stream_ref.generation)]
     })?;
 
     // Extract metadata from stream dictionary
@@ -213,9 +239,11 @@ pub fn extract_one(
     attachment.checksum_md5 = extract_checksum(&stream_dict.dict);
 
     // Decode stream content (respecting size limit)
-    let (content, truncated) = decode_stream_content(source, ef_stream_ref, stream_dict);
+    let (content, truncated, stream_diagnostics) =
+        decode_stream_content(source, ef_stream_ref, stream_dict);
     attachment.content = content;
     attachment.truncated = truncated;
+    diagnostics.extend(with_filespec_context(stream_diagnostics, filespec_ref));
 
     if !diagnostics.is_empty() {
         return Err(diagnostics);
@@ -356,14 +384,12 @@ fn extract_checksum(stream_dict: &crate::parser::object::PdfDict) -> Option<Stri
 /// Returns (content, truncated) tuple.
 fn decode_stream_content(
     source: Option<&dyn PdfSource>,
-    _stream_ref: ObjRef,
+    stream_ref: ObjRef,
     stream: &crate::parser::object::PdfStream,
-) -> (Vec<u8>, bool) {
-    use crate::parser::stream::decode_stream;
-
+) -> (Vec<u8>, bool, Vec<Diagnostic>) {
     // If no source provided, return empty content (metadata-only extraction)
     let Some(source) = source else {
-        return (Vec::new(), false);
+        return (Vec::new(), false, Vec::new());
     };
 
     // Check if we have a /Size hint from /Params
@@ -379,7 +405,7 @@ fn decode_stream_content(
     // If size hint exceeds limit, truncate immediately
     if let Some(size) = size_hint {
         if size > MAX_ATTACHMENT_SIZE {
-            return (Vec::new(), true);
+            return (Vec::new(), true, Vec::new());
         }
     }
 
@@ -391,7 +417,9 @@ fn decode_stream_content(
     };
 
     let mut counter = 0u64;
-    let content = decode_stream(stream, source, &opts, &mut counter);
+    let decoded =
+        decode_stream_with_context(stream, source, &opts, &mut counter, Some(stream_ref), None);
+    let content = decoded.bytes;
 
     // Check if decoded content exceeds limit
     if content.len() as u64 > MAX_ATTACHMENT_SIZE {
@@ -401,9 +429,9 @@ fn decode_stream_content(
             .copied()
             .take(MAX_ATTACHMENT_SIZE as usize)
             .collect();
-        (truncated_content, true)
+        (truncated_content, true, decoded.diagnostics)
     } else {
-        (content, false)
+        (content, false, decoded.diagnostics)
     }
 }
 
@@ -580,7 +608,7 @@ fn parse_pdf_date(pdf_date: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::object::{intern, PdfDict, PdfObject, PdfStream};
+    use crate::parser::object::{intern, PdfObject, PdfStream};
     use indexmap::IndexMap;
 
     /// Helper to create a test Filespec dictionary.

@@ -3292,6 +3292,28 @@ impl Diagnostic {
         self.page_index = page_index.map(|page| page as u32);
         self
     }
+
+    /// Attach context that is available at a forwarding boundary.
+    ///
+    /// A parser or extractor may learn the containing object or page only
+    /// after a lower-level helper has emitted its diagnostic. This method
+    /// fills only fields that are still absent: an inner diagnostic's known
+    /// location is never replaced by an outer, less-specific one. `None`
+    /// therefore means "context unavailable; keep the field omitted".
+    #[inline]
+    pub fn with_available_context(
+        mut self,
+        object_ref: Option<ObjRef>,
+        page_index: Option<usize>,
+    ) -> Self {
+        if self.object_ref.is_none() {
+            self.object_ref = object_ref;
+        }
+        if self.page_index.is_none() {
+            self.page_index = page_index.map(|page| page as u32);
+        }
+        self
+    }
 }
 
 impl fmt::Debug for Diagnostic {
@@ -3869,6 +3891,22 @@ mod tests {
         assert_eq!(diag.object_ref, None);
         assert_eq!(diag.page_index, Some(1));
         assert_eq!(diag.message.as_ref(), "short read");
+    }
+
+    #[test]
+    fn test_with_available_context_preserves_known_fields() {
+        let diagnostic = Diagnostic::with_message(DiagCode::StreamTruncated, "short read")
+            .with_object_ref(ObjRef::new(7, 2))
+            .with_page_index(3)
+            .with_available_context(Some(ObjRef::new(8, 4)), Some(9));
+
+        assert_eq!(diagnostic.object_ref, Some(ObjRef::new(7, 2)));
+        assert_eq!(diagnostic.page_index, Some(3));
+
+        let document_diagnostic = Diagnostic::with_message(DiagCode::StreamTruncated, "short read")
+            .with_available_context(None, None);
+        assert_eq!(document_diagnostic.object_ref, None);
+        assert_eq!(document_diagnostic.page_index, None);
     }
 
     #[test]

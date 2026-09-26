@@ -24,7 +24,7 @@ use crate::parser::lexer::Token;
 use crate::parser::object::{ObjRef, PdfObject};
 use crate::parser::resources::ResourceDict;
 use crate::parser::stream::{
-    decode_stream, ExtractionOptions as StreamExtractionOptions, PdfSource,
+    decode_stream_with_context, ExtractionOptions as StreamExtractionOptions, PdfSource,
 };
 use crate::parser::xref::XrefResolver;
 use image::{DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage, Rgba, RgbaImage};
@@ -35,6 +35,17 @@ const MAX_IMAGES_PER_PAGE: usize = 256;
 
 /// Result type for image compositing operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
+
+fn with_image_object_context(
+    diagnostics: Vec<Diagnostic>,
+    xobject_ref: ObjRef,
+) -> Vec<Diagnostic> {
+    let object_ref = crate::diagnostics::ObjRef::new(xobject_ref.object, xobject_ref.generation);
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.with_available_context(Some(object_ref), None))
+        .collect()
+}
 
 /// An image placement instruction from a Do operator.
 ///
@@ -230,6 +241,10 @@ pub fn collect_image_placements(
                                                     "Too many images on page ({}), aborting",
                                                     MAX_IMAGES_PER_PAGE
                                                 ),
+                                            )
+                                            .with_object_ref_parts(
+                                                xobject_ref.object,
+                                                xobject_ref.generation,
                                             ));
                                             return Err(diagnostics);
                                         }
@@ -391,6 +406,10 @@ pub fn collect_image_xobjects(
                                                     "Too many images on page ({}), aborting",
                                                     MAX_IMAGES_PER_PAGE
                                                 ),
+                                            )
+                                            .with_object_ref_parts(
+                                                xobject_ref.object,
+                                                xobject_ref.generation,
                                             ));
                                             return Err(diagnostics);
                                         }
@@ -749,6 +768,12 @@ pub fn decode_image_xobject(
 ) -> Result<DynamicImage> {
     let mut diagnostics = Vec::new();
 
+    macro_rules! fail {
+        () => {
+            return Err(with_image_object_context(diagnostics, xobject_ref));
+        };
+    }
+
     // Resolve the XObject
     let xobject = match resolver.resolve(xobject_ref) {
         Ok(obj) => obj,
@@ -757,7 +782,7 @@ pub fn decode_image_xobject(
                 DiagCode::StructMissingKey,
                 format!("Failed to resolve XObject: {:?}", e),
             ));
-            return Err(diagnostics);
+            fail!();
         }
     };
 
@@ -769,7 +794,7 @@ pub fn decode_image_xobject(
                 DiagCode::StructInvalidType,
                 "XObject is not a stream",
             ));
-            return Err(diagnostics);
+            fail!();
         }
     };
 
@@ -782,14 +807,14 @@ pub fn decode_image_xobject(
                 DiagCode::StructInvalidType,
                 "XObject is not an Image",
             ));
-            return Err(diagnostics);
+            fail!();
         }
         None => {
             diagnostics.push(Diagnostic::with_static_no_offset(
                 DiagCode::StructMissingKey,
                 "XObject missing /Subtype",
             ));
-            return Err(diagnostics);
+            fail!();
         }
     };
 
@@ -799,7 +824,7 @@ pub fn decode_image_xobject(
             DiagCode::ImgSoftmaskUnsupported,
             "Soft-masked images not supported in direct compositing path",
         ));
-        return Err(diagnostics);
+        fail!();
     }
 
     // Decode the stream
@@ -808,7 +833,16 @@ pub fn decode_image_xobject(
         password: None,
     };
     let mut doc_counter = 0u64;
-    let decoded = decode_stream(stream, source, &stream_opts, &mut doc_counter);
+    let decoded = decode_stream_with_context(
+        stream,
+        source,
+        &stream_opts,
+        &mut doc_counter,
+        Some(xobject_ref),
+        None,
+    );
+    diagnostics.extend(decoded.diagnostics);
+    let decoded = decoded.bytes;
 
     // Get image dimensions
     let width = match dict.get("/Width") {
@@ -819,7 +853,7 @@ pub fn decode_image_xobject(
                 DiagCode::StructMissingKey,
                 "Image missing /Width",
             ));
-            return Err(diagnostics);
+            fail!();
         }
     };
 
@@ -831,7 +865,7 @@ pub fn decode_image_xobject(
                 DiagCode::StructMissingKey,
                 "Image missing /Height",
             ));
-            return Err(diagnostics);
+            fail!();
         }
     };
 
@@ -905,7 +939,7 @@ pub fn decode_image_xobject(
                 decoded.len()
             ),
         ));
-        return Err(diagnostics);
+        fail!();
     }
 
     // Create image from decoded data
@@ -929,7 +963,7 @@ pub fn decode_image_xobject(
                 DiagCode::ImgUnsupportedFormat,
                 "Unsupported bits per component for RGB image",
             ));
-            return Err(diagnostics);
+            fail!();
         }
     } else if is_cmyk {
         // CMYK image - need to convert to RGB
@@ -978,7 +1012,7 @@ pub fn decode_image_xobject(
                 DiagCode::ImgUnsupportedFormat,
                 "Unsupported bits per component for grayscale image",
             ));
-            return Err(diagnostics);
+            fail!();
         }
     };
 
@@ -1241,6 +1275,19 @@ mod tests {
         let result = collect_image_placements(content, &resources);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_decode_image_xobject_error_retains_object_location() {
+        let resolver = XrefResolver::new();
+        let source = crate::parser::stream::MemorySource::new(Vec::new());
+        let xobject_ref = ObjRef::new(33, 2);
+
+        let diagnostics = decode_image_xobject(xobject_ref, &resolver, &source, 1024)
+            .expect_err("uncached XObject should produce a diagnostic");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagCode::StructMissingKey);
+        assert_eq!(diagnostics[0].object_ref, Some(crate::diagnostics::ObjRef::new(33, 2)));
     }
 
     #[test]

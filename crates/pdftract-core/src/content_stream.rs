@@ -1872,11 +1872,14 @@ fn handle_do_operator(
     _marked_content_stack: Option<&MarkedContentStack>,
     pdf_bytes: &[u8],
 ) {
+    let diagnostic_start = diagnostics.len();
+
     // Resolve the XObject stream
     let xobject_obj = match resolve_xobject_stream(xobject_ref, pdf_bytes) {
         Ok(obj) => obj,
         Err(e) => {
             diagnostics.push(e);
+            attach_xobject_context(diagnostics, diagnostic_start, xobject_ref);
             return;
         }
     };
@@ -1891,6 +1894,7 @@ fn handle_do_operator(
         }
         XObjectResolveResult::Error(diag) => {
             diagnostics.push(diag);
+            attach_xobject_context(diagnostics, diagnostic_start, xobject_ref);
             return;
         }
     };
@@ -1903,6 +1907,7 @@ fn handle_do_operator(
                 DiagCode::StructInvalidType,
                 format!("XObject '{}' has unknown /Subtype", name),
             ));
+            attach_xobject_context(diagnostics, diagnostic_start, xobject_ref);
             return;
         }
         None => {
@@ -1910,6 +1915,7 @@ fn handle_do_operator(
                 DiagCode::StructMissingKey,
                 format!("XObject '{}' missing /Subtype", name),
             ));
+            attach_xobject_context(diagnostics, diagnostic_start, xobject_ref);
             return;
         }
     };
@@ -1920,6 +1926,7 @@ fn handle_do_operator(
             let xobject_id = xobject_ref.object;
             if let Err(e) = exec_context.can_enter(xobject_id) {
                 diagnostics.push(e);
+                attach_xobject_context(diagnostics, diagnostic_start, xobject_ref);
                 return;
             }
 
@@ -1968,6 +1975,24 @@ fn handle_do_operator(
         _ => {
             // Unknown subtype - already handled above
         }
+    }
+
+    attach_xobject_context(diagnostics, diagnostic_start, xobject_ref);
+}
+
+/// Add an XObject's indirect location to diagnostics emitted while resolving
+/// or executing that XObject.  Diagnostics that already carry a more precise
+/// location are preserved, and a call with no object context is not guessed.
+fn attach_xobject_context(
+    diagnostics: &mut [Diagnostic],
+    start: usize,
+    xobject_ref: crate::parser::object::ObjRef,
+) {
+    let object_ref = crate::diagnostics::ObjRef::new(xobject_ref.object, xobject_ref.generation);
+    for diagnostic in diagnostics.iter_mut().skip(start) {
+        *diagnostic = diagnostic
+            .clone()
+            .with_available_context(Some(object_ref), None);
     }
 }
 
@@ -3665,6 +3690,32 @@ mod tests {
             underflow_count, 1,
             "Underflow diagnostic should be emitted for Q at depth 0"
         );
+    }
+
+    #[test]
+    fn test_do_diagnostic_retains_xobject_location() {
+        let mut resources = ResourceDict::new();
+        let xobject_ref = ObjRef::new(17, 1);
+        resources
+            .xobjects
+            .insert(Arc::from("Im1"), xobject_ref);
+
+        let result = execute_with_do(
+            b"/Im1 Do",
+            &resources,
+            ProcessingMode::Normal,
+            None,
+            None,
+            &[],
+            None,
+        );
+
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == DiagCode::StructMissingKey)
+            .expect("XObject resolution diagnostic");
+        assert_eq!(diagnostic.object_ref, Some(crate::diagnostics::ObjRef::new(17, 1)));
     }
 
     // Acceptance criteria tests for pdftract-4dmp

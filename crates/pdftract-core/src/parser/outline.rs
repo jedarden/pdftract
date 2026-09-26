@@ -20,6 +20,10 @@ use std::collections::HashSet;
 /// Real-world PDFs rarely exceed 5 levels; 16 is very generous.
 const MAX_OUTLINE_DEPTH: u8 = 16;
 
+fn diagnostic_object_ref(object_ref: ObjRef) -> crate::diagnostics::ObjRef {
+    crate::diagnostics::ObjRef::new(object_ref.object, object_ref.generation)
+}
+
 /// Destination anchor types for outline destinations.
 ///
 /// Per PDF 1.7 spec section 12.3.2.2 "Explicit Destinations":
@@ -591,27 +595,35 @@ fn parse_outline_recursive(
     depth: u8,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Outline> {
+    let diagnostic_start = diagnostics.len();
+
     // Cycle detection
     if !visited.insert(node_ref) {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructCircularRef,
-            format!(
-                "STRUCT_CIRCULAR_REF: Cycle detected at outline node {}",
-                node_ref
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructCircularRef,
+                format!(
+                    "STRUCT_CIRCULAR_REF: Cycle detected at outline node {}",
+                    node_ref
+                ),
+            )
+            .with_object_ref(diagnostic_object_ref(node_ref)),
+        );
         return None;
     }
 
     // Depth limit check
     if depth >= MAX_OUTLINE_DEPTH {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructDepthExceeded,
-            format!(
-                "STRUCT_DEPTH_EXCEEDED: Outline depth exceeds limit of {}",
-                MAX_OUTLINE_DEPTH
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructDepthExceeded,
+                format!(
+                    "STRUCT_DEPTH_EXCEEDED: Outline depth exceeds limit of {}",
+                    MAX_OUTLINE_DEPTH
+                ),
+            )
+            .with_object_ref(diagnostic_object_ref(node_ref)),
+        );
         return None;
     }
 
@@ -619,10 +631,13 @@ fn parse_outline_recursive(
     let node_obj = match resolver.resolve(node_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!("Failed to resolve outline node {}: {}", node_ref, e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Failed to resolve outline node {}: {}", node_ref, e),
+                )
+                .with_object_ref(diagnostic_object_ref(node_ref)),
+            );
             return None;
         }
     };
@@ -630,10 +645,13 @@ fn parse_outline_recursive(
     let node_dict = match node_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!("Outline node {} is not a dictionary", node_ref),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Outline node {} is not a dictionary", node_ref),
+                )
+                .with_object_ref(diagnostic_object_ref(node_ref)),
+            );
             return None;
         }
     };
@@ -648,13 +666,16 @@ fn parse_outline_recursive(
             }
         },
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructMissingKey,
-                format!(
-                    "STRUCT_MISSING_KEY: Outline node {} missing /Title",
-                    node_ref
-                ),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!(
+                        "STRUCT_MISSING_KEY: Outline node {} missing /Title",
+                        node_ref
+                    ),
+                )
+                .with_object_ref(diagnostic_object_ref(node_ref)),
+            );
             String::from("<missing title>")
         }
     };
@@ -710,6 +731,12 @@ fn parse_outline_recursive(
         }
     }
 
+    for diagnostic in &mut diagnostics[diagnostic_start..] {
+        *diagnostic = diagnostic
+            .clone()
+            .with_available_context(Some(diagnostic_object_ref(node_ref)), None);
+    }
+
     Some(outline)
 }
 
@@ -745,10 +772,13 @@ pub fn parse_outlines(
     let root_obj = match resolver.resolve(outlines_root_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!("Failed to resolve /Outlines root: {}", e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Failed to resolve /Outlines root: {}", e),
+                )
+                .with_object_ref(diagnostic_object_ref(outlines_root_ref)),
+            );
             return (outlines, diagnostics);
         }
     };
@@ -756,10 +786,13 @@ pub fn parse_outlines(
     let root_dict = match root_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_static_no_offset(
-                DiagCode::StructUnexpectedEof,
-                "/Outlines root is not a dictionary",
-            ));
+            diagnostics.push(
+                Diagnostic::with_static_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    "/Outlines root is not a dictionary",
+                )
+                .with_object_ref(diagnostic_object_ref(outlines_root_ref)),
+            );
             return (outlines, diagnostics);
         }
     };
@@ -1266,9 +1299,14 @@ mod tests {
         // Should get both outlines before detecting the cycle
         assert_eq!(outlines.len(), 2);
         // Should have a cycle diagnostic
-        assert!(diags
+        let diagnostic = diags
             .iter()
-            .any(|d| d.message.contains("STRUCT_CIRCULAR_REF")));
+            .find(|d| d.message.contains("STRUCT_CIRCULAR_REF"))
+            .expect("outline cycle diagnostic");
+        assert_eq!(
+            diagnostic.object_ref,
+            Some(diagnostic_object_ref(ObjRef::new(100, 0)))
+        );
     }
 
     #[test]
@@ -1296,9 +1334,14 @@ mod tests {
         let (outlines, diags) = parse_outlines(&resolver, Some(ObjRef::new(99, 0)), &pages);
         assert_eq!(outlines.len(), 1);
         assert_eq!(outlines[0].title, "<missing title>");
-        assert!(diags
+        let diagnostic = diags
             .iter()
-            .any(|d| d.message.contains("STRUCT_MISSING_KEY")));
+            .find(|d| d.message.contains("STRUCT_MISSING_KEY"))
+            .expect("missing outline title diagnostic");
+        assert_eq!(
+            diagnostic.object_ref,
+            Some(diagnostic_object_ref(ObjRef::new(100, 0)))
+        );
     }
 
     #[test]

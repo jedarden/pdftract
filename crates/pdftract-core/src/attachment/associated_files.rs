@@ -169,10 +169,13 @@ fn extract_af_relationship(
     let filespec_obj = match resolver.resolve(filespec_ref) {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!("Failed to resolve Filespec {}: {}", filespec_ref, e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Failed to resolve Filespec {}: {}", filespec_ref, e),
+                )
+                .with_object_ref_parts(filespec_ref.object, filespec_ref.generation),
+            );
             return Err(diagnostics);
         }
     };
@@ -181,14 +184,17 @@ fn extract_af_relationship(
     let filespec_dict = match filespec_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructInvalidType,
-                format!(
-                    "Filespec {} is not a dictionary (type: {})",
-                    filespec_ref,
-                    filespec_obj.type_name()
-                ),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!(
+                        "Filespec {} is not a dictionary (type: {})",
+                        filespec_ref,
+                        filespec_obj.type_name()
+                    ),
+                )
+                .with_object_ref_parts(filespec_ref.object, filespec_ref.generation),
+            );
             return Err(diagnostics);
         }
     };
@@ -394,8 +400,15 @@ mod tests {
         let resolver = XrefResolver::new();
         let filespec_ref = ObjRef::new(999, 0); // Not cached
 
-        let result = extract_af_relationship(&resolver, filespec_ref);
-        assert!(result.is_err());
+        let diagnostics = extract_af_relationship(&resolver, filespec_ref).unwrap_err();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].object_ref,
+            Some(crate::diagnostics::ObjRef::new(
+                filespec_ref.object,
+                filespec_ref.generation,
+            ))
+        );
     }
 
     #[test]

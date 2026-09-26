@@ -46,6 +46,10 @@ use crate::parser::xref::XrefResolver;
 /// Result type for name tree parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 
+fn diagnostic_object_ref(object_ref: ObjRef) -> crate::diagnostics::ObjRef {
+    crate::diagnostics::ObjRef::new(object_ref.object, object_ref.generation)
+}
+
 /// A single entry from the /EmbeddedFiles name tree.
 ///
 /// Contains the name (string key) and the Filespec reference.
@@ -119,7 +123,8 @@ pub fn walk_embedded_files(
             return Err(vec![Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve /Names {}: {}", names_ref, e),
-            )]);
+            )
+            .with_object_ref(diagnostic_object_ref(names_ref))]);
         }
     };
 
@@ -133,7 +138,8 @@ pub fn walk_embedded_files(
                     names_ref,
                     names_obj.type_name()
                 ),
-            )]);
+            )
+            .with_object_ref(diagnostic_object_ref(names_ref))]);
         }
     };
 
@@ -151,10 +157,13 @@ pub fn walk_embedded_files(
         Some(ref_) => match resolver.resolve(ref_) {
             Ok(obj) => obj,
             Err(e) => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructUnexpectedEof,
-                    format!("Failed to resolve /EmbeddedFiles {}: {}", ref_, e),
-                ));
+                diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructUnexpectedEof,
+                        format!("Failed to resolve /EmbeddedFiles {}: {}", ref_, e),
+                    )
+                    .with_object_ref(diagnostic_object_ref(ref_)),
+                );
                 return Err(diagnostics);
             }
         },
@@ -164,19 +173,34 @@ pub fn walk_embedded_files(
     let tree_root_dict = match tree_root.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructInvalidType,
-                format!(
-                    "/EmbeddedFiles root is not a dictionary (type: {})",
-                    tree_root.type_name()
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!(
+                        "/EmbeddedFiles root is not a dictionary (type: {})",
+                        tree_root.type_name()
+                    ),
+                )
+                .with_object_ref_opt(
+                    embedded_files_obj
+                        .as_ref()
+                        .map(|ref_| diagnostic_object_ref(ref_)),
                 ),
-            ));
+            );
             return Err(diagnostics);
         }
     };
 
     // Walk the tree recursively
-    walk_tree_node(resolver, tree_root_dict, &mut entries, &mut diagnostics)?;
+    walk_tree_node(
+        resolver,
+        tree_root_dict,
+        embedded_files_obj
+            .as_ref()
+            .map(|ref_| diagnostic_object_ref(ref_)),
+        &mut entries,
+        &mut diagnostics,
+    )?;
 
     if !diagnostics.is_empty() {
         return Err(diagnostics);
@@ -196,9 +220,11 @@ pub fn walk_embedded_files(
 fn walk_tree_node(
     resolver: &XrefResolver,
     node_dict: &crate::parser::object::PdfDict,
+    node_ref: Option<crate::diagnostics::ObjRef>,
     entries: &mut Vec<EmbeddedFileEntry>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<()> {
+    let diagnostic_start = diagnostics.len();
     // Check for /Names (leaf node) - alternating [key value key value ...]
     if let Some(names_array) = node_dict.get("/Names").and_then(|o| o.as_array()) {
         parse_names_array(names_array, entries, diagnostics)?;
@@ -225,10 +251,13 @@ fn walk_tree_node(
             let kid_obj = match resolver.resolve(kid_ref) {
                 Ok(obj) => obj,
                 Err(e) => {
-                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                        DiagCode::StructUnexpectedEof,
-                        format!("Failed to resolve /Kids[{}] {}: {}", idx, kid_ref, e),
-                    ));
+                    diagnostics.push(
+                        Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructUnexpectedEof,
+                            format!("Failed to resolve /Kids[{}] {}: {}", idx, kid_ref, e),
+                        )
+                        .with_object_ref(diagnostic_object_ref(kid_ref)),
+                    );
                     continue;
                 }
             };
@@ -236,26 +265,39 @@ fn walk_tree_node(
             let kid_dict = match kid_obj.as_dict() {
                 Some(d) => d,
                 None => {
-                    diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                        DiagCode::StructInvalidType,
-                        format!(
-                            "/Kids[{}] {} is not a dictionary (type: {})",
-                            idx,
-                            kid_ref,
-                            kid_obj.type_name()
-                        ),
-                    ));
+                    diagnostics.push(
+                        Diagnostic::with_dynamic_no_offset(
+                            DiagCode::StructInvalidType,
+                            format!(
+                                "/Kids[{}] {} is not a dictionary (type: {})",
+                                idx,
+                                kid_ref,
+                                kid_obj.type_name()
+                            ),
+                        )
+                        .with_object_ref(diagnostic_object_ref(kid_ref)),
+                    );
                     continue;
                 }
             };
 
             // Recursively walk the child node
-            walk_tree_node(resolver, kid_dict, entries, diagnostics)?;
+            walk_tree_node(
+                resolver,
+                kid_dict,
+                Some(diagnostic_object_ref(kid_ref)),
+                entries,
+                diagnostics,
+            )?;
         }
     }
 
     // Node may have /Limits [min max] - not used for walking, only for search optimization
     // We ignore /Limits since we're doing a full tree walk
+
+    for diagnostic in &mut diagnostics[diagnostic_start..] {
+        *diagnostic = diagnostic.clone().with_available_context(node_ref, None);
+    }
 
     Ok(())
 }
@@ -417,7 +459,7 @@ fn decode_pdfdocencoding(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::object::{intern, PdfDict, PdfObject};
+    use crate::parser::object::{intern, PdfObject};
     use indexmap::IndexMap;
 
     /// Helper to create a test /Names dictionary with /EmbeddedFiles.
@@ -701,9 +743,11 @@ mod tests {
         assert!(result.is_err());
 
         let diagnostics = result.unwrap_err();
-        assert!(diagnostics
+        let diagnostic = diagnostics
             .iter()
-            .any(|d| d.message.contains("not a string")));
+            .find(|d| d.message.contains("not a string"))
+            .expect("malformed name key diagnostic");
+        assert_eq!(diagnostic.object_ref, Some(diagnostic_object_ref(tree_ref)));
     }
 
     #[test]
@@ -727,9 +771,11 @@ mod tests {
         assert!(result.is_err());
 
         let diagnostics = result.unwrap_err();
-        assert!(diagnostics
+        let diagnostic = diagnostics
             .iter()
-            .any(|d| d.message.contains("not a reference")));
+            .find(|d| d.message.contains("not a reference"))
+            .expect("malformed filespec reference diagnostic");
+        assert_eq!(diagnostic.object_ref, Some(diagnostic_object_ref(tree_ref)));
     }
 
     #[test]

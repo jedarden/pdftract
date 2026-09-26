@@ -12,6 +12,19 @@ use crate::parser::object::{ObjRef, PdfDict, PdfObject};
 use crate::parser::xref::XrefResolver;
 use crate::parser::{DiagCode, Diagnostic};
 
+fn diagnostic_object_ref(object_ref: ObjRef) -> crate::diagnostics::ObjRef {
+    crate::diagnostics::ObjRef::new(object_ref.object, object_ref.generation)
+}
+
+fn with_oc_properties_context(diagnostics: Vec<Diagnostic>, object_ref: ObjRef) -> Vec<Diagnostic> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            diagnostic.with_available_context(Some(diagnostic_object_ref(object_ref)), None)
+        })
+        .collect()
+}
+
 /// Base state for OCG visibility in the default configuration.
 ///
 /// Represents the `/BaseState` entry in the default configuration dictionary `/D`.
@@ -315,7 +328,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve /OCProperties: {}", e),
             ));
-            oc_properties.diagnostics = diagnostics;
+            oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
             return oc_properties;
         }
     };
@@ -330,7 +343,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                     oc_props_obj.type_name()
                 ),
             ));
-            oc_properties.diagnostics = diagnostics;
+            oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
             return oc_properties;
         }
     };
@@ -343,7 +356,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                 DiagCode::StructUnexpectedEof,
                 format!("/OCGs is not an array (type: {})", other.type_name()),
             ));
-            oc_properties.diagnostics = diagnostics;
+            oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
             return oc_properties;
         }
         None => {
@@ -351,7 +364,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                 DiagCode::StructMissingKey,
                 "/OCGs key missing from /OCProperties",
             ));
-            oc_properties.diagnostics = diagnostics;
+            oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
             return oc_properties;
         }
     };
@@ -364,10 +377,13 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                 oc_properties.groups.insert(ocg_ref, group);
             }
             Err(e) => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                    DiagCode::StructUnexpectedEof,
-                    format!("Failed to resolve OCG ref {}: {}", ocg_ref, e),
-                ));
+                diagnostics.push(
+                    Diagnostic::with_dynamic_no_offset(
+                        DiagCode::StructUnexpectedEof,
+                        format!("Failed to resolve OCG ref {}: {}", ocg_ref, e),
+                    )
+                    .with_object_ref(diagnostic_object_ref(ocg_ref)),
+                );
             }
         }
     }
@@ -380,7 +396,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                 DiagCode::StructUnexpectedEof,
                 format!("/D is not a dictionary (type: {})", other.type_name()),
             ));
-            oc_properties.diagnostics = diagnostics;
+            oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
             return oc_properties;
         }
         None => {
@@ -388,7 +404,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
                 DiagCode::StructMissingKey,
                 "/D key missing from /OCProperties",
             ));
-            oc_properties.diagnostics = diagnostics;
+            oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
             return oc_properties;
         }
     };
@@ -429,7 +445,7 @@ pub fn parse_oc_properties(resolver: &XrefResolver, oc_props_ref: Option<ObjRef>
     // For now, we only store the default config (/D)
     // Full support for alternate configs is deferred to Phase 7 per plan
 
-    oc_properties.diagnostics = diagnostics;
+    oc_properties.diagnostics = with_oc_properties_context(diagnostics, oc_props_ref);
     oc_properties
 }
 
