@@ -11,7 +11,7 @@
 > **⚠️ Development status (evidence-audited 2026-09-17).** pdftract is pre-release and mid-stabilization (tracked in bead `pdftract-f19fd721`). The tables below describe the *designed* capability set; what is actually verified today:
 >
 > - **The canonical smoke extraction passes at HEAD** — the W3C WAI dummy PDF at `tests/fixtures/test-minimal.pdf` extracts the text `Dummy PDF file`. The broader fixture corpus remains pre-release work and is not represented as a shipped compatibility guarantee.
-> - **`pdftract serve` is broken at HEAD** — every request, including `GET /health`, returns HTTP 500 (missing axum `ConnectInfo` wiring; re-confirmed at HEAD on 2026-09-15).
+> - **`pdftract serve` works at HEAD** — `GET /health` → 200 and `POST /extract` → 200 over the real binary (axum `ConnectInfo` wiring fixed in commit `2566480f` on 2026-09-20, re-verified 2026-09-26; regression-tested by `crates/pdftract-cli/tests/serve-e2e.rs`). The earlier "every request returns HTTP 500" status (re-confirmed 2026-09-15) predated that fix.
 > - **CI is not wired to git events yet** — nothing runs automatically on push/PR (bead `pdftract-a8d7bd1d`, open), and no completed end-to-end CI run has been retained — the CI cluster holds zero pdftract workflow runs (the stabilization baseline records "no retained end-to-end CI proof").
 > - **No supported release is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels or images exist. GitHub exposes only the test-only `v0.1.0-test` release entry used for release-cascade testing, not a consumable v0.1.0 release.
 
@@ -32,7 +32,7 @@
 | Per-span bounding boxes + confidence | 🚧¹ | ✅ | ❌ | ⚠ Partial |
 | Streaming extraction (large files) | 🚧⁵ | ❌ | ❌ | ❌ |
 | CJK scripts | ❌⁶ (`cjk` feature) | ⚠ | ⚠ | ⚠ |
-| HTTP microservice mode | ❌⁷ (`serve`) | ❌ | ❌ | ❌ |
+| HTTP microservice mode | ✅⁷ (`serve`) | ❌ | ❌ | ❌ |
 | Language | Rust + Python + C ABI | Python | Python | Python |
 
 🚧 = implemented in the source tree, not yet verified end-to-end · ❌ = not working at HEAD · third-party columns unchanged
@@ -43,7 +43,7 @@
 ⁴ RC4/AES-128/AES-256 implemented with unit-test coverage (bead `pdftract-4mdfv`: 217/217 parser tests at close, 2026-06-03); the end-to-end encrypted-file path is blocked by the parse regression.
 ⁵ Lazy per-page decode implemented (bead `bf-2y2rp`); bounded-memory behavior on real documents is unverifiable until the parse fix.
 ⁶ Feature flag, corpus, and acceptance tests all exist; the acceptance tests fail in the most recent recorded run (0/5, `notes/bf-1wczm-cjk_encoding-run.log`).
-⁷ Every request returns HTTP 500 at HEAD, including `GET /health` (see development status above).
+⁷ Verified end-to-end at HEAD over the real binary: `GET /health` → 200, `POST /extract` → 200 (ConnectInfo wiring fixed in `2566480f`; regression-tested by `crates/pdftract-cli/tests/serve-e2e.rs`).
 
 ## Platform Support
 
@@ -160,7 +160,6 @@ pdftract extract report.pdf --text -
 pdftract extract report.pdf --markdown -
 
 # Run as an HTTP microservice (POST /extract, GET /health)
-# NOTE: broken at HEAD — see the development-status note above
 pdftract serve --bind 127.0.0.1:8080
 
 # Compare two PDFs structurally
@@ -266,7 +265,7 @@ pdftract ships multiple integration surfaces from a single Rust core:
 | Python bindings | `pdftract` on PyPI (planned) | PyO3-based wheels — **🚧 not published** |
 | C shared library | `libpdftract` | Stable C ABI; use `pdftract codegen` to generate FFI headers for your language — **🚧 coming soon** |
 | Docker image | `ghcr.io/jedarden/pdftract` (planned) | Local `default`/`full` builds only; **🚧 not published** |
-| HTTP microservice | `pdftract serve` | REST API for language-agnostic integration (build from source) — ⚠ broken at HEAD, see status note above |
+| HTTP microservice | `pdftract serve` | REST API for language-agnostic integration (build from source) |
 
 Additional language SDK packages (Go, Node.js, Ruby) are in progress, built on top of the C ABI.
 

@@ -525,8 +525,16 @@ pub async fn run(
         })
     };
 
-    // Print startup banner with security warning
-    eprintln!("pdftract serve is starting on http://{}", bind_addr);
+    // Print startup banner with security warning. Print the address
+    // ACTUALLY bound, not the requested string: with `--bind
+    // 127.0.0.1:0` (port 0 = OS chooses, as the e2e suite and test
+    // harnesses use) the requested string names no usable port — the
+    // caller needs the real one to talk to the server.
+    let display_addr = listener
+        .local_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|_| bind_addr.clone());
+    eprintln!("pdftract serve is starting on http://{}", display_addr);
     eprintln!("*** NO BUILT-IN AUTH *** — Deploy behind a reverse proxy for production.");
     if let Some(dir) = cache_dir_for_logging {
         eprintln!(
