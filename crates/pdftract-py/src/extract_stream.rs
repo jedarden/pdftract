@@ -474,6 +474,7 @@ impl StreamIterator {
 ///     print(f"Page {page['page_index']}: {len(page['spans'])} spans")
 /// ```
 #[pyfunction]
+#[pyo3(signature = (path, **kwargs))]
 pub fn extract_stream_fn(
     py: Python<'_>,
     path: &str,

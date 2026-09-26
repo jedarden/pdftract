@@ -80,6 +80,8 @@ class Metadata:
     # Legacy compatibility messages and their canonical structured mirror.
     diagnostics: Optional[List[str]] = None
     diagnostics_detailed: Optional[List[Diagnostic]] = None
+    is_encrypted: Optional[bool] = None
+    has_xmp: Optional[bool] = None
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
@@ -98,6 +100,8 @@ class Metadata:
                 Diagnostic.from_native(item)
                 for item in native_dict.get("diagnostics_detailed", [])
             ] or None,
+            is_encrypted=native_dict.get("is_encrypted"),
+            has_xmp=native_dict.get("has_xmp"),
         )
 
     def __repr__(self) -> str:
@@ -288,6 +292,9 @@ class Page:
     rotation: int = 0
     spans: List[Span] = ()
     blocks: List[Block] = ()
+    page_type: Optional[str] = None
+    tables: List[dict] = ()
+    annotations: List[dict] = ()
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
@@ -308,6 +315,9 @@ class Page:
             rotation=int(native_dict.get("rotation", 0)),
             spans=tuple(Span.from_native(span_dict) for span_dict in native_dict.get("spans", [])),
             blocks=tuple(Block.from_native(block_dict) for block_dict in native_dict.get("blocks", [])),
+            page_type=native_dict.get("page_type", native_dict.get("type")),
+            tables=list(native_dict.get("tables", [])),
+            annotations=list(native_dict.get("annotations", [])),
         )
 
     def __repr__(self) -> str:
@@ -329,6 +339,12 @@ class Document:
     schema_version: Optional[str] = None
     metadata: Optional[Metadata] = None
     errors: Optional[List[Diagnostic]] = None
+    fingerprint: Optional[str] = None
+    form_fields: List[dict] = ()
+    links: List[dict] = ()
+    attachments: List[dict] = ()
+    threads: List[dict] = ()
+    javascript_actions: List[dict] = ()
 
     @classmethod
     def from_native(cls, native_dict: dict) -> Self:
@@ -337,6 +353,12 @@ class Document:
             pages=[Page.from_native(page_dict) for page_dict in native_dict.get("pages", [])],
             metadata=Metadata.from_native(native_dict.get("metadata", {})) if native_dict.get("metadata") else None,
             errors=[Diagnostic.from_native(item) for item in native_dict.get("errors", [])],
+            fingerprint=native_dict.get("fingerprint"),
+            form_fields=list(native_dict.get("form_fields", [])),
+            links=list(native_dict.get("links", [])),
+            attachments=list(native_dict.get("attachments", [])),
+            threads=list(native_dict.get("threads", [])),
+            javascript_actions=list(native_dict.get("javascript_actions", [])),
         )
 
     def __repr__(self) -> str:

@@ -17,6 +17,8 @@ pdftract-core = { path = "../pdftract-core" }
 pyo3 = { version = "0.20", features = ["extension-module", "abi3-py310"] }
 pythonize = "0.20"
 secrecy = "0.10"
+serde_json = "1.0"
+tempfile = "3.10"
 
 [features]
 default = ["pyo3/extension-module"]

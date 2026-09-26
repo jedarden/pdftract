@@ -3583,6 +3583,7 @@ dependencies = [
  "pythonize",
  "secrecy",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

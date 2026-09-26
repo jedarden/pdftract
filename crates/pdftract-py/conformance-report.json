@@ -1,0 +1,1575 @@
+{
+  "sdk": "pdftract-py",
+  "sdk_version": "0.1.0",
+  "suite_version": "1.0.0",
+  "schema_version": "1.0",
+  "timestamp": "2026-09-26T06:21:29.540148+00:00",
+  "results": [
+    {
+      "id": "extract-vector-scientific-paper",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": [
+            "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output"
+          ],
+          "diagnostics_detailed": [
+            {
+              "code": "STREAM_DECODE_ERROR",
+              "message": "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output",
+              "severity": "warning",
+              "page_index": 0,
+              "location": {
+                "object_number": 8,
+                "generation_number": 0
+              },
+              "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
+            }
+          ],
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 1,
+        "pages.length": 1,
+        "pages[0].page_index": 0,
+        "pages[0].width": {
+          "min": 500,
+          "max": 700
+        },
+        "pages[0].height": {
+          "min": 700,
+          "max": 900
+        },
+        "pages[0].rotation": 0,
+        "pages[0].spans.length": {
+          "min": 1
+        },
+        "pages[0].blocks.length": {
+          "min": 1
+        },
+        "pages[0].blocks[0].kind": "heading",
+        "errors.length": 0
+      },
+      "reason": "pages[0].width: value 0 not in range [500, 700]",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-scanned-receipt",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": [
+            "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output"
+          ],
+          "diagnostics_detailed": [
+            {
+              "code": "STREAM_DECODE_ERROR",
+              "message": "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output",
+              "severity": "warning",
+              "page_index": 0,
+              "location": {
+                "object_number": 8,
+                "generation_number": 0
+              },
+              "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
+            }
+          ],
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 1,
+        "pages.length": 1,
+        "pages[0].page_index": 0,
+        "pages[0].page_type": "scanned",
+        "pages[0].spans.length": {
+          "min": 1
+        },
+        "pages[0].blocks.length": {
+          "min": 1
+        },
+        "pages[0].blocks[0].kind": "paragraph",
+        "errors.length": 0
+      },
+      "reason": "pages[0].page_type: expected scanned, got None",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-encrypted-pdf",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [
+              {
+                "text": "Encrypted PDF",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  143.60000610351562,
+                  712.0
+                ],
+                "font": "Unknown",
+                "size": 12.0,
+                "confidence": 0.30000001192092896
+              }
+            ],
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "text": "Encrypted PDF",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  143.60000610351562,
+                  712.0
+                ],
+                "level": null
+              }
+            ],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": null,
+          "diagnostics_detailed": null,
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.is_encrypted": true,
+        "pages.length": {
+          "min": 1
+        },
+        "errors.length": 0
+      },
+      "reason": "metadata.is_encrypted: expected True, got None",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-fillable-form",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [
+              {
+                "text": "Fillable Form",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  143.60000610351562,
+                  712.0
+                ],
+                "font": "Unknown",
+                "size": 12.0,
+                "confidence": 0.30000001192092896
+              }
+            ],
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "text": "Fillable Form",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  143.60000610351562,
+                  712.0
+                ],
+                "level": null
+              }
+            ],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": null,
+          "diagnostics_detailed": null,
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 1,
+        "form_fields.length": {
+          "min": 1
+        },
+        "pages.length": 1,
+        "errors.length": 0
+      },
+      "reason": "form_fields.length: value 0 < minimum 1",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-mixed-vector-scanned",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [
+              {
+                "text": "Mixed Content",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  143.60000610351562,
+                  712.0
+                ],
+                "font": "Unknown",
+                "size": 12.0,
+                "confidence": 0.30000001192092896
+              }
+            ],
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "text": "Mixed Content",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  143.60000610351562,
+                  712.0
+                ],
+                "level": null
+              }
+            ],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": null,
+          "diagnostics_detailed": null,
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": {
+          "min": 2
+        },
+        "pages.length": {
+          "min": 2
+        },
+        "pages[0].page_type": "mixed",
+        "errors.length": 0
+      },
+      "reason": "metadata.page_count: value 1 < minimum 2",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-large-document",
+      "status": "fail",
+      "duration_ms": 2,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          },
+          {
+            "page": 2,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 1
+          },
+          {
+            "page": 3,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 2
+          },
+          {
+            "page": 4,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 3
+          },
+          {
+            "page": 5,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 4
+          },
+          {
+            "page": 6,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 5
+          },
+          {
+            "page": 7,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 6
+          },
+          {
+            "page": 8,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 7
+          },
+          {
+            "page": 9,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 8
+          },
+          {
+            "page": 10,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 9
+          },
+          {
+            "page": 11,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 10
+          },
+          {
+            "page": 12,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 11
+          },
+          {
+            "page": 13,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 12
+          },
+          {
+            "page": 14,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 13
+          },
+          {
+            "page": 15,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 14
+          },
+          {
+            "page": 16,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 15
+          },
+          {
+            "page": 17,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 16
+          },
+          {
+            "page": 18,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 17
+          },
+          {
+            "page": 19,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 18
+          },
+          {
+            "page": 20,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 19
+          },
+          {
+            "page": 21,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 20
+          },
+          {
+            "page": 22,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 21
+          },
+          {
+            "page": 23,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 22
+          },
+          {
+            "page": 24,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 23
+          },
+          {
+            "page": 25,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 24
+          },
+          {
+            "page": 26,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 25
+          },
+          {
+            "page": 27,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 26
+          },
+          {
+            "page": 28,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 27
+          },
+          {
+            "page": 29,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 28
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 29,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": null,
+          "diagnostics_detailed": null,
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": 100,
+        "pages.length": 100,
+        "errors.length": 0
+      },
+      "reason": "metadata.page_count: expected 100, got 29",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-text-unicode-heavy",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "string",
+        "value": ""
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 50,
+        "contains": [
+          "Abstract",
+          "Introduction"
+        ]
+      },
+      "reason": ": string length 0 < minimum 50",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-text-vertical-writing",
+      "status": "pass",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "string",
+        "value": "Vertical Text\n"
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 10
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "extract-text-math-content",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "string",
+        "value": ""
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 100,
+        "contains": [
+          "equation",
+          "formula"
+        ]
+      },
+      "reason": ": string length 0 < minimum 100",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-markdown-table-heavy",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "string",
+        "value": "<a name=\"page-1\"></a>\n\n"
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 100,
+        "contains": [
+          "|",
+          "AGREEMENT"
+        ]
+      },
+      "reason": ": string length 23 < minimum 100",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-markdown-code-block",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "string",
+        "value": "<a name=\"page-1\"></a>\nCode Sample\n\n\n"
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 50,
+        "contains": [
+          "```",
+          "function",
+          "return"
+        ]
+      },
+      "reason": ": string length 36 < minimum 50",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-markdown-nested-heading",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "string",
+        "value": "<a name=\"page-1\"></a>\n\n"
+      },
+      "expected": {
+        "output_type": "string",
+        "min_length": 100,
+        "contains": [
+          "#",
+          "##",
+          "###"
+        ]
+      },
+      "reason": ": string length 23 < minimum 100",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-stream-page-at-a-time",
+      "status": "pass",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "iterator",
+        "frame_count": 3,
+        "first_frame_type": "header",
+        "last_frame_type": "footer",
+        "header_frame_has_schema_version": true,
+        "header_frame_has_total_pages": true,
+        "page_frames": 1,
+        "page_count": 1,
+        "pages": [
+          {
+            "page": 0,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          }
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "frame_count": {
+          "min": 3
+        },
+        "first_frame_type": "header",
+        "last_frame_type": "footer",
+        "page_frames": {
+          "min": 1
+        }
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "extract-stream-cancellation",
+      "status": "pass",
+      "duration_ms": 2,
+      "actual": {
+        "output_type": "iterator",
+        "frame_count": 7,
+        "first_frame_type": "header",
+        "last_frame_type": "footer",
+        "header_frame_has_schema_version": true,
+        "header_frame_has_total_pages": true,
+        "page_frames": 5,
+        "page_count": 5,
+        "pages": [
+          {
+            "page": 0,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          },
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          },
+          {
+            "page": 2,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          },
+          {
+            "page": 3,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          },
+          {
+            "page": 4,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          }
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "page_frames": {
+          "max": 6
+        }
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "extract-stream-ndjson-format",
+      "status": "pass",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "iterator",
+        "frame_count": 3,
+        "first_frame_type": "header",
+        "last_frame_type": "footer",
+        "header_frame_has_schema_version": true,
+        "header_frame_has_total_pages": true,
+        "page_frames": 1,
+        "page_count": 1,
+        "pages": [
+          {
+            "page": 0,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [],
+            "blocks": [],
+            "page_type": null,
+            "tables": [],
+            "annotations": []
+          }
+        ]
+      },
+      "expected": {
+        "output_type": "iterator",
+        "frame_count": {
+          "min": 3
+        },
+        "header_frame_has_schema_version": true,
+        "header_frame_has_total_pages": true
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "search-literal-pattern",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "iterator",
+        "match_count": 0,
+        "min_matches": 0,
+        "first_match_page": null,
+        "first_match_text": null,
+        "matches": []
+      },
+      "expected": {
+        "output_type": "iterator",
+        "min_matches": 1,
+        "first_match_page": 0,
+        "first_match_text": "Abstract"
+      },
+      "reason": "min_matches: expected 1, got 0",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "search-regex-pattern",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "iterator",
+        "match_count": 0,
+        "min_matches": 0,
+        "first_match_page": null,
+        "first_match_text": null,
+        "matches": []
+      },
+      "expected": {
+        "output_type": "iterator",
+        "min_matches": 1
+      },
+      "reason": "min_matches: expected 1, got 0",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "search-case-insensitive",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "iterator",
+        "match_count": 0,
+        "min_matches": 0,
+        "first_match_page": null,
+        "first_match_text": null,
+        "matches": []
+      },
+      "expected": {
+        "output_type": "iterator",
+        "min_matches": 1
+      },
+      "reason": "min_matches: expected 1, got 0",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "search-no-match",
+      "status": "pass",
+      "duration_ms": 0,
+      "actual": {
+        "output_type": "iterator",
+        "match_count": 0,
+        "min_matches": 0,
+        "first_match_page": null,
+        "first_match_text": null,
+        "matches": []
+      },
+      "expected": {
+        "output_type": "iterator",
+        "match_count": 0
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "get-metadata-complete",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": [
+            "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output"
+          ],
+          "diagnostics_detailed": [
+            {
+              "code": "STREAM_DECODE_ERROR",
+              "message": "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output",
+              "severity": "warning",
+              "page_index": 0,
+              "location": {
+                "object_number": 8,
+                "generation_number": 0
+              },
+              "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
+            }
+          ],
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "has_title": false,
+        "has_author": false,
+        "has_creator": false,
+        "has_xmp": false
+      },
+      "expected": {
+        "metadata.page_count": 1,
+        "metadata.has_title": true,
+        "metadata.has_author": true,
+        "metadata.has_creator": true
+      },
+      "reason": "metadata.has_title: expected True, got False",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "get-metadata-minimal",
+      "status": "pass",
+      "duration_ms": 0,
+      "actual": {
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": [
+            "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output"
+          ],
+          "diagnostics_detailed": [
+            {
+              "code": "STREAM_DECODE_ERROR",
+              "message": "STREAM_DECODE_ERROR: FlateDecode stream truncated or corrupt; returning partial output",
+              "severity": "warning",
+              "page_index": 0,
+              "location": {
+                "object_number": 8,
+                "generation_number": 0
+              },
+              "hint": "Partial output returned for this stream; consider re-saving the PDF through a normalising tool"
+            }
+          ],
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "has_title": false,
+        "has_author": false,
+        "has_creator": false,
+        "has_xmp": false
+      },
+      "expected": {
+        "metadata.page_count": 1,
+        "metadata.title": null,
+        "metadata.author": null
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "get-metadata-xmp-only",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": null,
+          "diagnostics_detailed": null,
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "has_title": false,
+        "has_author": false,
+        "has_creator": false,
+        "has_xmp": false
+      },
+      "expected": {
+        "metadata.page_count": 1,
+        "metadata.has_xmp": true
+      },
+      "reason": "metadata.has_xmp: expected True, got False",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "hash-same-file-same-hash",
+      "status": "pass",
+      "duration_ms": 1,
+      "actual": {
+        "hash": "5ac0b1f6c95124163df5ac2c01fed720d623497e900a5db8660d0f1066ec205b",
+        "fast_hash": "4d6c260af754fd85e4d84e47c31760f3800a63aa660f646422ea61123d4c6b95",
+        "page_count": 1,
+        "metadata": null,
+        "hash_type": "sha256",
+        "fast_hash_different_from_hash": true,
+        "content_hash_stable": true
+      },
+      "expected": {
+        "hash_type": "sha256",
+        "hash.length": 64,
+        "page_count": 1,
+        "fast_hash.length": 64,
+        "fast_hash_different_from_hash": true
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "hash-content-stability",
+      "status": "pass",
+      "duration_ms": 0,
+      "actual": {
+        "hash": "3056741cdba6cf2971e10820c184a5e59aad10a8d097a2efac64ff000f97fccc",
+        "fast_hash": "338423bc83d1b80546b10b5a79f7afe2d55cda49e2f332dcad4470518cdc66ce",
+        "page_count": 1,
+        "metadata": null,
+        "hash_type": "sha256",
+        "fast_hash_different_from_hash": true,
+        "content_hash_stable": true
+      },
+      "expected": {
+        "hash_type": "sha256",
+        "hash.length": 64,
+        "content_hash_stable": true
+      },
+      "classification": "pass",
+      "classification_reason": "SDK invocation and contract mapping passed"
+    },
+    {
+      "id": "classify-academic-paper",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "category": "scientific_paper",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.has_abstract": true,
+        "heuristics.has_references": true
+      },
+      "error": "pdftract binary not found. Tried the following paths: [\"/nix/store/xqnbm0vgqcq9b1b54c80qj9s0qhbwa08-python3-3.13.15/bin/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/debug/pdftract\", \"/home/coding/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path/pdftract\", \"/home/coding/.local/bin/pdftract\", \"/run/wrappers/bin/pdftract\", \"/home/coding/.nix-profile/bin/pdftract\", \"/nix/profile/bin/pdftract\", \"/home/coding/.local/state/nix/profile/bin/pdftract\", \"/etc/profiles/per-user/coding/bin/pdftract\", \"/nix/var/nix/profiles/default/bin/pdftract\", \"/run/current-system/sw/bin/pdftract\"]. Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
+      "reason": "Execution error: SourceUnreachableError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "classify-scientific-paper",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "category": "scientific_paper",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.has_methods": true,
+        "heuristics.has_results": true
+      },
+      "error": "pdftract binary not found. Tried the following paths: [\"/nix/store/xqnbm0vgqcq9b1b54c80qj9s0qhbwa08-python3-3.13.15/bin/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/debug/pdftract\", \"/home/coding/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path/pdftract\", \"/home/coding/.local/bin/pdftract\", \"/run/wrappers/bin/pdftract\", \"/home/coding/.nix-profile/bin/pdftract\", \"/nix/profile/bin/pdftract\", \"/home/coding/.local/state/nix/profile/bin/pdftract\", \"/etc/profiles/per-user/coding/bin/pdftract\", \"/nix/var/nix/profiles/default/bin/pdftract\", \"/run/current-system/sw/bin/pdftract\"]. Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
+      "reason": "Execution error: SourceUnreachableError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "classify-scanned-receipt",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "category": "receipt",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.is_scanned": true
+      },
+      "error": "pdftract binary not found. Tried the following paths: [\"/nix/store/xqnbm0vgqcq9b1b54c80qj9s0qhbwa08-python3-3.13.15/bin/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/debug/pdftract\", \"/home/coding/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path/pdftract\", \"/home/coding/.local/bin/pdftract\", \"/run/wrappers/bin/pdftract\", \"/home/coding/.nix-profile/bin/pdftract\", \"/nix/profile/bin/pdftract\", \"/home/coding/.local/state/nix/profile/bin/pdftract\", \"/etc/profiles/per-user/coding/bin/pdftract\", \"/nix/var/nix/profiles/default/bin/pdftract\", \"/run/current-system/sw/bin/pdftract\"]. Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
+      "reason": "Execution error: SourceUnreachableError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "classify-fillable-form",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "category": "form",
+        "confidence": {
+          "min": 0.7
+        },
+        "tags.length": {
+          "min": 1
+        },
+        "heuristics.has_form_fields": true
+      },
+      "error": "pdftract binary not found. Tried the following paths: [\"/nix/store/xqnbm0vgqcq9b1b54c80qj9s0qhbwa08-python3-3.13.15/bin/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/pdftract\", \"/var/tmp/pdftract-conformance-sdk.WBvolT/target/release/debug/pdftract\", \"/home/coding/.local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path/pdftract\", \"/home/coding/.local/bin/pdftract\", \"/run/wrappers/bin/pdftract\", \"/home/coding/.nix-profile/bin/pdftract\", \"/nix/profile/bin/pdftract\", \"/home/coding/.local/state/nix/profile/bin/pdftract\", \"/etc/profiles/per-user/coding/bin/pdftract\", \"/nix/var/nix/profiles/default/bin/pdftract\", \"/run/current-system/sw/bin/pdftract\"]. Ensure pdftract is built (run 'cargo build --release') and available in PATH.",
+      "reason": "Execution error: SourceUnreachableError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "verify-receipt-valid",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "valid": true
+      },
+      "error": "Failed to parse receipt JSON",
+      "reason": "Execution error: PdftractError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "verify-receipt-tampered",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "valid": false
+      },
+      "error": "Failed to parse receipt JSON",
+      "reason": "Execution error: PdftractError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-broken-pdf",
+      "status": "fail",
+      "duration_ms": 0,
+      "actual": {
+        "pages": [
+          {
+            "page": 1,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "spans": [
+              {
+                "text": "Broken PDF",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  122.0,
+                  712.0
+                ],
+                "font": "Unknown",
+                "size": 12.0,
+                "confidence": 0.30000001192092896
+              }
+            ],
+            "blocks": [
+              {
+                "kind": "paragraph",
+                "text": "Broken PDF",
+                "bbox": [
+                  50.0,
+                  700.0,
+                  122.0,
+                  712.0
+                ],
+                "level": null
+              }
+            ],
+            "page_type": null,
+            "tables": [],
+            "annotations": [],
+            "page_index": 0
+          }
+        ],
+        "schema_version": "1.0",
+        "metadata": {
+          "page_count": 1,
+          "title": null,
+          "author": null,
+          "subject": null,
+          "keywords": null,
+          "creator": null,
+          "producer": null,
+          "created": null,
+          "modified": null,
+          "diagnostics": null,
+          "diagnostics_detailed": null,
+          "is_encrypted": null,
+          "has_xmp": false,
+          "has_title": false,
+          "has_author": false,
+          "has_creator": false
+        },
+        "errors": [],
+        "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+        "form_fields": [],
+        "links": [],
+        "attachments": [],
+        "threads": [],
+        "javascript_actions": []
+      },
+      "expected": {
+        "errors.length": {
+          "min": 1
+        },
+        "errors[0].severity": "error"
+      },
+      "reason": "errors.length: value 0 < minimum 1",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    },
+    {
+      "id": "extract-remote-pdf",
+      "status": "error",
+      "duration_ms": 0,
+      "expected": {
+        "schema_version": "1.0",
+        "metadata.page_count": {
+          "min": 1
+        },
+        "pages.length": {
+          "min": 1
+        },
+        "errors.length": 0
+      },
+      "error": "Failed to open PDF file",
+      "reason": "Execution error: PdftractError",
+      "classification": "core-layer",
+      "classification_reason": "HEAD core pipeline, CLI/profile implementation, or shared fixture does not produce the suite-required content"
+    }
+  ],
+  "summary": {
+    "total": 32,
+    "passed": 8,
+    "failed": 17,
+    "skipped": 0,
+    "errors": 7,
+    "duration_ms": 11
+  },
+  "environment": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "python_version": "Python 3.13.15 (main, Aug  5 2026, 12:25:43) [GCC 15.2.0]",
+    "native_available": true
+  }
+}

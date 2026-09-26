@@ -409,10 +409,33 @@ fn classify<'py>(py: Python<'py>, path: &str, page_index: Option<usize>) -> PyRe
 // ============================================================================
 
 #[pyfunction]
-fn verify_receipt(_py: Python, _path: &str, _receipt_dict: &PyDict) -> PyResult<bool> {
-    // Stub implementation - should verify receipt
-    // For now, return false
-    Ok(false)
+fn verify_receipt(py: Python, path: &str, receipt_dict: &PyDict) -> PyResult<bool> {
+    // The core verifier owns the receipt protocol and its mismatch handling.
+    // Serialize the Python mapping to a private file so the binding uses that
+    // implementation instead of returning the old unconditional stub value.
+    let receipt: serde_json::Value = pythonize::depythonize(receipt_dict).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+            "receipt must be a JSON-compatible mapping: {e}"
+        ))
+    })?;
+    let mut receipt_file = tempfile::NamedTempFile::new().map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+            "failed to create temporary receipt file: {e}"
+        ))
+    })?;
+    serde_json::to_writer(receipt_file.as_file_mut(), &receipt).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "failed to serialize receipt: {e}"
+        ))
+    })?;
+
+    let verification = pdftract_core::sdk::verify_receipt_from_path(
+        Path::new(path),
+        receipt_file.path(),
+    )
+    .map_err(|e| map_error_to_py(py, e))?;
+
+    Ok(verification.is_ok())
 }
 
 // ============================================================================
