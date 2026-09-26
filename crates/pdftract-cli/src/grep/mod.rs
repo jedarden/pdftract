@@ -271,6 +271,58 @@ pub fn produce_work_items(config: &GrepConfig) -> Result<(Vec<FileWorkItem>, u64
     expand_paths(&config.paths, REMOTE_ENABLED)
 }
 
+/// Search one local PDF using the same matcher and worker as `pdftract grep`.
+///
+/// MCP search is intentionally a single-file projection of the folder grep
+/// pipeline. Keeping the worker here means MCP and the CLI agree on regex
+/// behavior, span extraction, bounding boxes, and fingerprint fields.
+pub fn search_file(
+    path: &std::path::Path,
+    pattern: &str,
+    ignore_case: bool,
+    max_matches: Option<usize>,
+) -> Result<Vec<MatchEvent>> {
+    let matcher = Arc::new(Matcher::build(pattern, true, ignore_case, false)?);
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("failed to stat PDF: {}", path.display()))?;
+    let config = Arc::new(GrepConfig {
+        pattern: pattern.to_string(),
+        paths: vec![path.to_path_buf()],
+        recursive: false,
+        ignore_case,
+        use_regex: true,
+        word_regexp: false,
+        invert_match: false,
+        files_with_matches: false,
+        count: false,
+        threads: 1,
+        ocr: false,
+        json: true,
+        highlight_dir: None,
+        max_results: max_matches,
+        progress_mode: ProgressMode::Off,
+        progress_json: false,
+        quiet: true,
+        headers: HashMap::new(),
+        pages: None,
+    });
+    let item = FileWorkItem {
+        path: PathOrUrl::Local(path.to_path_buf()),
+        size_hint: Some(metadata.len()),
+    };
+    let (match_tx, match_rx) = crossbeam_channel::unbounded();
+    let (progress_tx, _progress_rx) = crossbeam_channel::unbounded();
+
+    worker_run(&item, &matcher, &config, &match_tx, &progress_tx)
+        .with_context(|| format!("failed to search PDF: {}", path.display()))?;
+    drop(match_tx);
+    let mut matches: Vec<MatchEvent> = match_rx.iter().collect();
+    if let Some(max_matches) = max_matches {
+        matches.truncate(max_matches);
+    }
+    Ok(matches)
+}
+
 /// Run the grep command
 #[cfg(feature = "grep")]
 pub fn run_grep(args: GrepArgs) -> Result<()> {

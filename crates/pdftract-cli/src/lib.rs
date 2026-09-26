@@ -6,7 +6,6 @@ pub mod cache_cmd;
 pub mod classify;
 pub mod cli;
 pub mod codegen;
-#[cfg(feature = "grep")]
 pub mod grep;
 pub mod hash;
 pub mod header;

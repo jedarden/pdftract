@@ -56,9 +56,9 @@ pub trait Tool: Send + Sync {
     fn execute(&self, args: Value, log_path: Option<&str>, root: Option<&Path>) -> ToolResult;
 }
 
-/// Tools that remain callable for compatibility but are not advertised until
-/// their end-to-end implementations are available.
-const UNADVERTISED_TOOL_NAMES: &[&str] = &["classify", "get_form_fields", "get_attachments"];
+/// Compatibility tools that are registered but intentionally omitted from
+/// `tools/list`. This remains empty while all ten catalog tools are live.
+const UNADVERTISED_TOOL_NAMES: &[&str] = &[];
 
 /// Registry of all available MCP tools.
 pub struct ToolRegistry {
@@ -89,7 +89,7 @@ impl ToolRegistry {
         // Fingerprint tool
         self.register(Box::new(HashTool));
 
-        // Phase 7 stub tools (not yet implemented)
+        // Specialized extraction and classification tools
         self.register(Box::new(GetTableTool));
         self.register(Box::new(GetFormFieldsTool));
         self.register(Box::new(GetAttachmentsTool));
@@ -530,6 +530,24 @@ fn build_extraction_options(
     options
 }
 
+/// Build extraction options for an MCP tool that accepts a PDF password.
+fn build_extraction_options_with_password(
+    pages: &Option<String>,
+    ocr: &Option<bool>,
+    receipts: Option<&str>,
+    password: Option<&str>,
+) -> ExtractionOptions {
+    let mut options = build_extraction_options(pages, ocr, receipts);
+    options.password = password.map(|value| secrecy::SecretString::new(value.to_owned().into()));
+    options
+}
+
+/// Map a core extraction failure to the MCP tool error shape.
+fn map_extraction_error(error: anyhow::Error) -> ErrorObject {
+    ErrorObject::server_error(ERROR_IO_ERROR, format!("Extraction failed: {error}"))
+        .with_data(json!({"code": CODE_IO_ERROR}))
+}
+
 // ============================================================================
 // Tool Implementations
 // ============================================================================
@@ -735,7 +753,7 @@ impl Tool for SearchTool {
         to_value(schemars::schema_for!(SearchArgs)).unwrap()
     }
 
-    fn execute(&self, args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
         let tool_args: SearchArgs =
             serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
 
@@ -745,14 +763,35 @@ impl Tool for SearchTool {
                 .with_data(json!({"reason": "Invalid regex pattern", "details": e.to_string()}))
         })?;
 
-        Err(ErrorObject::server_error(
-            super::ERROR_NOT_YET_IMPLEMENTED,
-            "search is not yet implemented (Phase 6 extraction surface)",
+        if is_url(&tool_args.path) {
+            return Err(ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                "Remote PDF search is not available in MCP stdio mode",
+            )
+            .with_data(json!({"code": CODE_IO_ERROR})));
+        }
+
+        let path = resolve_path(&tool_args.path, root)?;
+        if !path.is_file() {
+            return Err(ErrorObject::server_error(
+                ERROR_PATH_INVALID,
+                format!("Not a file: {}", tool_args.path),
+            )
+            .with_data(json!({"code": CODE_PATH_INVALID, "path": tool_args.path})));
+        }
+
+        let matches = crate::grep::search_file(
+            &path,
+            &tool_args.pattern,
+            tool_args.case_insensitive.unwrap_or(false),
+            tool_args.max_matches.map(|value| value as usize),
         )
-        .with_data(json!({
-            "code": super::CODE_NOT_YET_IMPLEMENTED,
-            "tool": "search"
-        })))
+        .map_err(|error| {
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Search failed: {error}"))
+                .with_data(json!({"code": CODE_IO_ERROR}))
+        })?;
+
+        Ok(json!({ "matches": matches }))
     }
 }
 
@@ -992,7 +1031,7 @@ fn compute_fingerprint(
     compute_cli_fingerprint(&path_buf, password)
 }
 
-/// Get table tool (Phase 7.2 stub).
+/// Get one table from the extracted page result.
 struct GetTableTool;
 
 impl Tool for GetTableTool {
@@ -1001,33 +1040,56 @@ impl Tool for GetTableTool {
     }
 
     fn description(&self) -> &'static str {
-        "Extract a single table by page and table index (Phase 7.2 - not yet implemented)"
+        "Extract a single table by page and table index"
     }
 
     fn input_schema(&self) -> Value {
         to_value(schemars::schema_for!(GetTableArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
-        // Validate args structure but don't process
-        let _args: GetTableArgs = match serde_json::from_value(_args) {
-            Ok(args) => args,
-            Err(_) => {
-                return Err(ErrorObject::invalid_params()
-                    .with_data(json!({"reason": "Invalid arguments for get_table"})));
-            }
-        };
-
-        // Return NOT_YET_IMPLEMENTED immediately
-        Err(ErrorObject::server_error(
-            super::ERROR_NOT_YET_IMPLEMENTED,
-            "get_table is not yet implemented (Phase 7.2)",
-        )
-        .with_data(json!({"code": super::CODE_NOT_YET_IMPLEMENTED})))
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
+        let tool_args: GetTableArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
+        if is_url(&tool_args.path) {
+            return Err(ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                "Remote PDF table extraction is not available in MCP stdio mode",
+            )
+            .with_data(json!({"code": CODE_IO_ERROR})));
+        }
+        let path = resolve_path(&tool_args.path, root)?;
+        let options = build_extraction_options_with_password(
+            &None,
+            &None,
+            None,
+            tool_args.password.as_deref(),
+        );
+        let result = extract_pdf(&path, &options).map_err(map_extraction_error)?;
+        let page = result.pages.get(tool_args.page as usize).ok_or_else(|| {
+            ErrorObject::invalid_params().with_data(json!({
+                "reason": "Page index is outside the PDF",
+                "page": tool_args.page
+            }))
+        })?;
+        let table = page.tables.get(tool_args.table_index as usize).ok_or_else(|| {
+            ErrorObject::invalid_params().with_data(json!({
+                "reason": "Table index is outside the selected page",
+                "page": tool_args.page,
+                "table_index": tool_args.table_index
+            }))
+        })?;
+        Ok(json!({
+            "page": tool_args.page,
+            "table_index": tool_args.table_index,
+            "table": to_value(table).map_err(|error| {
+                ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize table: {error}"))
+                    .with_data(json!({"code": CODE_IO_ERROR}))
+            })?
+        }))
     }
 }
 
-/// Get form fields tool (Phase 7.4 stub).
+/// Get all AcroForm/XFA fields from a PDF.
 struct GetFormFieldsTool;
 
 impl Tool for GetFormFieldsTool {
@@ -1036,32 +1098,36 @@ impl Tool for GetFormFieldsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Extract AcroForm/XFA field values (Phase 7.4 - not yet implemented)"
+        "Extract AcroForm/XFA field values"
     }
 
     fn input_schema(&self) -> Value {
         to_value(schemars::schema_for!(GetFormFieldsArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
-        // Validate args structure but don't process
-        let _args: GetFormFieldsArgs = match serde_json::from_value(_args) {
-            Ok(args) => args,
-            Err(_) => {
-                return Err(ErrorObject::invalid_params()
-                    .with_data(json!({"reason": "Invalid arguments for get_form_fields"})));
-            }
-        };
-
-        Err(ErrorObject::server_error(
-            super::ERROR_NOT_YET_IMPLEMENTED,
-            "get_form_fields is not yet implemented (Phase 7.4)",
-        )
-        .with_data(json!({"code": super::CODE_NOT_YET_IMPLEMENTED})))
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
+        let tool_args: GetFormFieldsArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
+        if is_url(&tool_args.path) {
+            return Err(ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                "Remote PDF form extraction is not available in MCP stdio mode",
+            )
+            .with_data(json!({"code": CODE_IO_ERROR})));
+        }
+        let path = resolve_path(&tool_args.path, root)?;
+        let options = build_extraction_options_with_password(
+            &None,
+            &None,
+            None,
+            tool_args.password.as_deref(),
+        );
+        let result = extract_pdf(&path, &options).map_err(map_extraction_error)?;
+        Ok(json!({ "form_fields": result.form_fields }))
     }
 }
 
-/// Get attachments tool (Phase 7.5 stub).
+/// Get embedded files from a PDF.
 struct GetAttachmentsTool;
 
 impl Tool for GetAttachmentsTool {
@@ -1070,32 +1136,43 @@ impl Tool for GetAttachmentsTool {
     }
 
     fn description(&self) -> &'static str {
-        "Extract embedded files from the PDF (Phase 7.5 - not yet implemented)"
+        "Extract embedded files from the PDF"
     }
 
     fn input_schema(&self) -> Value {
         to_value(schemars::schema_for!(GetAttachmentsArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
-        // Validate args structure but don't process
-        let _args: GetAttachmentsArgs = match serde_json::from_value(_args) {
-            Ok(args) => args,
-            Err(_) => {
-                return Err(ErrorObject::invalid_params()
-                    .with_data(json!({"reason": "Invalid arguments for get_attachments"})));
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
+        let tool_args: GetAttachmentsArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
+        if is_url(&tool_args.path) {
+            return Err(ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                "Remote PDF attachment extraction is not available in MCP stdio mode",
+            )
+            .with_data(json!({"code": CODE_IO_ERROR})));
+        }
+        let path = resolve_path(&tool_args.path, root)?;
+        let result = extract_pdf(&path, &ExtractionOptions::default()).map_err(map_extraction_error)?;
+        let mut attachments = to_value(&result.attachments).map_err(|error| {
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize attachments: {error}"))
+                .with_data(json!({"code": CODE_IO_ERROR}))
+        })?;
+        if !tool_args.include_data.unwrap_or(false) {
+            if let Some(items) = attachments.as_array_mut() {
+                for item in items {
+                    if let Some(object) = item.as_object_mut() {
+                        object.remove("data");
+                    }
+                }
             }
-        };
-
-        Err(ErrorObject::server_error(
-            super::ERROR_NOT_YET_IMPLEMENTED,
-            "get_attachments is not yet implemented (Phase 7.5)",
-        )
-        .with_data(json!({"code": super::CODE_NOT_YET_IMPLEMENTED})))
+        }
+        Ok(json!({ "attachments": attachments }))
     }
 }
 
-/// Classify tool (Phase 5.6 stub).
+/// Classify a PDF using the built-in document profiles.
 struct ClassifyTool;
 
 impl Tool for ClassifyTool {
@@ -1104,35 +1181,45 @@ impl Tool for ClassifyTool {
     }
 
     fn description(&self) -> &'static str {
-        "Run the PDF classifier to categorize the document (Phase 5.6 - not yet implemented)"
+        "Run the PDF classifier to categorize the document"
     }
 
     fn input_schema(&self) -> Value {
         to_value(schemars::schema_for!(ClassifyArgs)).unwrap()
     }
 
-    fn execute(&self, _args: Value, _log_path: Option<&str>, _root: Option<&Path>) -> ToolResult {
-        // Validate args structure but don't process
-        let _args: ClassifyArgs = match serde_json::from_value(_args) {
-            Ok(args) => args,
-            Err(_) => {
-                return Err(ErrorObject::invalid_params()
-                    .with_data(json!({"reason": "Invalid arguments for classify"})));
-            }
-        };
-
-        Err(ErrorObject::server_error(
-            super::ERROR_NOT_YET_IMPLEMENTED,
-            "classify is not yet implemented (Phase 5.6)",
-        )
-        .with_data(json!({"code": super::CODE_NOT_YET_IMPLEMENTED})))
+    fn execute(&self, args: Value, _log_path: Option<&str>, root: Option<&Path>) -> ToolResult {
+        let tool_args: ClassifyArgs =
+            serde_json::from_value(args).map_err(|_| ErrorObject::invalid_params())?;
+        if is_url(&tool_args.path) {
+            return Err(ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                "Remote PDF classification is not available in MCP stdio mode",
+            )
+            .with_data(json!({"code": CODE_IO_ERROR})));
+        }
+        let path = resolve_path(&tool_args.path, root)?;
+        let output = crate::classify::run_classify(crate::classify::ClassifyArgs {
+            input: path,
+            profiles_dir: None,
+            pretty: false,
+            top_k: 0,
+            exit_on_unknown: false,
+        })
+        .map_err(|error| {
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Classification failed: {error}"))
+                .with_data(json!({"code": CODE_IO_ERROR}))
+        })?;
+        to_value(output).map_err(|error| {
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize classification: {error}"))
+                .with_data(json!({"code": CODE_IO_ERROR}))
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::tools::ERROR_NOT_YET_IMPLEMENTED;
 
     #[test]
     fn test_registry_has_all_tools() {
@@ -1149,7 +1236,7 @@ mod tests {
         let tools = list.get("tools").and_then(|v| v.as_array());
         assert!(tools.is_some());
         let tools = tools.unwrap();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 10);
         for name in UNADVERTISED_TOOL_NAMES {
             assert!(!tools.iter().any(|tool| tool["name"] == *name));
         }
@@ -1211,24 +1298,16 @@ mod tests {
     }
 
     #[test]
-    fn test_search_tool_fails_loudly_until_extraction_surface_exists() {
+    fn test_search_tool_rejects_invalid_regex() {
         let tool = SearchTool;
         let result = tool.execute(
-            json!({"path": "document.pdf", "pattern": "needle"}),
+            json!({"path": "document.pdf", "pattern": "(?invalid"}),
             None,
             None,
         );
 
-        let err = result.expect_err("unimplemented search must not return empty matches");
-        assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
-        assert!(err.message.contains("Phase 6 extraction surface"));
-        assert_eq!(
-            err.data
-                .as_ref()
-                .and_then(|data| data.get("code"))
-                .and_then(Value::as_str),
-            Some(crate::mcp::tools::CODE_NOT_YET_IMPLEMENTED)
-        );
+        let err = result.expect_err("invalid regex should be rejected");
+        assert_eq!(err.code, -32602);
     }
 
     #[test]
@@ -1262,40 +1341,12 @@ mod tests {
     }
 
     #[test]
-    fn test_stub_tools_return_not_implemented() {
+    fn test_specialized_tools_are_registered() {
         let registry = all_tools();
 
-        // Test get_table
-        let tool = registry.get("get_table").unwrap();
-        let result = tool.execute(
-            json!({"path": "test.pdf", "page": 0, "table_index": 0}),
-            None,
-            None,
-        );
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
-
-        // Test get_form_fields
-        let tool = registry.get("get_form_fields").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf"}), None, None);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
-
-        // Test get_attachments
-        let tool = registry.get("get_attachments").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf"}), None, None);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
-
-        // Test classify
-        let tool = registry.get("classify").unwrap();
-        let result = tool.execute(json!({"path": "test.pdf"}), None, None);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code, ERROR_NOT_YET_IMPLEMENTED);
+        for name in ["get_table", "get_form_fields", "get_attachments", "classify"] {
+            assert!(registry.get(name).is_some(), "missing tool {name}");
+        }
     }
 
     #[test]

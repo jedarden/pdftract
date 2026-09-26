@@ -137,8 +137,9 @@ profiles = ["dep:serde_yaml", "pdftract-core/profiles", "dep:notify"]
 metrics = []
 # HTTP serve mode (implies the metrics registry)
 serve = ["metrics"]
-# MCP server mode
-mcp = []
+# MCP server mode. MCP exposes the same grep and classifier implementations as
+# the CLI, so those capabilities are part of the MCP build.
+mcp = ["grep", "profiles"]
 # Inspector web viewer
 inspect = []
 # Folder grep mode

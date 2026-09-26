@@ -115,7 +115,7 @@ fn test_hash_matches_cli_and_metadata_exposes_info_dictionary() {
 }
 
 #[test]
-fn test_tools_list_has_only_implemented_tools() {
+fn test_tools_list_has_all_implemented_tools() {
     let registry = tools::all_tools();
     let list = registry.tools_list();
 
@@ -125,7 +125,7 @@ fn test_tools_list_has_only_implemented_tools() {
         .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
         .collect();
 
-    assert_eq!(tool_names.len(), 7, "Should have exactly 7 advertised tools");
+    assert_eq!(tool_names.len(), 10, "Should have exactly 10 advertised tools");
 
     let expected = [
         "extract",
@@ -135,6 +135,9 @@ fn test_tools_list_has_only_implemented_tools() {
         "get_metadata",
         "get_table",
         "hash",
+        "get_form_fields",
+        "get_attachments",
+        "classify",
     ];
 
     for name in &expected {
@@ -147,33 +150,52 @@ fn test_tools_list_has_only_implemented_tools() {
 }
 
 #[test]
-fn test_phase_7_stub_tools_return_not_implemented() {
+#[cfg(feature = "mcp")]
+fn test_specialized_tools_return_real_results() {
     let registry = tools::all_tools();
+    let form_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/pdftract-core/tests/sdk-conformance/fixtures/fillable-form/form.pdf")
+        .to_string_lossy()
+        .into_owned();
+    let search_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/pdftract-py/tests/fixtures/search_regression.pdf")
+        .to_string_lossy()
+        .into_owned();
 
-    let stub_tools = [
-        (
-            "get_table",
-            serde_json::json!({"path": "test.pdf", "page": 0, "table_index": 0}),
-        ),
-        ("get_form_fields", serde_json::json!({"path": "test.pdf"})),
-        ("get_attachments", serde_json::json!({"path": "test.pdf"})),
-        ("classify", serde_json::json!({"path": "test.pdf"})),
-    ];
+    let search = registry
+        .get("search")
+        .unwrap()
+        .execute(
+            serde_json::json!({
+                "path": search_fixture,
+                "pattern": "PYTHON_SEARCH_REGRESSION"
+            }),
+            None,
+            None,
+        )
+        .expect("search should return real matches");
+    assert!(!search["matches"].as_array().unwrap().is_empty());
 
-    for (tool_name, args) in stub_tools {
-        let tool = registry.get(tool_name).unwrap();
-        let result = tool.execute(args, None, None);
+    let form_fields = registry
+        .get("get_form_fields")
+        .unwrap()
+        .execute(serde_json::json!({"path": form_fixture}), None, None)
+        .expect("get_form_fields should return real extraction results");
+    assert!(form_fields["form_fields"].is_array());
 
-        assert!(result.is_err(), "{} should return error", tool_name);
-        let err = result.unwrap_err();
-        assert_eq!(err.code, tools::ERROR_NOT_YET_IMPLEMENTED);
-        assert!(err.data.is_some());
-        let data = err.data.as_ref().unwrap();
-        assert_eq!(
-            data.get("code").and_then(|c| c.as_str()),
-            Some(tools::CODE_NOT_YET_IMPLEMENTED)
-        );
-    }
+    let attachments = registry
+        .get("get_attachments")
+        .unwrap()
+        .execute(serde_json::json!({"path": form_fixture}), None, None)
+        .expect("get_attachments should return real extraction results");
+    assert!(attachments["attachments"].is_array());
+
+    let classification = registry
+        .get("classify")
+        .unwrap()
+        .execute(serde_json::json!({"path": form_fixture}), None, None)
+        .expect("classify should return a real classification");
+    assert!(classification["document_type"].is_string());
 }
 
 #[test]
@@ -221,7 +243,7 @@ fn test_extract_tool_with_real_pdf() {
     assert!(response.is_object());
     let obj = response.as_object().unwrap();
 
-    // Should contain pages array (currently stubbed)
+    // The full extraction result includes the page array.
     assert!(obj.contains_key("pages"));
 }
 
@@ -244,27 +266,24 @@ fn test_search_tool_with_invalid_regex() {
 }
 
 #[test]
-fn test_search_tool_returns_in_band_not_implemented_error() {
+fn test_search_tool_returns_matches() {
     let registry = tools::all_tools();
     let tool = registry.get("search").unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/pdftract-py/tests/fixtures/search_regression.pdf");
 
-    let error = tool
+    let result = tool
         .execute(
-            serde_json::json!({"path": "document.pdf", "pattern": "needle"}),
+            serde_json::json!({
+                "path": fixture,
+                "pattern": "PYTHON_SEARCH_REGRESSION"
+            }),
             None,
             None,
         )
-        .expect_err("unimplemented search must not return empty matches");
+        .expect("search should return real matches");
 
-    let result = tools::call_error(&error);
-    assert_eq!(result["isError"], true);
-    assert_eq!(
-        result["structuredContent"]["data"]["code"],
-        tools::CODE_NOT_YET_IMPLEMENTED
-    );
-    assert!(result["content"][0]["text"]
-        .as_str()
-        .is_some_and(|text| text.contains("Phase 6 extraction surface")));
+    assert!(!result["matches"].as_array().unwrap().is_empty());
 }
 
 #[test]

@@ -19,17 +19,17 @@ the ten tool names registered by pdftract. Each entry records whether the tool
 is advertised by `tools/list`, whether it remains callable for compatibility,
 and its implementation status. Tool names are unprefixed.
 
-The current `tools/list` response contains the seven advertised names:
+The current `tools/list` response contains all ten registered names:
 
 `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`,
-`hash`, and `get_table`.
+`hash`, `get_table`, `get_form_fields`, `get_attachments`, and `classify`.
 
-`classify`, `get_form_fields`, and `get_attachments` are registered
-compatibility stubs but are intentionally omitted from `tools/list`. Do not
-select them from a client; direct calls return `NOT_YET_IMPLEMENTED`. The
-advertised `search` and `get_table` entries can also return that in-band error
-until their implementation phases land, so clients should always handle an
-`isError: true` tool result.
+All ten catalog entries are implemented and advertised. Tool execution can
+still fail in-band (`isError: true`) for invalid paths, encrypted documents,
+or other document-specific errors, so clients should inspect that flag. A
+future catalog entry may remain callable without being advertised while its
+implementation is genuinely incomplete; such an entry may return
+`NOT_YET_IMPLEMENTED` and should not be selected by discovery-based clients.
 
 Every client should discover tools with `tools/list` after connecting and use
 the returned names rather than assuming that a client-specific prefix or a
@@ -86,7 +86,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 1. Restart Claude Desktop
 2. Open a new conversation
 3. Ask: "List available tools"
-4. Verify that the seven advertised pdftract tools appear without a prefix: `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`
+4. Verify that the ten advertised pdftract tools appear without a prefix: `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`, `get_form_fields`, `get_attachments`, `classify`
 
 **Verified against:** Claude Desktop 1.0.0 (2026-05)
 
@@ -117,7 +117,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 1. Restart Cursor
 2. Open the MCP panel (Settings → MCP Servers)
 3. Verify `pdftract` appears as connected
-4. Ask it to list tools and confirm the seven advertised names from the catalog
+4. Ask it to list tools and confirm the ten advertised names from the catalog
 5. In chat, invoke a tool: `Extract text from document.pdf`
 
 **Verified against:** Cursor 0.42.0 (2026-05)
@@ -145,7 +145,7 @@ mcpServers:
 1. Restart Continue
 2. Open the MCP Servers panel
 3. Verify `pdftract` shows as "Connected"
-4. Ask it to list tools and confirm the seven advertised names from the catalog
+4. Ask it to list tools and confirm the ten advertised names from the catalog
 5. Test with: "Use pdftract to extract text from a PDF"
 
 **Verified against:** Continue 2024.11.0
@@ -237,7 +237,7 @@ if __name__ == "__main__":
 - **Malformed requests:** JSON that parses but is not a valid single request — a bare string, an empty batch array, a wrong `jsonrpc` version, or a batch (batches are unsupported) — is likewise answered with an error envelope carrying `id: null`, whose `code` sits in the spec-reserved server-error range (`-32700` through `-32000`); the frame stream stays in sync and the connection remains usable
 - **Invalid params:** Server returns a `-32602` error whose `data` carries a non-empty `reason` string explaining the rejection (e.g. `tools/call` without a `name` field). `--root` boundary rejections instead carry a `code` string in `data` (`PATH_ESCAPES_ROOT`, `ABSOLUTE_PATH_NOT_PERMITTED`)
 - **Unknown tool:** Calling a tool that is not in the `tools/list` catalog returns `-32601` (method not found)
-- **Advertised stubs:** `search` and `get_table` are listed but may return an in-band `NOT_YET_IMPLEMENTED` result; the three compatibility stubs omitted from `tools/list` must not be selected by discovery-based clients
+- **Tool failures:** implemented tools report document-specific failures in-band with `isError: true`; clients should not treat an error result as an empty extraction
 - **Resilience:** None of the above kill the server — every error response still echoes the request `id`, the server keeps serving valid requests afterwards, and it still exits cleanly on stdin EOF. Only a genuinely broken pipe or a dead subprocess requires restarting.
 
 These behaviors are asserted end-to-end by the `mcp-client-lifecycle` integration test (`crates/pdftract-cli/tests/mcp-client-lifecycle.rs`).

@@ -1419,7 +1419,24 @@ fn cmd_extract(
 
         // Apply profile to metadata
         if let Some(p) = profile_to_apply {
-            let (name, version, fields) = apply_profile_to_metadata(&p, &result.pages);
+            let profile_pages: Vec<pdftract_core::schema::PageJson> = result
+                .pages
+                .iter()
+                .map(|page| pdftract_core::schema::PageJson {
+                    page_index: page.index,
+                    page_number: page.page_number,
+                    page_label: page.page_label.clone(),
+                    width: page.width.unwrap_or_default(),
+                    height: page.height.unwrap_or_default(),
+                    rotation: page.rotation.unwrap_or_default(),
+                    page_type: page.page_type.clone().unwrap_or_else(|| "text".to_string()),
+                    spans: page.spans.clone(),
+                    blocks: page.blocks.clone(),
+                    tables: page.tables.clone(),
+                    annotations: page.annotations.clone(),
+                })
+                .collect();
+            let (name, version, fields) = apply_profile_to_metadata(&p, &profile_pages);
             // Update the result's metadata with profile information
             result.metadata.profile_name = Some(name);
             result.metadata.profile_version = Some(version);

@@ -133,7 +133,7 @@ pub struct GetMetadataArgs {
     pub password: Option<String>,
 }
 
-/// Arguments for the get_table tool (Phase 7.2 stub).
+/// Arguments for the get_table tool.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetTableArgs {
@@ -151,7 +151,7 @@ pub struct GetTableArgs {
     pub password: Option<String>,
 }
 
-/// Arguments for the get_form_fields tool (Phase 7.4 stub).
+/// Arguments for the get_form_fields tool.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetFormFieldsArgs {
@@ -163,7 +163,7 @@ pub struct GetFormFieldsArgs {
     pub password: Option<String>,
 }
 
-/// Arguments for the get_attachments tool (Phase 7.5 stub).
+/// Arguments for the get_attachments tool.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetAttachmentsArgs {
@@ -187,7 +187,7 @@ pub struct HashArgs {
     pub password: Option<String>,
 }
 
-/// Arguments for the classify tool (Phase 5.6 stub).
+/// Arguments for the classify tool.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClassifyArgs {

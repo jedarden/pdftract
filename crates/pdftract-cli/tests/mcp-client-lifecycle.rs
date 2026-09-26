@@ -5,7 +5,7 @@
 //!
 //! 1. **Spawn:** start `pdftract mcp --stdio` as a subprocess
 //! 2. **Handshake:** send `initialize`, receive capabilities
-//! 3. **List Tools:** call `tools/list` — the seven advertised tools
+//! 3. **List Tools:** call `tools/list` — the ten advertised tools
 //! 4. **Call Tool:** invoke `tools/call` with a tool name and arguments
 //! 5. **Terminate:** close stdin; server exits cleanly on EOF
 //!
@@ -112,7 +112,23 @@ fn wait_with_timeout(child: &mut Child, timeout_ms: u64) -> std::io::Result<Opti
 /// Generated in-place rather than checked in so the fixture cannot rot
 /// independently of the generator and no binary blob lands in the tree.
 fn minimal_pdf(text: &str) -> Vec<u8> {
-    let stream = format!("BT /F1 12 Tf 72 720 Td ({text}) Tj ET");
+    minimal_pdf_stream(&format!("BT /F1 12 Tf 72 720 Td ({text}) Tj ET"))
+}
+
+/// Build a PDF with a bordered table and a text token for MCP integration
+/// coverage. The table has one detectable grid on page zero.
+fn table_pdf() -> Vec<u8> {
+    let mut stream = String::from("BT /F1 12 Tf 70 460 Td (needle) Tj ET\n");
+    for y in [500, 420, 340, 260, 180, 100] {
+        stream.push_str(&format!("50 {y} m 500 {y} l S\n"));
+    }
+    for x in [50, 200, 350, 500] {
+        stream.push_str(&format!("{x} 100 m {x} 500 l S\n"));
+    }
+    minimal_pdf_stream(&stream)
+}
+
+fn minimal_pdf_stream(stream: &str) -> Vec<u8> {
     let objects: Vec<String> = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
@@ -473,7 +489,7 @@ fn assert_data_reason<'a>(what: &str, response: &'a Value) -> &'a str {
 // ---------------------------------------------------------------------------
 
 /// The full documented lifecycle: spawn → initialize → tools/list (the
-/// advertised subset of the ten-entry catalog) → tools/call on a fixture →
+/// advertised ten-entry catalog) → tools/call on a fixture →
 /// clean exit on stdin EOF.
 #[test]
 fn documented_lifecycle_initialize_list_call_exit_on_eof() {
@@ -599,6 +615,81 @@ fn documented_lifecycle_initialize_list_call_exit_on_eof() {
         Some(0),
         "server must exit 0 on stdin EOF (documented terminate step)"
     );
+}
+
+/// Specialized tools return their actual extraction payloads over the same
+/// LSP Content-Length framed connection used by clients, rather than the
+/// former NOT_YET_IMPLEMENTED compatibility result.
+#[test]
+fn specialized_tools_return_real_results_over_wire() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let table_path = dir.path().join("table.pdf");
+    std::fs::write(&table_path, table_pdf()).expect("write table fixture");
+    let form_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/pdftract-core/tests/sdk-conformance/fixtures/fillable-form/form.pdf");
+
+    let mut server = McpServer::spawn(&[]);
+    let init = server.request("initialize", json!({"capabilities": {}}));
+    assert_success(&init, "initialize");
+
+    let search = server.request(
+        "tools/call",
+        json!({
+            "name": "search",
+            "arguments": {"path": table_path.to_str().unwrap(), "pattern": "needle"}
+        }),
+    );
+    let search_result = assert_success(&search, "search");
+    assert_eq!(search_result["isError"], false, "search failed: {search}");
+    assert_eq!(search_result["structuredContent"]["matches"].as_array().map(Vec::len), Some(1));
+    assert_eq!(search_result["structuredContent"]["matches"][0]["page_index"], 0);
+
+    let table = server.request(
+        "tools/call",
+        json!({
+            "name": "get_table",
+            "arguments": {"path": table_path.to_str().unwrap(), "page": 0, "table_index": 0}
+        }),
+    );
+    let table_result = assert_success(&table, "get_table");
+    assert_eq!(table_result["isError"], false, "get_table failed: {table}");
+    assert!(table_result["structuredContent"]["table"]["rows"].is_array());
+
+    let classify = server.request(
+        "tools/call",
+        json!({
+            "name": "classify",
+            "arguments": {"path": table_path.to_str().unwrap()}
+        }),
+    );
+    let classify_result = assert_success(&classify, "classify");
+    assert_eq!(classify_result["isError"], false, "classify failed: {classify}");
+    assert!(classify_result["structuredContent"]["document_type"].is_string());
+
+    let forms = server.request(
+        "tools/call",
+        json!({
+            "name": "get_form_fields",
+            "arguments": {"path": form_path.to_str().unwrap()}
+        }),
+    );
+    let forms_result = assert_success(&forms, "get_form_fields");
+    assert_eq!(forms_result["isError"], false, "get_form_fields failed: {forms}");
+    assert!(forms_result["structuredContent"]["form_fields"].is_array());
+
+    let attachments = server.request(
+        "tools/call",
+        json!({
+            "name": "get_attachments",
+            "arguments": {"path": table_path.to_str().unwrap()}
+        }),
+    );
+    let attachments_result = assert_success(&attachments, "get_attachments");
+    assert_eq!(attachments_result["isError"], false, "get_attachments failed: {attachments}");
+    assert!(attachments_result["structuredContent"]["attachments"].is_array());
+
+    server.close_stdin();
+    assert_eq!(server.wait_for_exit(), Some(0));
 }
 
 /// The documented error contract over the wire: with `--root` set, a
