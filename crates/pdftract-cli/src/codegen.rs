@@ -26,7 +26,7 @@ impl Language {
     /// Returns the template directory name for this language.
     pub fn template_dir(&self) -> &str {
         match self {
-            Language::Python => "python",
+            Language::Python => "python-subprocess",
             Language::Rust => "rust",
             Language::Node => "node",
             Language::Go => "go",

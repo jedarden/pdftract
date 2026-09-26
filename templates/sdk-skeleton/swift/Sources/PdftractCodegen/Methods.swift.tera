@@ -383,23 +383,13 @@ public struct Pdftract {
         args.append(contentsOf: options.toArgs())
         {% if method.name == 'extract_text' %}
         args.append("--text")
+        args.append("-")
         {% else %}
         args.append("--md")
+        args.append("-")
         {% endif %}
-        args.append("--json")
 
-        let output = try await exec(args)
-
-        // Parse JSON to verify it's valid, then extract the text field
-        guard let data = output.data(using: .utf8),
-              let doc = try? JSONDecoder().decode(Document.self, from: data) else {
-            throw PdftractError("Failed to decode JSON output", -1)
-        }
-
-        // Return concatenated page text
-        return doc.pages.map { page in
-            page.blocks.map { $0.text }.joined(separator: "\n")
-        }.joined(separator: "\n\n")
+        return try await exec(args)
     }
 
     {% elif method.name == 'get_metadata' or method.name == 'hash' or method.name == 'classify' %}
@@ -434,11 +424,11 @@ public struct Pdftract {
     ) async throws -> {% if method.name == 'get_metadata' %}Metadata{% elif method.name == 'hash' %}Fingerprint{% else %}Classification{% endif %} {
         var args = [
         {% if method.name == 'get_metadata' %}
-        "extract", "--metadata-only", "--json"
+        "extract"
         {% elif method.name == 'hash' %}
-        "hash", "--json"
+        "hash"
         {% else %}
-        "classify", "--json"
+        "classify"
         {% endif %}
         ]
         let prepared = try source.toArgs()
@@ -449,6 +439,10 @@ public struct Pdftract {
         {% elif method.name == 'hash' %}
         args.append(contentsOf: options.toArgs())
         {% endif %}
+        {% if method.name == 'get_metadata' %}
+        args.append("--json")
+        args.append("-")
+        {% endif %}
 
         let output = try await exec(args)
 
@@ -456,7 +450,12 @@ public struct Pdftract {
             throw PdftractError("Failed to decode output", -1)
         }
 
-        return try JSONDecoder().decode({% if method.name == 'get_metadata' %}Metadata{% elif method.name == 'hash' %}Fingerprint{% else %}Classification{% endif %}.self, from: data)
+        {% if method.name == 'get_metadata' %}
+        let document = try JSONDecoder().decode(Document.self, from: data)
+        return document.metadata
+        {% else %}
+        return try JSONDecoder().decode({% if method.name == 'hash' %}Fingerprint{% else %}Classification{% endif %}.self, from: data)
+        {% endif %}
     }
 
     {% else %}
@@ -470,11 +469,13 @@ public struct Pdftract {
         _ source: Source,
         options: ExtractOptions = ExtractOptions()
     ) async throws -> Document {
-        var args = ["extract", "--json"]
+        var args = ["extract"]
         let prepared = try source.toArgs()
         defer { prepared.cleanUp() }
         args.append(contentsOf: prepared.arguments)
         args.append(contentsOf: options.toArgs())
+        args.append("--json")
+        args.append("-")
 
         let output = try await exec(args)
 

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 )
 
@@ -103,6 +102,8 @@ func (c *Client) {{ method.camel_name }}(source Source, options *{{ method.optio
 		if options != nil {
 			args = append(args, options.toArgs()...)
 		}
+
+		args = append(args, "--ndjson")
 
 		cmd := exec.Command(c.binaryPath, args...)
 		output, err := cmd.CombinedOutput()
@@ -203,11 +204,11 @@ func (c *Client) {{ method.camel_name }}(source Source{% if method.has_options %
 	{% endif %}
 
 	{% if method.name == "extract_text" %}
-	args = append(args, "--text")
+	args = append(args, "--text", "-")
 	{% elif method.name == "extract_markdown" %}
-	args = append(args, "--md")
+	args = append(args, "--md", "-")
 	{% elif method.name == "get_metadata" %}
-	args = append(args, "--metadata-only")
+	args = append(args, "--json", "-")
 	{% endif %}
 
 	cmd := exec.Command(c.binaryPath, args...)
@@ -219,11 +220,19 @@ func (c *Client) {{ method.camel_name }}(source Source{% if method.has_options %
 	{% if method.returns_string %}
 	return string(output), nil
 	{% else %}
+	{% if method.name == "get_metadata" %}
+	var document Document
+	if err := json.Unmarshal(output, &document); err != nil {
+		return *new({{ method.return_type }}), &PdftractError{Message: fmt.Sprintf("failed to parse output: %v", err)}
+	}
+	return document.Metadata, nil
+	{% else %}
 	var result {{ method.return_type }}
 	if err := json.Unmarshal(output, &result); err != nil {
 		return *new({{ method.return_type }}), &PdftractError{Message: fmt.Sprintf("failed to parse output: %v", err)}
 	}
 	return result, nil
+	{% endif %}
 	{% endif %}
 }
 {% endif %}

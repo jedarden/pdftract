@@ -3,7 +3,7 @@
  */
 
 export interface Source {
-  toArgs(): string[];
+  toArgs(): string[] | Promise<string[]>;
 }
 
 export class PathSource implements Source {

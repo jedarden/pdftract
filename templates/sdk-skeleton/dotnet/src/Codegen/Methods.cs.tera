@@ -80,6 +80,8 @@ public class Pdftract : IDisposable
             args.AddRange(options.ToArgs());
         }
 
+        args.Add("--ndjson");
+
         var psi = new ProcessStartInfo
         {
             FileName = _binaryPath,
@@ -194,10 +196,13 @@ public class Pdftract : IDisposable
 
         {% if method.name == 'extract_text' %}
         args.Add("--text");
+        args.Add("-");
         {% elif method.name == 'extract_markdown' %}
         args.Add("--md");
+        args.Add("-");
         {% elif method.name == 'get_metadata' %}
-        args.Add("--metadata-only");
+        args.Add("--json");
+        args.Add("-");
         {% endif %}
 
         var result = Execute(args.ToArray());
@@ -205,8 +210,14 @@ public class Pdftract : IDisposable
         {% if method.returns_string %}
         return result.Stdout;
         {% else %}
+        {% if method.name == 'get_metadata' %}
+        using var document = JsonDocument.Parse(result.Stdout);
+        return document.RootElement.GetProperty("metadata").Deserialize<{{ method.return_type }}>()
+            ?? throw new PdftractException("Failed to deserialize metadata", -1);
+        {% else %}
         return JsonSerializer.Deserialize<{{ method.return_type }}>(result.Stdout)
             ?? throw new PdftractException("Failed to deserialize result", -1);
+        {% endif %}
         {% endif %}
     }
     {% endif %}

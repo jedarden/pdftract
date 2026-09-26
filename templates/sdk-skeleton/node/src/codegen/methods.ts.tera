@@ -2,13 +2,15 @@
  * This file is auto-generated. Do not edit manually.
  */
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import type {
-  Source,
+import {
   PathSource,
   URLSource,
-  BytesSource,
+  BytesSource
+} from './types.js';
+import type {
+  Source,
   Document,
   Page,
   Match,
@@ -34,7 +36,7 @@ export class PdftractError extends Error {
 }
 
 {% for error in errors %}
-{% if error.exit_code != 0 and error.exit_code != 10 %}
+{% if error.exit_code != 0 %}
 export class {{ error.exception_name }} extends PdftractError {
   constructor(message: string, exitCode: number, stderr: string) {
     super(message, exitCode, stderr);
@@ -77,22 +79,23 @@ export class Client {
 
   {% for method in methods %}
   {% if method.name == 'extract_stream' %}
-  async {{ method.camel_name }}(
+  async *{{ method.camel_name | lc_first }}(
     source: Source,
     options?: {{ method.options_type }}
-  ): AsyncIterable<{{ method.return_type }}>> {
+  ): AsyncIterable<{{ method.return_type }}> {
     const args = ['{{ method.cli_flag }}', ...(await this.sourceArgs(source))];
     if (options) {
       args.push(...this.optionsArgs(options));
     }
+    args.push('--ndjson');
 
     const child = spawn(this.binaryPath, args);
     const errorChunks: Buffer[] = [];
+    const client = this;
 
     child.stderr?.on('data', (chunk) => errorChunks.push(chunk));
 
-    return (async function* () {
-      try {
+    try {
         let buffer = '';
         for await (const chunk of child.stdout!) {
           buffer += chunk.toString();
@@ -116,20 +119,19 @@ export class Client {
 
         if (exitCode !== 0) {
           const stderr = Buffer.concat(errorChunks).toString();
-          throw this.mapError(stderr, exitCode);
+          throw client.mapError(stderr, exitCode);
         }
       } catch (error) {
         child.kill();
         throw error;
       }
-    })();
   }
   {% elif method.name == 'search' %}
-  async *{{ method.camel_name }}(
+  async *{{ method.camel_name | lc_first }}(
     source: Source,
     pattern: string,
     options?: {{ method.options_type }}
-  ): AsyncIterable<{{ method.return_type }}>> {
+  ): AsyncIterable<{{ method.return_type }}> {
     const args = ['grep', pattern, ...(await this.sourceArgs(source))];
     if (options) {
       args.push(...this.optionsArgs(options));
@@ -167,15 +169,15 @@ export class Client {
     }
   }
   {% elif method.name == 'verify_receipt' %}
-  async {{ method.camel_name }}(path: string, receipt: string): Promise<boolean> {
+  async {{ method.camel_name | lc_first }}(path: string, receipt: string): Promise<boolean> {
     const output = await this.exec(['{{ method.cli_flag }}', path, receipt]);
     return output.trim() === 'true';
   }
   {% else %}
-  async {{ method.camel_name }}(
+  async {{ method.camel_name | lc_first }}(
     source: Source{% if method.has_options %},
     options?: {{ method.options_type }}{% endif %}
-  ): Promise<{{ method.return_type }}>> {
+  ): Promise<{{ method.return_type }}> {
     const args = ['{{ method.cli_flag }}', ...(await this.sourceArgs(source))];
 
     {% if method.has_options %}
@@ -185,11 +187,11 @@ export class Client {
     {% endif %}
 
     {% if method.name == 'extract_text' %}
-    args.push('--text');
+    args.push('--text', '-');
     {% elif method.name == 'extract_markdown' %}
-    args.push('--md');
+    args.push('--md', '-');
     {% elif method.name == 'get_metadata' %}
-    args.push('--metadata-only');
+    args.push('--json', '-');
     {% endif %}
 
     const output = await this.exec(args);
@@ -197,7 +199,11 @@ export class Client {
     {% if method.returns_string %}
     return output;
     {% else %}
+    {% if method.name == 'get_metadata' %}
+    return (JSON.parse(output) as Document).metadata;
+    {% else %}
     return JSON.parse(output) as {{ method.return_type }};
+    {% endif %}
     {% endif %}
   }
   {% endif %}

@@ -54,7 +54,7 @@ class Client:
 
         Yields JSON objects for each page.
         """
-        args = ["{{ method.cli_flag }}", *source.to_args()]
+        args = ["{{ method.cli_flag }}", *source.to_args(), "--ndjson"]
 
         if options:
             args.extend(options.to_args())
@@ -125,11 +125,11 @@ class Client:
         {% endif %}
 
         {% if method.name == 'extract_text' %}
-        args.append("--text")
+        args.extend(["--text", "-"])
         {% elif method.name == 'extract_markdown' %}
-        args.append("--md")
+        args.extend(["--md", "-"])
         {% elif method.name == 'get_metadata' %}
-        args.append("--metadata-only")
+        args.extend(["--json", "-"])
         {% endif %}
 
         output = self._exec(*args)
@@ -137,7 +137,11 @@ class Client:
         {% if method.returns_string %}
         return output
         {% else %}
+        {% if method.name == 'get_metadata' %}
+        return json.loads(output)["metadata"]
+        {% else %}
         return json.loads(output)
+        {% endif %}
         {% endif %}
     {% endif %}
     {% endfor %}

@@ -2,6 +2,7 @@
 
 require "open3"
 require "json"
+require "ostruct"
 
 module Pdftract
   module Codegen
@@ -47,7 +48,7 @@ module Pdftract
       {% for method in methods %}
       {% if method.name == 'extract_stream' %}
       def {{ method.snake_name }}(source, options = nil)
-        args = ["{{ method.cli_flag }}", *source.to_args]
+        args = ["{{ method.cli_flag }}", *source.to_args, "--ndjson"]
         args.concat(options.to_args) if options
 
         Open3.popen3(@binary_path, *args) do |stdin, stdout, stderr, wait_thr|
@@ -99,11 +100,11 @@ module Pdftract
         {% endif %}
 
         {% if method.name == 'extract_text' %}
-        args << "--text"
+        args.concat(["--text", "-"])
         {% elif method.name == 'extract_markdown' %}
-        args << "--md"
+        args.concat(["--md", "-"])
         {% elif method.name == 'get_metadata' %}
-        args << "--metadata-only"
+        args.concat(["--json", "-"])
         {% endif %}
 
         output = exec(*args)
@@ -111,7 +112,11 @@ module Pdftract
         {% if method.returns_string %}
         output
         {% else %}
+        {% if method.name == 'get_metadata' %}
+        JSON.parse(output, object_class: OpenStruct).metadata
+        {% else %}
         JSON.parse(output, object_class: OpenStruct)
+        {% endif %}
         {% endif %}
       end
       {% endif %}

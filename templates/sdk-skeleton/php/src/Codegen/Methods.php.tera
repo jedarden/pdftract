@@ -57,7 +57,7 @@ class Client
      */
     public function {{ method.camel_name }}(Source $source, ?{{ method.options_type }} $options = null): \Generator
     {
-        $args = array_merge(['{{ method.cli_flag }}'], $source->toArgs());
+        $args = array_merge(['{{ method.cli_flag }}'], $source->toArgs(), ['--ndjson']);
 
         if ($options !== null) {
             $args = array_merge($args, $options->toArgs());
@@ -178,10 +178,13 @@ class Client
 
         {% if method.name == 'extract_text' %}
         $args[] = '--text';
+        $args[] = '-';
         {% elif method.name == 'extract_markdown' %}
         $args[] = '--md';
+        $args[] = '-';
         {% elif method.name == 'get_metadata' %}
-        $args[] = '--metadata-only';
+        $args[] = '--json';
+        $args[] = '-';
         {% endif %}
 
         $output = $this->exec($args);
@@ -193,7 +196,14 @@ class Client
         if ($result === null) {
             throw new PdftractException('Failed to decode JSON output', -1);
         }
+        {% if method.name == 'get_metadata' %}
+        if (!is_array($result) || !array_key_exists('metadata', $result)) {
+            throw new PdftractException('Metadata missing from JSON output', -1);
+        }
+        return $result['metadata'];
+        {% else %}
         return $result;
+        {% endif %}
         {% endif %}
     }
     {% endif %}

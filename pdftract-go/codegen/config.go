@@ -66,7 +66,7 @@ var AllMethods = []MethodMetadata{
 		IsChannel:           false,
 		UsesStringParams:    false,
 		StringParamCount:    0,
-		AdditionalCLIArgs:   []string{"--text"},
+		AdditionalCLIArgs:   []string{"--text", "-"},
 	},
 	{
 		Name:                "extract_markdown",
@@ -79,7 +79,7 @@ var AllMethods = []MethodMetadata{
 		IsChannel:           false,
 		UsesStringParams:    false,
 		StringParamCount:    0,
-		AdditionalCLIArgs:   []string{"--md"},
+		AdditionalCLIArgs:   []string{"--md", "-"},
 	},
 	{
 		Name:                "extract_stream",
@@ -120,7 +120,7 @@ var AllMethods = []MethodMetadata{
 		IsChannel:           false,
 		UsesStringParams:    false,
 		StringParamCount:    0,
-		AdditionalCLIArgs:   []string{"--metadata-only"},
+		AdditionalCLIArgs:   []string{"--json", "-"},
 	},
 	{
 		Name:                "hash",

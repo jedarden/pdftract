@@ -1,6 +1,7 @@
 package com.jedarden.pdftract;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.jedarden.pdftract.codegen.*;
 
 import java.io.BufferedReader;
@@ -92,6 +93,7 @@ public class Pdftract implements AutoCloseable {
         }
 
         args.add("--text");
+        args.add("-");
 
         ProcessResult result = exec(args.toArray(new String[0]));
         return result.stdout().trim();
@@ -115,6 +117,7 @@ public class Pdftract implements AutoCloseable {
         }
 
         args.add("--md");
+        args.add("-");
 
         ProcessResult result = exec(args.toArray(new String[0]));
         return result.stdout().trim();
@@ -140,6 +143,8 @@ public class Pdftract implements AutoCloseable {
         if (options != null) {
             args.addAll(options.toArgs());
         }
+
+        args.add("--ndjson");
 
         return streamNdjson(args, Page.class);
     }
@@ -186,10 +191,21 @@ public class Pdftract implements AutoCloseable {
             args.addAll(options.toArgs());
         }
 
-        args.add("--metadata-only");
+        args.add("--json");
+        args.add("-");
 
         ProcessResult result = exec(args.toArray(new String[0]));
-        return parseJson(result.stdout(), Metadata.class);
+        try {
+            JsonNode metadata = mapper.readTree(result.stdout()).get("metadata");
+            if (metadata == null) {
+                throw new PdftractException("Metadata missing from JSON output", -1);
+            }
+            return mapper.treeToValue(metadata, Metadata.class);
+        } catch (PdftractException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new PdftractException("Failed to parse metadata response", -1, e.getMessage());
+        }
     }
 
     /**
