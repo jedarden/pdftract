@@ -300,9 +300,40 @@ fn gate_thresholds_match_phase5_contract() {
         "measure-wer.sh must default the clean gate to the Phase 5 threshold (3%)"
     );
     assert!(
+        WER_SCRIPT.contains("wer_lt"),
+        "measure-wer.sh must enforce the strict Phase 5 WER < 3% contract"
+    );
+    assert!(
+        !WER_SCRIPT.contains("wer_le"),
+        "measure-wer.sh must not silently weaken the strict WER gate to <="
+    );
+    assert!(
         WER_SCRIPT.contains("DEGRADED_TARGET_PCT="),
         "measure-wer.sh must carry a separate informational soft target so the \
          degraded fixture is reported independently of the clean gate"
+    );
+}
+
+/// Run the recorded corpus through the same WER implementation used by CI.
+/// Live OCR needs poppler and Tesseract, so that environment-dependent run is
+/// owned by the Argo gate; this test makes the committed reference corpus and
+/// the strict threshold an ordinary, feature-independent Rust test as well.
+#[test]
+fn recorded_corpus_wer_gate_passes() {
+    let output = std::process::Command::new(gate_script_path())
+        .arg("--recorded")
+        .output()
+        .expect("scripts/measure-wer.sh --recorded must start");
+    assert!(
+        output.status.success(),
+        "recorded corpus WER gate failed (exit {:?}):\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("GATE: PASS") && stdout.contains("<3%"),
+        "recorded gate output must report a passing strict <3% gate:\n{stdout}"
     );
 }
 

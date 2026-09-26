@@ -4,7 +4,7 @@ This document tracks the generation status and specifications for all scanned fi
 
 Regenerated 2026-09-13 (bead `bf-33zjo`) with a width-aware generator and an
 OCR-stable corpus; every clean 300 DPI fixture now passes the
-`scripts/measure-wer.sh` WER <= 3% gate (see [WER Results](#wer-results)).
+`scripts/measure-wer.sh` WER < 3% gate (see [WER Results](#wer-results)).
 
 ## Fixture Specifications
 
@@ -105,7 +105,7 @@ The ground-truth texts avoid constructs that tesseract cannot round-trip at
 
 Receipt/report/degraded measured 2026-09-13; invoice/letter re-verified and form
 re-measured 2026-09-18 after the single-page redesign, with tesseract 5.5.2 +
-`scripts/measure-wer.sh` (gate: WER <= 3% on clean 300 DPI fixtures):
+`scripts/measure-wer.sh` (gate: WER < 3% on clean 300 DPI fixtures):
 
 | Fixture | Words | WER | Gate | Notes |
 |---------|-------|------|------|-------|
@@ -120,7 +120,7 @@ To re-verify:
 
 ```sh
 R=tests/fixtures/scanned
-# whole corpus, live OCR, clean gate at <= 3% (tesseract 5.x + poppler from nix):
+# whole corpus, live OCR, clean gate at < 3% (tesseract 5.x + poppler from nix):
 nix-shell -p tesseract poppler-utils python3 --run 'scripts/measure-wer.sh'
 # single recorded pair (no OCR tools needed):
 scripts/measure-wer.sh $R/invoice/invoice-300dpi-ocr.txt $R/invoice/invoice-300dpi-ground-truth.txt

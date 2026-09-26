@@ -4,7 +4,7 @@
 # Measures the OCR quality of the scanned fixture corpus in
 # tests/fixtures/scanned/ against its ground-truth transcripts and enforces
 # the Tier-1 OCR accuracy gate: every clean 300 DPI fixture must measure
-# WER <= 3%. The intentionally degraded 200 DPI fixture is measured and
+# WER < 3%. The intentionally degraded 200 DPI fixture is measured and
 # reported on its own line with its own soft target; it never contributes to
 # the gate (a high degraded-fixture WER is expected, not a failure).
 #
@@ -51,8 +51,8 @@
 #   scripts/measure-wer.sh -h | --help
 #
 # Exit codes
-#   0  gate passed — every clean fixture measured WER <= threshold
-#   1  gate failed — a clean fixture measured WER > threshold, or --self-test
+#   0  gate passed — every clean fixture measured WER < threshold
+#   1  gate failed — a clean fixture measured WER >= threshold, or --self-test
 #      found a broken invariant
 #   2  usage or environment error (missing files, missing OCR dependencies)
 #
@@ -168,8 +168,9 @@ if detail:
 PY
 }
 
-# Float compare: wer_le WER THRESHOLD -> exit 0 when WER <= THRESHOLD
-wer_le() { awk -v w="$1" -v t="$2" 'BEGIN { exit !(w <= t) }'; }
+# Float compare: wer_lt WER THRESHOLD -> exit 0 when WER < THRESHOLD.
+# The Phase 5 contract is strict: a result exactly at 3.00% does not pass.
+wer_lt() { awk -v w="$1" -v t="$2" 'BEGIN { exit !(w < t) }'; }
 
 require_cmd() { # $1 = command, $2 = hint
     command -v "$1" >/dev/null 2>&1 || die 2 "missing dependency: '$1'. $2"
@@ -234,7 +235,7 @@ run_twofile() {
     if [[ "$detail" == 1 ]]; then
         grep -v '^SUMMARY' <<<"$out" | sed 's/^/  /' || true
     fi
-    if wer_le "$S_WER" "3"; then
+    if wer_lt "$S_WER" "3"; then
         printf 'threshold: 3.00%% -> PASS (exit 0)\n'
         return 0
     fi
@@ -307,7 +308,7 @@ run_corpus() {
 
     printf '=== scanned-corpus WER measurement ===\n'
     printf 'corpus:     %s\n' "$CORPUS"
-    printf 'threshold:  clean fixtures <= %s%% (degraded reported separately, non-gating)\n' "$THRESHOLD_PCT"
+    printf 'threshold:  clean fixtures < %s%% (degraded reported separately, non-gating)\n' "$THRESHOLD_PCT"
     if (( RECORDED )); then
         printf 'mode:       recorded — committed *-ocr.txt reference outputs (NOT live OCR)\n'
     else
@@ -344,14 +345,14 @@ run_corpus() {
         local status gate_cell
         if [[ "$class" == "degraded" ]]; then
             gate_cell="non-gating"
-            if wer_le "$S_WER" "$DEGRADED_TARGET_PCT"; then
+            if wer_lt "$S_WER" "$DEGRADED_TARGET_PCT"; then
                 status="REPORTED (soft target <${DEGRADED_TARGET_PCT}%)"
             else
                 status="REPORTED-OVER (soft target ${DEGRADED_TARGET_PCT}%)"
             fi
         else
-            gate_cell="<=${THRESHOLD_PCT}%"
-            if wer_le "$S_WER" "$THRESHOLD_PCT"; then
+            gate_cell="<${THRESHOLD_PCT}%"
+            if wer_lt "$S_WER" "$THRESHOLD_PCT"; then
                 status="PASS"
                 clean_count=$((clean_count + 1))
                 agg_errors=$((agg_errors + S_ERRORS))
@@ -392,7 +393,7 @@ run_corpus() {
         done
         return 1
     fi
-    printf 'GATE: PASS — %s clean fixture(s) at or under %s%%\n' "$clean_count" "$THRESHOLD_PCT"
+    printf 'GATE: PASS — %s clean fixture(s) under %s%%\n' "$clean_count" "$THRESHOLD_PCT"
     return 0
 }
 

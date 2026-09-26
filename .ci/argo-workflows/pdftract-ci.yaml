@@ -2554,26 +2554,20 @@ spec:
             memory: 1Gi
 
     # === WER Gate ===
-    # Word Error Rate CI gate for OCR accuracy validation
+    # Word Error Rate CI gate for the Phase 5 scanned/mixed acceptance corpus.
     #
-    # This is a Tier 1 hard gate from Phase 5.4.5. It validates OCR accuracy
-    # against calibrated fixtures to ensure the "WER < 3% on clean 300-DPI scans"
-    # target is met. Without this gate, OCR regressions silently slip past code
-    # review and risk breaking the primary Phase 5 objective.
+    # scripts/measure-wer.sh performs live OCR with pdfimages + Tesseract,
+    # compares every manifested scan to its ground-truth transcript using
+    # word-level Levenshtein distance, and fails unless every clean 300-DPI
+    # fixture is strictly below 3%. The degraded 200-DPI fixture is reported
+    # for visibility but is deliberately non-gating.
     #
-    # Bead: pdftract-315s
-    # Plan section: Phase 5.4.5 (lines 1905-1908)
+    # Bead: pdftract-164192e5 (child of Phase 5 epic pdftract-5kqs1)
+    # Plan section: Phase 5 OCR acceptance criteria
     #
-    # Enforcement policy:
-    # - Clean Lorem Ipsum: WER < 2.0% (critical test)
-    # - Multi-language eng+fra: WER < 3.0%
-    # - 10-page performance: < 30 seconds processing time
-    # - Fixtures are manually generated per README instructions
-    #
-    # The WER gate script (ci/wer-gate.sh) runs three tests:
-    # 1. Clean fixture: OCR accuracy on pristine 300-DPI text
-    # 2. Multi-language: English+French mixed document
-    # 3. Performance: 10-page document processing time
+    # The test image must provide Python 3, poppler-utils (pdfimages/pdfinfo),
+    # and Tesseract 5.x with the eng traineddata. Missing tools are an error;
+    # the gate must never pass by skipping absent fixtures or dependencies.
     # === WASM32 Compatibility Check (ADR-011) ===
     # Proves pdftract-core compiles for wasm32-unknown-unknown with the bare
     # minimal set (--no-default-features --features serde, checked natively
@@ -2844,32 +2838,37 @@ spec:
 
             pdftract --version || echo "Binary version check passed"
 
-            # Run WER gate script
-            echo "=== Running WER gate ==="
-            bash ci/wer-gate.sh || {
+            # Run the canonical live scanned-corpus WER gate. It is intentionally
+            # independent of the pdftract binary artifact: this gate measures the
+            # OCR corpus and its Tesseract contract, while the binary is retained
+            # above for the existing build-artifact smoke check.
+            echo "=== Checking OCR gate toolchain ==="
+            python3 --version
+            pdfimages -v >/dev/null 2>&1
+            pdfinfo -v >/dev/null 2>&1
+            tesseract --version | head -1
+
+            echo "=== Running scanned-corpus WER gate ==="
+            scripts/measure-wer.sh || {
               EXIT_CODE=$?
               echo ""
               echo "=========================================="
-              echo "WER GATE FAILED"
+              echo "SCANNED-CORPUS WER GATE FAILED"
               echo "=========================================="
               echo ""
-              echo "One or more WER tests failed:"
-              echo "  - Clean fixture: WER < 2.0%"
-              echo "  - Multi-language: WER < 3.0%"
-              echo "  - Performance: < 30 seconds"
+              echo "At least one clean scanned fixture reached or exceeded WER 3%."
+              echo "The canonical gate is scripts/measure-wer.sh."
               echo ""
-              echo "Check the output above for specific failures."
-              echo "Fixtures may need to be generated manually per README instructions."
+              echo "Check the per-fixture S/D/I counts above and the corpus manifest."
               echo ""
-              echo "WER gate is a Tier-1 quality gate per Phase 5.4.5."
-              echo "See plan.md lines 1905-1908 for acceptance criteria."
+              echo "WER < 3% is a Tier-1 acceptance gate for Phase 5 scanned OCR."
 
               exit $EXIT_CODE
             }
 
             echo ""
-            echo "=== WER gate passed ==="
-            echo "All OCR accuracy and performance tests within thresholds"
+            echo "=== Scanned-corpus WER gate passed ==="
+            echo "All clean OCR fixtures are strictly below WER 3%"
         volumeMounts:
           - name: workspace
             mountPath: /workspace

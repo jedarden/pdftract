@@ -109,7 +109,7 @@ the degraded row is the live-OCR figure — the committed reference OCR measures
 
 ```bash
 # Full corpus gate: live-OCR every manifested fixture (pdfimages -png +
-# tesseract stdout -l eng per page) and gate clean 300 DPI fixtures at <= 3%.
+# tesseract stdout -l eng per page) and gate clean 300 DPI fixtures at < 3%.
 # Tesseract + poppler tools come from nix (the attribute is poppler-utils).
 nix-shell -p tesseract poppler-utils python3 --run 'scripts/measure-wer.sh'
 
@@ -129,7 +129,7 @@ nix-shell -p tesseract poppler-utils python3 --run '
 '
 ```
 
-Exit 0 = every clean fixture at WER ≤ 3% (quality gate passed); exit 1 = a
+Exit 0 = every clean fixture at WER < 3% (quality gate passed); exit 1 = a
 clean fixture over threshold (the degraded 200 DPI fixture is always
 reported separately and never gates). `VERBOSE=1` prints the
 substitution/insertion/deletion breakdown. New fixture directories must be

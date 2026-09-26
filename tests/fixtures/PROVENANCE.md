@@ -580,3 +580,33 @@ Generated: 2026-09-22
 SHA-256: 761189c693d9d4b014ecb8141eb781303a2729e8fbd78ff5d3fe2fe9b664c814
 Size: 2959 bytes
 Independent validation (PyMuPDF 1.27.2): opens clean, 1 page, 2,050 chars.
+
+# Phase 5 OCR acceptance corpus (canonical ledger)
+
+The six manifest rows in `scripts/measure-wer.sh` pair each scanned PDF with
+the ground-truth transcript and a recorded reference OCR output. Clean rows
+are original synthetic CC0-1.0 compositions rendered and rasterized at 300
+DPI; the degraded row is public-domain source material and is reported but
+does not gate the clean WER threshold. SHA-256 values below cover the exact
+committed acceptance assets.
+
+| Path | Role | License | SHA-256 |
+|------|------|---------|---------|
+| scanned/receipt/receipt-300dpi-scanned.pdf | clean 300 DPI scan | CC0-1.0 | fb00bf1f5451cba5178702f2905a686a16670633af2f267756e1fa1a436545a3 |
+| scanned/receipt/receipt-300dpi.txt | ground-truth transcript | CC0-1.0 | 9b8067eb21756158aac4eb2e0f2a8db4b65ade5765c8c5ec48dafa311b16f624 |
+| scanned/receipt/receipt-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | abef7daf68f96b30bf4748518eccc4f60f57e1904c0d5079973b36ba65cc44b2 |
+| scanned/invoice/invoice-300dpi.pdf | clean 300 DPI scan | CC0-1.0 | b97d36ca9a6dac16277ecd30baeace6dd0b927778692006f1183abe5a7939bae |
+| scanned/invoice/invoice-300dpi-ground-truth.txt | ground-truth transcript | CC0-1.0 | 48880e13e9d5b0285a6a324e9597f49decf45763a7e28dd345901b173a86cd3f |
+| scanned/invoice/invoice-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 916db41f4ac0f61ba938f1b89d02c1fae3c2d351f3e6d680058c5f70fe982f24 |
+| scanned/letter/letter-300dpi.pdf | clean 300 DPI scan | CC0-1.0 | efc40d4a3e5b3914996616a581b8dfffc4f1f249bf1b88acfbcde224ae49bf28 |
+| scanned/letter/letter-300dpi-ground-truth.txt | ground-truth transcript | CC0-1.0 | 0d257ff22313d0ef1d49e6a7b450b2b0d53d1e22075f10426963b322fad3959f |
+| scanned/letter/letter-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | f847b64c4671d03926fac6a779ab76e990d6d8033496eb27689512aafd8de57e |
+| scanned/form/form-300dpi.pdf | clean 300 DPI scan | CC0-1.0 | 159abd8b69e6f70927ac8342d11746fe6bc7a1b48660b0a22ffe29eb1ce72458 |
+| scanned/form/form-300dpi-ground-truth.txt | ground-truth transcript | CC0-1.0 | 0470e87a710b6b0cd02dc9fb50dce4dc0b50863691f49650a5e0f2b9185509fb |
+| scanned/form/form-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 207f2c0cc3514d99536f4108f4d40fd018afa4ecbc5c1a2f56742f0cc27367c7 |
+| scanned/multi-page/report-300dpi.pdf | clean 300 DPI scan | CC0-1.0 | ef98fd229fb245c72cd492c83efb2374895293b2d2286463c4851a0bf194d2a6 |
+| scanned/multi-page/report-300dpi-ground-truth.txt | ground-truth transcript | CC0-1.0 | f6748525b502a11d1e5d630ccbfa2e1f0ee25cb93494f56bd8a19b4a7a77e84b |
+| scanned/multi-page/report-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 9cfb249d7721d388c667d6e39ff3176e8c7ca6e881d4f85e5e0ce71a85617e90 |
+| scanned/low-quality/degraded-200dpi.pdf | degraded 200 DPI scan (non-gating) | public-domain | ec655a34d2a8b6ca6d510ceafb24338e528c722f16d9f6c1a76e95baf2abd557 |
+| scanned/low-quality/degraded-200dpi.txt | ground-truth transcript | public-domain | 1ccb4f12ac17e2287b3a3d1b5478dbdb7e86771a6805d39ec214a980ba3025cc |
+| scanned/low-quality/degraded-200dpi-ocr.txt | recorded reference OCR | public-domain | 7afd95654eafface718873e344ffc54bedb49cafcfef75362c7dcb322e88eb43 |

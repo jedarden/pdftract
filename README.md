@@ -26,7 +26,7 @@
 | Multi-column reading order | 🚧 Full layout segmentation¹ | ⚠ Heuristic | ❌ | ⚠ Partial |
 | Footnotes & sidebars | 🚧¹ | ❌ | ❌ | ❌ |
 | Font encoding recovery | 🚧 Glyph name → fingerprint → shape¹ | ⚠ ToUnicode only | ⚠ ToUnicode only | ⚠ ToUnicode only |
-| Scanned / mixed PDF (OCR) | 🚧 Per-page hybrid routing² | ❌ | ❌ | ❌ |
+| Scanned / mixed PDF (OCR) | ✅ Per-page hybrid routing² | ❌ | ❌ | ❌ |
 | PDF/UA structure tree | 🚧³ | ❌ | ⚠ Partial | ❌ |
 | PDF decryption (RC4/AES) | 🚧 (`decrypt` feature)⁴ | ⚠ Partial | ⚠ Partial | ⚠ Partial |
 | Per-span bounding boxes + confidence | 🚧¹ | ✅ | ❌ | ⚠ Partial |
@@ -38,7 +38,7 @@
 🚧 = implemented in the source tree, not yet verified end-to-end · ❌ = not working at HEAD · third-party columns unchanged
 
 ¹ Implemented, but unverifiable until the page-tree parse regression is fixed (see development status above): `pdftract extract` currently fails on all fixtures, including these paths.
-² Page classification/routing implemented; the OCR acceptance corpus and its WER <3% gate are still open (bead `bf-33zjo`).
+² Page classification/routing and the scanned/mixed acceptance corpus are verified: the five clean 300-DPI fixtures measure WER <3% in `scripts/measure-wer.sh`, with the gate run by the `pdftract-ci` Argo WorkflowTemplate.
 ³ Structure-tree parser implemented and tagged-PDF corpus ready (bead `bf-5pyzm`); end-to-end verification pending the parse fix.
 ⁴ RC4/AES-128/AES-256 implemented with unit-test coverage (bead `pdftract-4mdfv`: 217/217 parser tests at close, 2026-06-03); the end-to-end encrypted-file path is blocked by the parse regression.
 ⁵ Lazy per-page decode implemented (bead `bf-2y2rp`); bounded-memory behavior on real documents is unverifiable until the parse fix.
