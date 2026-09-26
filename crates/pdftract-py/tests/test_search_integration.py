@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pdftract
+import pytest
 
 
 FIXTURE = (
@@ -13,6 +14,17 @@ FIXTURE = (
 )
 PATTERN = "PYTHON_SEARCH_REGRESSION"
 EXPECTED = FIXTURE.with_suffix(".expected.json")
+
+
+def assert_search_matches(pattern: str, expected_texts: list[str], **options) -> None:
+    """Assert the raw native result and typed public iterator agree."""
+    native_result = pdftract._native.search(str(FIXTURE), pattern, **options)
+    assert native_result["pattern"] == pattern
+    assert [match["text"] for match in native_result["matches"]] == expected_texts
+
+    public_matches = list(pdftract.search(str(FIXTURE), pattern, **options))
+    assert [match.text for match in public_matches] == expected_texts
+    assert all(isinstance(match, pdftract.Match) for match in public_matches)
 
 
 def test_search_result_shape_matches_sdk():
@@ -73,3 +85,32 @@ def test_search_non_matching_pattern_is_empty():
     assert native_result["matches"] == []
 
     assert list(pdftract.search(str(FIXTURE), non_matching_pattern)) == []
+
+
+def test_search_options_cover_plain_case_regex_and_whole_word_matching():
+    """Every search option must preserve matching and near-matching semantics."""
+    # Plain text matching is case-sensitive by default.
+    assert_search_matches(PATTERN, [PATTERN])
+    assert_search_matches(PATTERN.lower(), [])
+
+    # Case-insensitive matching finds the same known span.
+    assert_search_matches(PATTERN.lower(), [PATTERN], case_insensitive=True)
+
+    # The regex must match the complete known token; the trailing-X variant
+    # is a near match and must not be accepted by the end anchor.
+    assert_search_matches(r"PYTHON_SEARCH_[A-Z]+$", [PATTERN], regex=True)
+    assert_search_matches(r"PYTHON_SEARCH_[A-Z]+X$", [], regex=True)
+
+    # Underscores are word characters: SEARCH is only a substring of the
+    # fixture token, while the complete token is a whole-word match.
+    assert_search_matches(PATTERN, [PATTERN], whole_word=True)
+    assert_search_matches("SEARCH", [], whole_word=True)
+
+
+def test_search_invalid_regex_raises_python_error():
+    """Invalid regex input is surfaced consistently on both Python APIs."""
+    with pytest.raises(pdftract.CorruptPdfError, match="Invalid regex pattern"):
+        pdftract._native.search(str(FIXTURE), "[", regex=True)
+
+    with pytest.raises(pdftract.CorruptPdfError, match="Invalid regex pattern"):
+        list(pdftract.search(str(FIXTURE), "[", regex=True))
