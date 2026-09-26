@@ -1,8 +1,10 @@
 //! Contract assertions for the SDK search result consumed by language bindings.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use pdftract_core::sdk;
+use serde_json::{json, Value};
 
 const SEARCH_TOKEN: &str = "PYTHON_SEARCH_REGRESSION";
 const EXPECTED_BBOX: [f64; 4] = [72.0, 720.0, 244.8000030517578, 732.0];
@@ -16,10 +18,17 @@ fn workspace_root() -> PathBuf {
 #[test]
 fn sdk_search_preserves_public_match_shape() {
     let fixture = workspace_root().join("crates/pdftract-py/tests/fixtures/search_regression.pdf");
+    let expected_path = workspace_root()
+        .join("crates/pdftract-py/tests/fixtures/search_regression.expected.json");
     assert!(
         fixture.is_file(),
         "search fixture is missing: {}",
         fixture.display()
+    );
+    assert!(
+        expected_path.is_file(),
+        "search expectation is missing: {}",
+        expected_path.display()
     );
 
     let matches = sdk::search(&fixture, SEARCH_TOKEN, false, false, false)
@@ -47,4 +56,22 @@ fn sdk_search_preserves_public_match_shape() {
         x0 < x1 && y0 < y1,
         "bbox must have positive width and height"
     );
+
+    let expected: Value = serde_json::from_str(
+        &fs::read_to_string(&expected_path).expect("read deterministic search expectation"),
+    )
+    .expect("parse deterministic search expectation");
+    let sdk_matches: Vec<Value> = matches
+        .iter()
+        .map(|search_match| {
+            json!({
+                "page_index": search_match.page_index,
+                "span_index": search_match.span_index,
+                "text": search_match.text,
+                "bbox": search_match.bbox,
+            })
+        })
+        .collect();
+    assert_eq!(expected["pattern"], SEARCH_TOKEN);
+    assert_eq!(expected["matches"], Value::Array(sdk_matches));
 }
