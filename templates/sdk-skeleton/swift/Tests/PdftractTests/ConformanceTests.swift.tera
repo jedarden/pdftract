@@ -53,126 +53,126 @@ final class ConformanceTests: XCTestCase {
 
         switch method {
         case "extract":
-            try await testExtract(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtract(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "extract_text":
-            try await testExtractText(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtractText(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "extract_markdown":
-            try await testExtractMarkdown(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtractMarkdown(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "get_metadata":
-            try await testGetMetadata(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testGetMetadata(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "hash":
-            try await testHash(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testHash(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "classify":
-            try await testClassify(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testClassify(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "verify_receipt":
-            try await testVerifyReceipt(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testVerifyReceipt(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "search":
-            try await testSearch(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testSearch(fixturePath, expected: testCase["expected"] as? [String: Any])
         case "extract_stream":
-            try await testExtractStream(fixturePath, assertions: testCase["assertions"] as? [String: Any])
+            try await testExtractStream(fixturePath, expected: testCase["expected"] as? [String: Any])
         default:
             throw XCTSkip("Method not yet implemented: \(method)")
         }
     }
 
-    private func testExtract(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testExtract(_ fixturePath: String, expected: [String: Any]?) async throws {
         let doc = try await client.extract(.path(fixturePath))
 
-        if let pageCount = assertions?["page_count"] as? Int {
+        if let pageCount = expected?["page_count"] as? Int {
             XCTAssertEqual(doc.pages.count, pageCount)
         }
 
-        if let hasTitle = assertions?["has_title"] as? Bool, hasTitle {
+        if let hasTitle = expected?["has_title"] as? Bool, hasTitle {
             XCTAssertNotNil(doc.metadata.title)
         }
     }
 
-    private func testExtractText(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testExtractText(_ fixturePath: String, expected: [String: Any]?) async throws {
         let text = try await client.extractText(.path(fixturePath))
 
-        if let minLen = assertions?["min_length"] as? Int {
+        if let minLen = expected?["min_length"] as? Int {
             XCTAssertGreaterThanOrEqual(text.count, minLen)
         }
 
-        if let contains = assertions?["contains"] as? [String] {
+        if let contains = expected?["contains"] as? [String] {
             for substr in contains {
                 XCTAssertTrue(text.contains(substr), "Expected text to contain: \(substr)")
             }
         }
     }
 
-    private func testExtractMarkdown(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testExtractMarkdown(_ fixturePath: String, expected: [String: Any]?) async throws {
         let md = try await client.extractMarkdown(.path(fixturePath))
 
-        if let minLen = assertions?["min_length"] as? Int {
+        if let minLen = expected?["min_length"] as? Int {
             XCTAssertGreaterThanOrEqual(md.count, minLen)
         }
     }
 
-    private func testGetMetadata(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testGetMetadata(_ fixturePath: String, expected: [String: Any]?) async throws {
         let metadata = try await client.getMetadata(.path(fixturePath))
 
-        if let pageCount = assertions?["page_count"] as? Int {
+        if let pageCount = expected?["page_count"] as? Int {
             XCTAssertEqual(metadata.pageCount, pageCount)
         }
     }
 
-    private func testHash(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testHash(_ fixturePath: String, expected: [String: Any]?) async throws {
         let fingerprint = try await client.hash(.path(fixturePath))
 
         XCTAssertEqual(fingerprint.hash.count, 64)
         XCTAssertEqual(fingerprint.fastHash.count, 64)
 
-        if let pageCount = assertions?["page_count"] as? Int {
+        if let pageCount = expected?["page_count"] as? Int {
             XCTAssertEqual(fingerprint.pageCount, pageCount)
         }
     }
 
-    private func testClassify(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testClassify(_ fixturePath: String, expected: [String: Any]?) async throws {
         let classification = try await client.classify(.path(fixturePath))
 
         XCTAssertFalse(classification.category.isEmpty)
         XCTAssertTrue(classification.confidence >= 0 && classification.confidence <= 1)
     }
 
-    private func testVerifyReceipt(_ fixturePath: String, assertions: [String: Any]?) async throws {
-        guard let receipt = assertions?["receipt"] as? String else {
-            throw XCTSkip("Receipt not provided in assertions")
+    private func testVerifyReceipt(_ fixturePath: String, expected: [String: Any]?) async throws {
+        guard let receipt = expected?["receipt"] as? String else {
+            throw XCTSkip("Receipt not provided in expected")
         }
 
         let receiptStruct = Receipt(data: receipt)
         let result = try await client.verifyReceipt(fixturePath, receipt: receiptStruct)
 
-        if let expectedValid = assertions?["valid"] as? Bool {
+        if let expectedValid = expected?["valid"] as? Bool {
             XCTAssertEqual(result.valid, expectedValid)
         }
     }
 
-    private func testSearch(_ fixturePath: String, assertions: [String: Any]?) async throws {
-        guard let pattern = assertions?["pattern"] as? String else {
-            throw XCTSkip("Pattern not provided in assertions")
+    private func testSearch(_ fixturePath: String, expected: [String: Any]?) async throws {
+        guard let pattern = expected?["pattern"] as? String else {
+            throw XCTSkip("Pattern not provided in expected")
         }
 
         var matchCount = 0
         for await _ in client.search(.path(fixturePath), pattern) {
             matchCount += 1
-            if let maxResults = assertions?["max_results"] as? Int, matchCount >= maxResults {
+            if let maxResults = expected?["max_results"] as? Int, matchCount >= maxResults {
                 break
             }
         }
 
-        if let minMatches = assertions?["min_matches"] as? Int {
+        if let minMatches = expected?["min_matches"] as? Int {
             XCTAssertGreaterThanOrEqual(matchCount, minMatches)
         }
     }
 
-    private func testExtractStream(_ fixturePath: String, assertions: [String: Any]?) async throws {
+    private func testExtractStream(_ fixturePath: String, expected: [String: Any]?) async throws {
         var pageCount = 0
         for await _ in client.extractStream(.path(fixturePath)) {
             pageCount += 1
         }
 
-        if let expectedPages = assertions?["page_count"] as? Int {
+        if let expectedPages = expected?["page_count"] as? Int {
             XCTAssertEqual(pageCount, expectedPages)
         }
     }

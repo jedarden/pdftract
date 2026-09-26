@@ -68,25 +68,25 @@ class ConformanceTest extends TestCase
     {
         switch ($testCase['method']) {
             case 'extract':
-                $this->testExtract($fixturePath, $testCase['assertions'] ?? null);
+                $this->testExtract($fixturePath, $testCase['expected'] ?? null);
                 break;
             case 'extract_text':
-                $this->testExtractText($fixturePath, $testCase['assertions'] ?? null);
+                $this->testExtractText($fixturePath, $testCase['expected'] ?? null);
                 break;
             case 'extract_markdown':
-                $this->testExtractMarkdown($fixturePath, $testCase['assertions'] ?? null);
+                $this->testExtractMarkdown($fixturePath, $testCase['expected'] ?? null);
                 break;
             case 'get_metadata':
-                $this->testGetMetadata($fixturePath, $testCase['assertions'] ?? null);
+                $this->testGetMetadata($fixturePath, $testCase['expected'] ?? null);
                 break;
             case 'hash':
-                $this->testHash($fixturePath, $testCase['assertions'] ?? null);
+                $this->testHash($fixturePath, $testCase['expected'] ?? null);
                 break;
             case 'classify':
-                $this->testClassify($fixturePath, $testCase['assertions'] ?? null);
+                $this->testClassify($fixturePath, $testCase['expected'] ?? null);
                 break;
             case 'verify_receipt':
-                $this->testVerifyReceipt($fixturePath, $testCase['assertions'] ?? null);
+                $this->testVerifyReceipt($fixturePath, $testCase['expected'] ?? null);
                 break;
             default:
                 $this->markTestSkipped("Method not yet implemented: {$testCase['method']}");
@@ -163,7 +163,7 @@ class ConformanceTest extends TestCase
     private function testVerifyReceipt(string $fixturePath, ?array $assertions): void
     {
         if ($assertions === null || !isset($assertions['receipt'])) {
-            $this->markTestSkipped('Receipt not provided in assertions');
+            $this->markTestSkipped('Receipt not provided in expected');
             return;
         }
 

@@ -245,6 +245,34 @@ This outputs a JSON report of pass/fail for each expected field, with detailed f
 | PHP | `tests/ConformanceTest.php` | PHPUnit |
 | Swift | `Tests/PdftractTests/ConformanceTests.swift` | XCTest |
 
+## Generated SDK Template Rollout
+
+The suite contract is the `expected` object in `tests/sdk-conformance/cases.json`.
+It is not an `assertions` object. Expected keys may be dotted paths with array
+indexes (`pages[0].blocks[0].kind`), `.length`, `{min,max}` constraints, or
+method-level derived fields such as stream frame counts and hash stability.
+
+The generated Ruby and Node.js harnesses now implement the complete evaluator:
+they normalize SDK values to the wire shape, resolve those paths, apply numeric
+tolerances, and emit one test-framework assertion for every expected field.
+The remaining skeletons are deliberately staged so each language can land the
+same evaluator without silently accepting a language-specific approximation:
+
+| Template | Current rollout | Next parity work |
+|----------|-----------------|------------------|
+| Ruby | Complete `expected` evaluator | Keep in lockstep with suite additions |
+| Node.js | Complete `expected` evaluator | Keep in lockstep with suite additions |
+| Python subprocess | Reads `expected`; legacy method-specific checks remain | Share the dotted-path normalizer and stream/search adapters |
+| Go | Reads `expected`; legacy method-specific checks remain | Add JSON-path evaluator and derived fields |
+| Java | Reads `expected`; legacy method-specific checks remain | Add JSON-path evaluator and derived fields |
+| .NET | Reads `expected`; legacy method-specific checks remain | Add JSON-path evaluator and derived fields |
+| PHP | Reads `expected`; legacy method-specific checks remain | Add JSON-path evaluator and derived fields |
+| Swift | Reads `expected`; legacy method-specific checks remain | Add JSON-path evaluator and derived fields |
+
+This staged rollout is intentional: Ruby and Node are the first publish gates
+to reject injected wrong output; the other generated harnesses must not be
+treated as full contract gates until their parity work is complete.
+
 ## CI Integration
 
 Each SDK's Argo publish workflow must:

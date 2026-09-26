@@ -30,7 +30,7 @@ func TestConformance(t *testing.T) {
 			Fixture   string                 `json:"fixture"`
 			Method    string                 `json:"method"`
 			Options   map[string]interface{} `json:"options"`
-			Assertions map[string]interface{} `json:"assertions"`
+			Expected  map[string]interface{} `json:"expected"`
 		} `json:"cases"`
 	}
 
@@ -52,7 +52,7 @@ func testCase(t *testing.T, client *pdftract.Client, tc struct {
 	Fixture   string
 	Method    string
 	Options   map[string]interface{}
-	Assertions map[string]interface{}
+	Expected  map[string]interface{}
 }) {
 	fixturePath := filepath.Join("fixtures", tc.Fixture)
 	if _, err := os.Stat(fixturePath); os.IsNotExist(err) {
@@ -62,43 +62,43 @@ func testCase(t *testing.T, client *pdftract.Client, tc struct {
 
 	switch tc.Method {
 	case "extract":
-		testExtract(t, client, fixturePath, tc.Options, tc.Assertions)
+		testExtract(t, client, fixturePath, tc.Options, tc.Expected)
 	case "extract_text":
-		testExtractText(t, client, fixturePath, tc.Options, tc.Assertions)
+		testExtractText(t, client, fixturePath, tc.Options, tc.Expected)
 	case "extract_markdown":
-		testExtractMarkdown(t, client, fixturePath, tc.Options, tc.Assertions)
+		testExtractMarkdown(t, client, fixturePath, tc.Options, tc.Expected)
 	case "get_metadata":
-		testGetMetadata(t, client, fixturePath, tc.Options, tc.Assertions)
+		testGetMetadata(t, client, fixturePath, tc.Options, tc.Expected)
 	case "hash":
-		testHash(t, client, fixturePath, tc.Options, tc.Assertions)
+		testHash(t, client, fixturePath, tc.Options, tc.Expected)
 	case "classify":
-		testClassify(t, client, fixturePath, tc.Assertions)
+		testClassify(t, client, fixturePath, tc.Expected)
 	case "verify_receipt":
-		testVerifyReceipt(t, client, fixturePath, tc.Options, tc.Assertions)
+		testVerifyReceipt(t, client, fixturePath, tc.Options, tc.Expected)
 	default:
 		t.Skipf("Method not yet implemented: %s", tc.Method)
 	}
 }
 
-func testExtract(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+func testExtract(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, expected map[string]interface{}) {
 	doc, err := client.Extract(pdftract.Path(fixturePath), nil)
 	if err != nil {
 		t.Fatalf("Extract failed: %v", err)
 	}
 
-	if pageCount, ok := assertions["page_count"].(float64); ok {
+	if pageCount, ok := expected["page_count"].(float64); ok {
 		if got := len(doc.Pages); got != int(pageCount) {
 			t.Errorf("Expected %d pages, got %d", int(pageCount), got)
 		}
 	}
 
-	if _, ok := assertions["has_title"].(bool); ok {
+	if _, ok := expected["has_title"].(bool); ok {
 		if doc.Metadata.Title == "" {
 			t.Error("Expected title to be present")
 		}
 	}
 
-	if _, ok := assertions["has_blocks"].(bool); ok {
+	if _, ok := expected["has_blocks"].(bool); ok {
 		hasBlocks := false
 		for _, page := range doc.Pages {
 			if len(page.Blocks) > 0 {
@@ -112,19 +112,19 @@ func testExtract(t *testing.T, client *pdftract.Client, fixturePath string, opti
 	}
 }
 
-func testExtractText(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+func testExtractText(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, expected map[string]interface{}) {
 	text, err := client.ExtractText(pdftract.Path(fixturePath), nil)
 	if err != nil {
 		t.Fatalf("ExtractText failed: %v", err)
 	}
 
-	if minLen, ok := assertions["min_length"].(float64); ok {
+	if minLen, ok := expected["min_length"].(float64); ok {
 		if got := len(text); got < int(minLen) {
 			t.Errorf("Expected text length >= %d, got %d", int(minLen), got)
 		}
 	}
 
-	if contains, ok := assertions["contains"].([]interface{}); ok {
+	if contains, ok := expected["contains"].([]interface{}); ok {
 		for _, c := range contains {
 			if substr, ok := c.(string); ok {
 				if !containsString(text, substr) {
@@ -135,33 +135,33 @@ func testExtractText(t *testing.T, client *pdftract.Client, fixturePath string, 
 	}
 }
 
-func testExtractMarkdown(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+func testExtractMarkdown(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, expected map[string]interface{}) {
 	md, err := client.ExtractMarkdown(pdftract.Path(fixturePath), nil)
 	if err != nil {
 		t.Fatalf("ExtractMarkdown failed: %v", err)
 	}
 
-	if minLen, ok := assertions["min_length"].(float64); ok {
+	if minLen, ok := expected["min_length"].(float64); ok {
 		if got := len(md); got < int(minLen) {
 			t.Errorf("Expected markdown length >= %d, got %d", int(minLen), got)
 		}
 	}
 }
 
-func testGetMetadata(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+func testGetMetadata(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, expected map[string]interface{}) {
 	metadata, err := client.GetMetadata(pdftract.Path(fixturePath), nil)
 	if err != nil {
 		t.Fatalf("GetMetadata failed: %v", err)
 	}
 
-	if pageCount, ok := assertions["page_count"].(float64); ok {
+	if pageCount, ok := expected["page_count"].(float64); ok {
 		if got := metadata.PageCount; got != int(pageCount) {
 			t.Errorf("Expected %d pages, got %d", int(pageCount), got)
 		}
 	}
 }
 
-func testHash(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
+func testHash(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, expected map[string]interface{}) {
 	fingerprint, err := client.Hash(pdftract.Path(fixturePath), nil)
 	if err != nil {
 		t.Fatalf("Hash failed: %v", err)
@@ -175,14 +175,14 @@ func testHash(t *testing.T, client *pdftract.Client, fixturePath string, options
 		t.Errorf("Expected BLAKE3 hash (64 hex chars), got length %d", len(fingerprint.FastHash))
 	}
 
-	if pageCount, ok := assertions["page_count"].(float64); ok {
+	if pageCount, ok := expected["page_count"].(float64); ok {
 		if got := fingerprint.PageCount; got != int(pageCount) {
 			t.Errorf("Expected %d pages, got %d", int(pageCount), got)
 		}
 	}
 }
 
-func testClassify(t *testing.T, client *pdftract.Client, fixturePath string, assertions map[string]interface{}) {
+func testClassify(t *testing.T, client *pdftract.Client, fixturePath string, expected map[string]interface{}) {
 	classification, err := client.Classify(pdftract.Path(fixturePath))
 	if err != nil {
 		t.Fatalf("Classify failed: %v", err)
@@ -197,11 +197,11 @@ func testClassify(t *testing.T, client *pdftract.Client, fixturePath string, ass
 	}
 }
 
-func testVerifyReceipt(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, assertions map[string]interface{}) {
-	// The receipt parameter should be provided in the assertions
-	receipt, ok := assertions["receipt"].(string)
+func testVerifyReceipt(t *testing.T, client *pdftract.Client, fixturePath string, options map[string]interface{}, expected map[string]interface{}) {
+	// The receipt parameter is provided in the case options.
+	receipt, ok := options["receipt"].(string)
 	if !ok {
-		t.Skip("Receipt not provided in assertions")
+		t.Skip("Receipt not provided in expected options")
 	}
 
 	valid, err := client.VerifyReceipt(fixturePath, receipt)
@@ -209,9 +209,9 @@ func testVerifyReceipt(t *testing.T, client *pdftract.Client, fixturePath string
 		t.Fatalf("VerifyReceipt failed: %v", err)
 	}
 
-	if expected, ok := assertions["valid"].(bool); ok {
-		if valid != expected {
-			t.Errorf("Expected valid=%v, got %v", expected, valid)
+	if expectedValid, ok := expected["valid"].(bool); ok {
+		if valid != expectedValid {
+			t.Errorf("Expected valid=%v, got %v", expectedValid, valid)
 		}
 	}
 }

@@ -52,71 +52,71 @@ class ConformanceTest(unittest.TestCase):
     def _run_test_case(self, test_case, fixture_path):
         """Run a single test case."""
         method = test_case['method']
-        assertions = test_case.get('assertions')
+        expected = test_case.get('expected')
 
         if method == 'extract':
-            self._test_extract(fixture_path, assertions)
+            self._test_extract(fixture_path, expected)
         elif method == 'extract_text':
-            self._test_extract_text(fixture_path, assertions)
+            self._test_extract_text(fixture_path, expected)
         elif method == 'extract_markdown':
-            self._test_extract_markdown(fixture_path, assertions)
+            self._test_extract_markdown(fixture_path, expected)
         elif method == 'get_metadata':
-            self._test_get_metadata(fixture_path, assertions)
+            self._test_get_metadata(fixture_path, expected)
         elif method == 'hash':
-            self._test_hash(fixture_path, assertions)
+            self._test_hash(fixture_path, expected)
         elif method == 'classify':
-            self._test_classify(fixture_path, assertions)
+            self._test_classify(fixture_path, expected)
         elif method == 'verify_receipt':
-            self._test_verify_receipt(fixture_path, assertions)
+            self._test_verify_receipt(fixture_path, expected)
         else:
             self.skipTest(f"Method not yet implemented: {method}")
 
-    def _test_extract(self, fixture_path, assertions):
+    def _test_extract(self, fixture_path, expected):
         """Test extract method."""
         doc = self.client.extract(PathSource(fixture_path))
 
-        if assertions and 'page_count' in assertions:
-            self.assertEqual(assertions['page_count'], len(doc['pages']))
+        if expected and 'page_count' in expected:
+            self.assertEqual(expected['page_count'], len(doc['pages']))
 
-        if assertions and assertions.get('has_title'):
+        if expected and expected.get('has_title'):
             self.assertTrue(doc['metadata'].get('title'))
 
-    def _test_extract_text(self, fixture_path, assertions):
+    def _test_extract_text(self, fixture_path, expected):
         """Test extract_text method."""
         text = self.client.extract_text(PathSource(fixture_path))
 
-        if assertions and 'min_length' in assertions:
-            self.assertGreaterEqual(len(text), assertions['min_length'])
+        if expected and 'min_length' in expected:
+            self.assertGreaterEqual(len(text), expected['min_length'])
 
-        if assertions and 'contains' in assertions:
-            for substr in assertions['contains']:
+        if expected and 'contains' in expected:
+            for substr in expected['contains']:
                 self.assertIn(substr, text)
 
-    def _test_extract_markdown(self, fixture_path, assertions):
+    def _test_extract_markdown(self, fixture_path, expected):
         """Test extract_markdown method."""
         md = self.client.extract_markdown(PathSource(fixture_path))
 
-        if assertions and 'min_length' in assertions:
-            self.assertGreaterEqual(len(md), assertions['min_length'])
+        if expected and 'min_length' in expected:
+            self.assertGreaterEqual(len(md), expected['min_length'])
 
-    def _test_get_metadata(self, fixture_path, assertions):
+    def _test_get_metadata(self, fixture_path, expected):
         """Test get_metadata method."""
         metadata = self.client.get_metadata(PathSource(fixture_path))
 
-        if assertions and 'page_count' in assertions:
-            self.assertEqual(assertions['page_count'], metadata['page_count'])
+        if expected and 'page_count' in expected:
+            self.assertEqual(expected['page_count'], metadata['page_count'])
 
-    def _test_hash(self, fixture_path, assertions):
+    def _test_hash(self, fixture_path, expected):
         """Test hash method."""
         fingerprint = self.client.hash(PathSource(fixture_path))
 
         self.assertEqual(64, len(fingerprint['hash']))
         self.assertEqual(64, len(fingerprint['fast_hash']))
 
-        if assertions and 'page_count' in assertions:
-            self.assertEqual(assertions['page_count'], fingerprint['page_count'])
+        if expected and 'page_count' in expected:
+            self.assertEqual(expected['page_count'], fingerprint['page_count'])
 
-    def _test_classify(self, fixture_path, assertions):
+    def _test_classify(self, fixture_path, expected):
         """Test classify method."""
         classification = self.client.classify(PathSource(fixture_path))
 
@@ -124,15 +124,15 @@ class ConformanceTest(unittest.TestCase):
         self.assertGreaterEqual(classification['confidence'], 0)
         self.assertLessEqual(classification['confidence'], 1)
 
-    def _test_verify_receipt(self, fixture_path, assertions):
+    def _test_verify_receipt(self, fixture_path, expected):
         """Test verify_receipt method."""
-        if not assertions or 'receipt' not in assertions:
-            self.skipTest('Receipt not provided in assertions')
+        if not expected or 'receipt' not in expected:
+            self.skipTest('Receipt not provided in expected')
 
-        valid = self.client.verify_receipt(fixture_path, assertions['receipt'])
+        valid = self.client.verify_receipt(fixture_path, expected['receipt'])
 
-        if 'valid' in assertions:
-            self.assertEqual(assertions['valid'], valid)
+        if 'valid' in expected:
+            self.assertEqual(expected['valid'], valid)
 
 
 if __name__ == '__main__':

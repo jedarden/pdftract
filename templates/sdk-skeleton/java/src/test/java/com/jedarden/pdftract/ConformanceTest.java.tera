@@ -31,13 +31,13 @@ class ConformanceTest {
             if (casesArray != null && casesArray.isArray()) {
                 for (JsonNode tc : casesArray) {
                     JsonNode optionsNode = tc.has("options") ? tc.get("options") : null;
-                    JsonNode assertionsNode = tc.has("expected") ? tc.get("expected") : null;
+                    JsonNode expectedNode = tc.has("expected") ? tc.get("expected") : null;
                     cases.add(new TestCase(
                         tc.get("id").asText(),
                         tc.get("fixture").asText(),
                         tc.get("method").asText(),
                         optionsNode,
-                        assertionsNode
+                        expectedNode
                     ));
                 }
             }
@@ -182,6 +182,6 @@ class ConformanceTest {
         }
     }
 
-    record TestCase(String id, String fixture, String method, JsonNode options, JsonNode assertions) {
+    record TestCase(String id, String fixture, String method, JsonNode options, JsonNode expected) {
     }
 }

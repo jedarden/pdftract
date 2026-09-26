@@ -88,13 +88,13 @@ public class ConformanceTests
     {
         var doc = await client.ExtractAsync(new PathSource(fixturePath));
 
-        if (testCase.Assertions?.TryGetValue("page_count", out var pageCount) == true)
+        if (testCase.Expected?.TryGetValue("page_count", out var pageCount) == true)
         {
             var expected = pageCount.GetInt32();
             Assert.Equal(expected, doc.Pages.Count);
         }
 
-        if (testCase.Assertions?.TryGetValue("has_title", out var hasTitle) == true && hasTitle.GetBoolean())
+        if (testCase.Expected?.TryGetValue("has_title", out var hasTitle) == true && hasTitle.GetBoolean())
         {
             Assert.NotNull(doc.Metadata.Title);
         }
@@ -104,7 +104,7 @@ public class ConformanceTests
     {
         var text = await client.ExtractTextAsync(new PathSource(fixturePath));
 
-        if (testCase.Assertions?.TryGetValue("min_length", out var minLen) == true)
+        if (testCase.Expected?.TryGetValue("min_length", out var minLen) == true)
         {
             var expected = minLen.GetInt32();
             Assert.True(text.Length >= expected);
@@ -115,7 +115,7 @@ public class ConformanceTests
     {
         var md = await client.ExtractMarkdownAsync(new PathSource(fixturePath));
 
-        if (testCase.Assertions?.TryGetValue("min_length", out var minLen) == true)
+        if (testCase.Expected?.TryGetValue("min_length", out var minLen) == true)
         {
             var expected = minLen.GetInt32();
             Assert.True(md.Length >= expected);
@@ -126,7 +126,7 @@ public class ConformanceTests
     {
         var metadata = await client.GetMetadataAsync(new PathSource(fixturePath));
 
-        if (testCase.Assertions?.TryGetValue("page_count", out var pageCount) == true)
+        if (testCase.Expected?.TryGetValue("page_count", out var pageCount) == true)
         {
             var expected = pageCount.GetInt32();
             Assert.Equal(expected, metadata.PageCount);
@@ -140,7 +140,7 @@ public class ConformanceTests
         Assert.Equal(64, fingerprint.Hash.Length);
         Assert.Equal(64, fingerprint.FastHash.Length);
 
-        if (testCase.Assertions?.TryGetValue("page_count", out var pageCount) == true)
+        if (testCase.Expected?.TryGetValue("page_count", out var pageCount) == true)
         {
             var expected = pageCount.GetInt32();
             Assert.Equal(expected, fingerprint.PageCount);
@@ -157,7 +157,7 @@ public class ConformanceTests
 
     private async Task TestVerifyReceipt(Pdftract client, string fixturePath, TestCase testCase)
     {
-        if (testCase.Assertions == null || !testCase.Assertions.TryGetValue("receipt", out var receipt))
+        if (testCase.Expected == null || !testCase.Expected.TryGetValue("receipt", out var receipt))
         {
             Console.WriteLine("Skipping receipt verification: no receipt provided");
             return;
@@ -166,7 +166,7 @@ public class ConformanceTests
         var receiptStr = receipt.GetString();
         var valid = await client.VerifyReceiptAsync(fixturePath, receiptStr);
 
-        if (testCase.Assertions.TryGetValue("valid", out var validExpected))
+        if (testCase.Expected.TryGetValue("valid", out var validExpected))
         {
             Assert.Equal(validExpected.GetBoolean(), valid);
         }
@@ -182,5 +182,5 @@ internal record TestCase(
     string Fixture,
     string Method,
     JsonElement? Options,
-    JsonElement? Assertions
+    JsonElement? Expected
 );
