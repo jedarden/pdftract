@@ -48,7 +48,8 @@ class RepositoryHandler(SimpleHTTPRequestHandler):
         if self.path == "/crates/pdftract-cli/src/inspect/frontend/index.html":
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'self'; script-src 'self' https://esm.sh; "
+                "default-src 'self'; script-src 'self' https://esm.sh "
+                "'sha256-n1OOpmgfR8YHCj75Jc8Smljqt+LJCY1jRPdgEFsnyaY='; "
                 "style-src 'self' 'unsafe-inline'",
             )
         super().end_headers()

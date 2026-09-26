@@ -10,11 +10,11 @@ use axum::{extract::Request, middleware::Next, response::Response};
 ///
 /// Per TH-09 (plan line 898), the inspector MUST set:
 /// - `default-src 'self'` - only allow resources from same origin
-/// - `script-src 'self' https://esm.sh` - local scripts plus Agentation's
-///   pinned module CDN
+/// - `script-src 'self' https://esm.sh 'sha256-...'` - local scripts plus
+///   Agentation's pinned module CDN and the static import map
 /// - `style-src 'self' 'unsafe-inline'` - Agentation injects its component CSS
 const CSP_HEADER_VALUE: &str =
-    "default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' 'unsafe-inline'";
+    "default-src 'self'; script-src 'self' https://esm.sh 'sha256-n1OOpmgfR8YHCj75Jc8Smljqt+LJCY1jRPdgEFsnyaY='; style-src 'self' 'unsafe-inline'";
 
 /// CSP middleware that adds security headers to all responses.
 ///

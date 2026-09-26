@@ -15,7 +15,7 @@ const XSS_PAYLOAD: &str = "../../tests/fixtures/security/xss-payload.pdf";
 
 /// Expected CSP header value per TH-09.
 const EXPECTED_CSP: &str =
-    "default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' 'unsafe-inline'";
+    "default-src 'self'; script-src 'self' https://esm.sh 'sha256-n1OOpmgfR8YHCj75Jc8Smljqt+LJCY1jRPdgEFsnyaY='; style-src 'self' 'unsafe-inline'";
 
 /// Helper: spawn pdftract inspect and return the URL from stderr.
 fn spawn_inspector(pdf_path: &str) -> anyhow::Result<(String, std::process::Child)> {
