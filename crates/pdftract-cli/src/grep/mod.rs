@@ -551,7 +551,7 @@ fn emit_progress_json(event: &ProgressEvent) -> Result<()> {
         .with_context(|| "Failed to write progress JSON to stderr")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "grep"))]
 mod tests {
     use super::*;
 
