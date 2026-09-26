@@ -1,6 +1,6 @@
 # Python SDK conformance verification
 
-Verified against committed SDK changes at HEAD `c48faaf7` from a clean
+Verified against committed SDK changes at HEAD `074f1025` from a clean
 `git archive` extraction, using a native module built with a private target
 under `/var/tmp`.
 
