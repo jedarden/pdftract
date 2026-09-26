@@ -57,7 +57,10 @@ use crate::font::encoding::FontEncoding;
 use crate::font::fingerprint::CachedFingerprint;
 use crate::font::type3::Type3Font;
 #[cfg(feature = "shape-db")]
-use crate::font::type3_rasterizer::{rasterize_type3_glyph, DocumentContext as Type3DocumentContext, StreamResolverFn};
+use crate::font::type3_rasterizer::{
+    calculate_bitmap_dimensions, rasterize_type3_glyph, DocumentContext as Type3DocumentContext,
+    StreamResolverFn,
+};
 #[cfg(feature = "shape-db")]
 use crate::font::{lookup_shape, phash_glyph};
 #[cfg(feature = "shape-db")]
@@ -770,17 +773,23 @@ fn resolve_type3_level4(
         }
     };
 
-    // Compute pHash over the fixed 32x32 bitmap. The rasterizer contract
-    // guarantees 1024 bytes; a different size means the contract was violated
-    // and the glyph cannot be shape-matched.
-    let bitmap_arr: [u8; 1024] = match bitmap.as_slice().try_into() {
-        Ok(arr) => arr,
-        Err(_) => {
+    // The shape database stores pHashes for 32x32 bitmaps. Type3 rasterization
+    // sizes its bitmap from FontBBox, so resample larger or smaller bitmaps to
+    // the database dimensions before hashing.
+    let bitmap_arr = match normalize_type3_bitmap_for_phash(&bitmap, &font.font_bbox) {
+        Some(bitmap) => bitmap,
+        None => {
+            let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::FontGlyphUnmapped,
                 format!(
-                    "Type3 font: rasterized glyph '{}' for code 0x{:02X} produced {} bitmap bytes, expected 1024",
-                    glyph_name, char_code, bitmap.len()
+                    "Type3 font: rasterized glyph '{}' for code 0x{:02X} produced {} bitmap bytes, expected {} bytes for a {}x{} bitmap",
+                    glyph_name,
+                    char_code,
+                    bitmap.len(),
+                    width.saturating_mul(height),
+                    width,
+                    height,
                 ),
             ));
             return ResolvedGlyph::failure();
@@ -807,6 +816,74 @@ fn resolve_type3_level4(
         }
         None => ResolvedGlyph::failure(),
     }
+}
+
+/// Convert a dynamically-sized Type3 bitmap to the fixed shape-db dimensions.
+///
+/// The shape database format stores pHashes computed from 32x32 grayscale
+/// bitmaps. Type3 glyphs are rasterized at a resolution derived from the
+/// font's `/FontBBox`, so this helper uses area-weighted averaging to preserve
+/// the glyph's shape while adapting it to the database's fixed input size.
+#[cfg(feature = "shape-db")]
+fn normalize_type3_bitmap_for_phash(bitmap: &[u8], font_bbox: &[f32; 4]) -> Option<[u8; 1024]> {
+    const PHASH_SIDE: usize = 32;
+    const PHASH_PIXELS: usize = PHASH_SIDE * PHASH_SIDE;
+
+    let (source_width, source_height) = calculate_bitmap_dimensions(font_bbox, None);
+    let source_len = source_width.checked_mul(source_height)?;
+    if bitmap.len() != source_len {
+        return None;
+    }
+
+    if source_width == PHASH_SIDE && source_height == PHASH_SIDE {
+        return bitmap.try_into().ok();
+    }
+
+    let mut normalized = [0u8; PHASH_PIXELS];
+    let target_side = PHASH_SIDE as f64;
+    let source_width_f = source_width as f64;
+    let source_height_f = source_height as f64;
+
+    for target_y in 0..PHASH_SIDE {
+        let source_y0 = target_y as f64 * source_height_f / target_side;
+        let source_y1 = (target_y + 1) as f64 * source_height_f / target_side;
+        let source_y_start = source_y0.floor() as usize;
+        let source_y_end = (source_y1.ceil() as usize).min(source_height);
+
+        for target_x in 0..PHASH_SIDE {
+            let source_x0 = target_x as f64 * source_width_f / target_side;
+            let source_x1 = (target_x + 1) as f64 * source_width_f / target_side;
+            let source_x_start = source_x0.floor() as usize;
+            let source_x_end = (source_x1.ceil() as usize).min(source_width);
+
+            let mut weighted_sum = 0.0;
+            let mut covered_area = 0.0;
+
+            for source_y in source_y_start..source_y_end {
+                let y_overlap = (source_y1.min((source_y + 1) as f64)
+                    - source_y0.max(source_y as f64))
+                .max(0.0);
+
+                for source_x in source_x_start..source_x_end {
+                    let x_overlap = (source_x1.min((source_x + 1) as f64)
+                        - source_x0.max(source_x as f64))
+                    .max(0.0);
+                    let area = x_overlap * y_overlap;
+                    covered_area += area;
+                    weighted_sum += bitmap[source_y * source_width + source_x] as f64 * area;
+                }
+            }
+
+            if covered_area == 0.0 {
+                return None;
+            }
+
+            normalized[target_y * PHASH_SIDE + target_x] =
+                (weighted_sum / covered_area).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    Some(normalized)
 }
 
 /// Emit the GLYPH_UNMAPPED diagnostic exactly once per (font, code) miss.
@@ -1367,5 +1444,109 @@ mod tests {
         assert_eq!(result.confidence, 0.0);
         // Should have emitted diagnostic
         assert!(!diagnostics.is_empty());
+    }
+
+    #[cfg(feature = "shape-db")]
+    #[test]
+    fn test_type3_phash_normalization_preserves_matching_bitmap() {
+        let font_bbox = [0.0, 0.0, 30.0, 30.0];
+        let bitmap: Vec<u8> = (0..1024).map(|pixel| (pixel % 256) as u8).collect();
+
+        let normalized = normalize_type3_bitmap_for_phash(&bitmap, &font_bbox)
+            .expect("a correctly sized 32x32 bitmap should be accepted");
+
+        assert_eq!(normalized.as_slice(), bitmap.as_slice());
+    }
+
+    #[cfg(feature = "shape-db")]
+    #[test]
+    fn test_type3_phash_normalization_downscales_dynamic_bitmap() {
+        let font_bbox = [0.0, 0.0, 64.0, 64.0];
+        let (source_width, source_height) = calculate_bitmap_dimensions(&font_bbox, None);
+        assert_ne!((source_width, source_height), (32, 32));
+
+        let bitmap: Vec<u8> = (0..source_height)
+            .flat_map(|_| (0..source_width).map(|x| if x < source_width / 2 { 0 } else { 255 }))
+            .collect();
+        let normalized = normalize_type3_bitmap_for_phash(&bitmap, &font_bbox)
+            .expect("a correctly sized dynamic bitmap should be downscaled");
+
+        assert_eq!(normalized.len(), 1024);
+        assert_eq!(normalized[0], 0);
+        assert_eq!(normalized[16], 255);
+        assert_eq!(normalized[31], 255);
+    }
+
+    #[cfg(feature = "shape-db")]
+    #[test]
+    fn test_resolve_type3_level4_consumes_dynamic_bitmap() {
+        use crate::parser::object::types::{PdfDict, PdfObject, PdfStream};
+        use crate::parser::stream::MemorySource;
+        use crate::parser::xref::XrefResolver;
+
+        let glyph_ref = crate::parser::object::types::ObjRef::new(1, 0);
+        let mut char_procs = PdfDict::new();
+        char_procs.insert(
+            crate::parser::object::types::intern("shapeGlyph"),
+            PdfObject::Ref(glyph_ref),
+        );
+
+        let mut font_dict = PdfDict::new();
+        font_dict.insert(
+            crate::parser::object::types::intern("/CharProcs"),
+            PdfObject::Dict(Box::new(char_procs)),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/FontMatrix"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Real(0.001),
+                PdfObject::Real(0.0),
+                PdfObject::Real(0.0),
+                PdfObject::Real(0.001),
+                PdfObject::Real(0.0),
+                PdfObject::Real(0.0),
+            ])),
+        );
+        font_dict.insert(
+            crate::parser::object::types::intern("/FontBBox"),
+            PdfObject::Array(Box::new(vec![
+                PdfObject::Integer(0),
+                PdfObject::Integer(0),
+                PdfObject::Integer(1000),
+                PdfObject::Integer(1000),
+            ])),
+        );
+        let font = Type3Font::load(&font_dict);
+
+        let content = b"0 0 100 100 re f";
+        let source = MemorySource::from_slice(content);
+        let resolver = XrefResolver::new();
+        resolver.cache_object(
+            glyph_ref,
+            PdfObject::Stream(Box::new(PdfStream::new(
+                PdfDict::new(),
+                0,
+                Some(content.len() as u64),
+            ))),
+        );
+
+        let mut diagnostics = Vec::new();
+        let mut decompress_counter = 0;
+        let _result = resolve_type3_level4(
+            &font,
+            0x01,
+            Some(Arc::from("shapeGlyph")),
+            Some(&resolver),
+            Some(&source),
+            Some(&mut decompress_counter),
+            &mut diagnostics,
+        );
+
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| !diagnostic.message.contains("expected 1024")),
+            "dynamic Type3 bitmaps must reach pHash/shape lookup instead of the old fixed-size failure"
+        );
     }
 }

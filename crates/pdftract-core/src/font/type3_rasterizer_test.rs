@@ -761,8 +761,10 @@ fn test_resolve_stream_callback_returns_valid_bytes() {
     let bitmap_bytes = result.unwrap();
     assert!(!bitmap_bytes.is_empty(), "Bitmap bytes should not be empty");
 
-    // For a 32x32 bitmap, we expect 1024 bytes (32 * 32)
-    assert_eq!(bitmap_bytes.len(), 1024, "32x32 bitmap should be 1024 bytes");
+    // Bitmap dimensions follow the font's /FontBBox. This fixture uses a
+    // 1000x1000 glyph space, so the default one-pixel padding produces 1002x1002.
+    let (width, height) = calculate_bitmap_dimensions(&font.font_bbox, None);
+    assert_eq!(bitmap_bytes.len(), width * height);
 }
 
 /// Test the helper function pattern for creating resolve_stream callbacks.
