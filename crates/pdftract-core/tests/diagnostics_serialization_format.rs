@@ -206,6 +206,38 @@ fn optional_fields_are_omitted_not_null() {
 }
 
 #[test]
+fn structured_diagnostic_round_trips_without_losing_fields() {
+    let typed = Diagnostic::with_dynamic(
+        DiagCode::StreamBomb,
+        4096,
+        "decompression limit exceeded after 4096 bytes".to_string(),
+    )
+    .with_object_ref(pdftract_core::diagnostics::ObjRef::new(12, 3))
+    .with_page_index(7);
+    let structured = DiagnosticJson::from(&typed);
+
+    let wire = serde_json::to_string(&structured).expect("diagnostic JSON serializes");
+    let decoded: DiagnosticJson =
+        serde_json::from_str(&wire).expect("diagnostic JSON deserializes");
+    assert_eq!(
+        decoded, structured,
+        "structured fields must survive a JSON round trip"
+    );
+
+    // Byte offsets are intentionally in-process context, not part of the
+    // public DiagnosticJson envelope.
+    assert_eq!(typed.byte_offset, Some(4096));
+    assert!(!wire.contains("byte_offset"));
+
+    // The compatibility surface remains the bare message, without code,
+    // severity, or location decorations.
+    assert_eq!(
+        pdftract_core::diagnostics_compat::to_legacy_string(&typed),
+        "decompression limit exceeded after 4096 bytes"
+    );
+}
+
+#[test]
 fn catalog_entries_populate_the_documented_envelope() {
     // `hint` is omitted when the catalog entry carries no suggested action;
     // every entry in DIAGNOSTIC_CATALOG currently carries one, so each code
