@@ -1,7 +1,8 @@
 # Python SDK conformance verification
 
-Verified against committed HEAD `9d6be8d1` from a clean `git archive` extraction
-using a native module built with a private target under `/var/tmp`.
+Verified against committed SDK changes at HEAD `c48faaf7` from a clean
+`git archive` extraction, using a native module built with a private target
+under `/var/tmp`.
 
 ## Result
 
@@ -74,3 +75,11 @@ It reported `4 passed, 1 warning`. The standalone report-generation run
 completed without hanging and exited 1 solely because the 24 documented
 core-layer cases remain non-passing. Suite validation and report-schema
 validation both passed.
+
+The follow-up `pytest -q --import-mode=importlib` diagnostic collected the
+repository-wide Python tests but still reported nine failures from existing
+core/API contract expectations and the intentionally unavailable classifier or
+fallback paths. The required plain `pytest -q` default remains a collection
+failure because three directories contain the same `test_conformance.py`
+module basename; this is separate from the conformance runner and is not
+included in the conformance result above.
