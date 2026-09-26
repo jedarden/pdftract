@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "status_snapshot": "2026-09-26",
+  "readme": "README.md",
+  "checkpoint": ".beads/checkpoint/forensic.jsonl",
+  "claims": [
+    {
+      "id": "multi-column-reading-order",
+      "location": {"kind": "matrix", "label": "Multi-column reading order"},
+      "claim": "Full layout segmentation",
+      "marker": "🚧",
+      "implementation": [
+        "crates/pdftract-core/src/layout/columns.rs",
+        "crates/pdftract-core/src/layout/reading_order.rs"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/document_model.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/hybrid/hybrid-003-mixed-column-layout.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "footnotes-and-sidebars",
+      "location": {"kind": "matrix", "label": "Footnotes & sidebars"},
+      "claim": "Footnotes & sidebars",
+      "marker": "🚧",
+      "implementation": [
+        "crates/pdftract-core/src/layout/figure.rs",
+        "crates/pdftract-core/src/layout/caption.rs"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/document_model.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/hybrid/sidebar-image/sidebar-image.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "font-encoding-recovery",
+      "location": {"kind": "matrix", "label": "Font encoding recovery"},
+      "claim": "Glyph name → fingerprint → shape",
+      "marker": "🚧",
+      "implementation": [
+        "crates/pdftract-core/src/font/",
+        "crates/pdftract-core/src/glyph/",
+        "crates/pdftract-core/src/fingerprint/"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/encoding_recovery.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/encoding/shape-match.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "scanned-mixed-ocr",
+      "location": {"kind": "matrix", "label": "Scanned / mixed PDF (OCR)"},
+      "claim": "Per-page hybrid routing",
+      "marker": "✅",
+      "implementation": [
+        "crates/pdftract-core/src/ocr/",
+        "crates/pdftract-core/src/page_class.rs"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/ocr.rs"},
+        {"kind": "test", "path": "scripts/measure-wer.sh"},
+        {"kind": "fixture", "path": "tests/fixtures/scanned/GEN_MANIFEST.md"}
+      ],
+      "open_beads": []
+    },
+    {
+      "id": "pdfua-structure-tree",
+      "location": {"kind": "matrix", "label": "PDF/UA structure tree"},
+      "claim": "PDF/UA structure tree",
+      "marker": "🚧",
+      "implementation": ["crates/pdftract-core/src/parser/struct_tree.rs"],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/struct_tree_coverage.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/tagged/README.md"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "pdf-decryption",
+      "location": {"kind": "matrix", "label": "PDF decryption (RC4/AES)"},
+      "claim": "RC4/AES decryption behind the decrypt feature",
+      "marker": "🚧",
+      "implementation": [
+        "crates/pdftract-core/src/encryption/",
+        "crates/pdftract-core/Cargo.toml"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/encryption_integration_tests.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/encrypted/EC-05-aes128-encrypted.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "span-bounding-boxes-confidence",
+      "location": {"kind": "matrix", "label": "Per-span bounding boxes + confidence"},
+      "claim": "Per-span bounding boxes + confidence",
+      "marker": "🚧",
+      "implementation": [
+        "crates/pdftract-core/src/span/",
+        "crates/pdftract-core/src/confidence.rs"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "tests/smoke_test.rs"},
+        {"kind": "test", "path": "crates/pdftract-core/tests/json_schema.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/test-minimal.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "streaming-extraction",
+      "location": {"kind": "matrix", "label": "Streaming extraction (large files)"},
+      "claim": "Streaming extraction (large files)",
+      "marker": "🚧",
+      "implementation": [
+        "crates/pdftract-core/src/output/ndjson/",
+        "crates/pdftract-core/src/sdk.rs"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "tests/verify_ndjson_streaming.py"},
+        {"kind": "fixture", "path": "tests/fixtures/scanned/multi-page/doc-10page-300dpi.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "cjk-scripts",
+      "location": {"kind": "matrix", "label": "CJK scripts"},
+      "claim": "CJK scripts",
+      "marker": "❌",
+      "implementation": [
+        "crates/pdftract-core/src/cmap/",
+        "crates/pdftract-core/Cargo.toml"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-core/tests/cjk_encoding.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/cjk/cjk-japanese-shiftjis.pdf"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "http-microservice",
+      "location": {"kind": "matrix", "label": "HTTP microservice mode"},
+      "claim": "HTTP microservice mode",
+      "marker": "✅",
+      "implementation": ["crates/pdftract-cli/src/serve.rs"],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-cli/tests/serve-e2e.rs"},
+        {"kind": "fixture", "path": "tests/fixtures/test-minimal.pdf"}
+      ],
+      "open_beads": []
+    },
+    {
+      "id": "language-and-bindings",
+      "location": {"kind": "matrix", "label": "Language"},
+      "claim": "Rust + Python + C ABI",
+      "marker": null,
+      "implementation": [
+        "Cargo.toml",
+        "crates/pdftract-py/pyproject.toml",
+        "crates/pdftract-libpdftract/include/pdftract.h"
+      ],
+      "evidence": [
+        {"kind": "test", "path": "crates/pdftract-py/tests"},
+        {"kind": "test", "path": "crates/pdftract-libpdftract/tests"}
+      ],
+      "open_beads": []
+    },
+    {
+      "id": "rust-library-release",
+      "location": {"kind": "line", "locator": "| Rust library |"},
+      "claim": "Rust library publication",
+      "marker": "🚧",
+      "mode": "release",
+      "fragment": "not published",
+      "implementation": ["crates/pdftract-core/Cargo.toml"],
+      "evidence": [
+        {"kind": "release", "path": ".ci/argo-workflows/pdftract-crates-publish.yaml"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "cli-release",
+      "location": {"kind": "line", "locator": "| CLI binary |"},
+      "claim": "CLI binary publication",
+      "marker": "🚧",
+      "mode": "release",
+      "fragment": "not published",
+      "implementation": ["crates/pdftract-cli/Cargo.toml"],
+      "evidence": [
+        {"kind": "release", "path": ".ci/argo-workflows/pdftract-build-binaries.yaml"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "python-release",
+      "location": {"kind": "line", "locator": "| Python bindings | `pdftract` on PyPI"},
+      "claim": "Python wheel publication",
+      "marker": "🚧",
+      "mode": "release",
+      "fragment": "not published",
+      "implementation": ["crates/pdftract-py/pyproject.toml"],
+      "evidence": [
+        {"kind": "release", "path": ".ci/argo-workflows/pdftract-py-ci.yaml"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "c-library-release",
+      "location": {"kind": "line", "locator": "| C shared library |"},
+      "claim": "C shared library publication",
+      "marker": "🚧",
+      "mode": "release",
+      "fragment": "coming soon",
+      "implementation": [
+        "crates/pdftract-libpdftract/Cargo.toml",
+        "crates/pdftract-libpdftract/include/pdftract.h"
+      ],
+      "evidence": [
+        {"kind": "release", "path": ".ci/argo-workflows/pdftract-libpdftract-build.yaml"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "docker-release",
+      "location": {"kind": "line", "locator": "| Docker image |"},
+      "claim": "Container image publication",
+      "marker": "🚧",
+      "mode": "release",
+      "fragment": "not published",
+      "implementation": ["Dockerfile"],
+      "evidence": [
+        {"kind": "release", "path": ".ci/argo-workflows/pdftract-docker-build.yaml"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    },
+    {
+      "id": "api-reference-release",
+      "location": {"kind": "line", "locator": "**API reference:**"},
+      "claim": "Hosted docs.rs API reference",
+      "marker": "🚧",
+      "mode": "release",
+      "fragment": "coming soon",
+      "implementation": ["crates/pdftract-core/Cargo.toml"],
+      "evidence": [
+        {"kind": "release", "path": ".ci/argo-workflows/pdftract-crates-publish.yaml"}
+      ],
+      "open_beads": ["pdftract-f19fd721"]
+    }
+  ]
+}

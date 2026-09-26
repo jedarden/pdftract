@@ -1,7 +1,7 @@
 # pdftract Makefile
 # Top-level build automation for pdftract project
 
-.PHONY: help validate-corpus download-grep-corpus agentation-smoke mcp-verify test clean
+.PHONY: help validate-corpus download-grep-corpus agentation-smoke mcp-verify readme-audit test clean
 
 # Default target
 help:
@@ -12,6 +12,7 @@ help:
 	@echo "  test                   - Run all tests"
 	@echo "  agentation-smoke       - Verify Agentation mounts in a browser"
 	@echo "  mcp-verify             - Check the MCP catalog and all tool call contracts"
+	@echo "  readme-audit           - Check README capability claims against evidence"
 	@echo "  clean                  - Clean build artifacts"
 	@echo ""
 	@echo "Corpus management:"
@@ -34,6 +35,11 @@ download-grep-corpus:
 # advertised tool. PDFTRACT_MCP_BIN may point at a prebuilt binary.
 mcp-verify:
 	python3 scripts/check-mcp-tool-catalog.py
+
+# Verify every README capability/release marker against tracked evidence and
+# the checkpoint state of any bead that keeps a claim in progress.
+readme-audit:
+	python3 scripts/audit_readme_capabilities.py
 
 # Run tests, including the real-binary MCP contract check.
 test: mcp-verify

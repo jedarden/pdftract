@@ -8,9 +8,10 @@
 
 **pdftract** is a pure-Rust PDF text extraction library built for the cases where other tools give up: scanned documents, unusual font encodings, multi-column layouts, footnotes, mixed-mode pages, and encrypted files. Where most extractors treat PDF text extraction as a coordinate sort, pdftract runs a full reading-order pipeline — segmenting layout regions, recovering broken font encodings, routing each page to the right extraction mode (vector, OCR, or hybrid), and emitting structured JSON with per-span provenance. If your PDFs are academic papers, legal filings, financial reports, or anything else that wasn't typeset in a word processor, pdftract is what you want.
 
-> **⚠️ Development status (evidence-audited 2026-09-17).** pdftract is pre-release and mid-stabilization (tracked in bead `pdftract-f19fd721`). The tables below describe the *designed* capability set; what is actually verified today:
+> **⚠️ Development status (evidence-audited 2026-09-26).** pdftract is pre-release and mid-stabilization (tracked in bead `pdftract-f19fd721`). The tables below describe the *designed* capability set; what is actually verified today:
 >
 > - **The canonical smoke extraction passes at HEAD** — the W3C WAI dummy PDF at `tests/fixtures/test-minimal.pdf` extracts the text `Dummy PDF file`. The broader fixture corpus remains pre-release work and is not represented as a shipped compatibility guarantee.
+> - **The scanned/mixed OCR acceptance gate passes at HEAD** — `scripts/measure-wer.sh` verifies five clean 300-DPI fixtures below WER 3% (aggregate WER 0.64% in the recorded gate run, commit `7a04f714`). This verifies the OCR corpus gate, not the still-stabilizing general extraction pipeline.
 > - **`pdftract serve` works at HEAD** — `GET /health` → 200 and `POST /extract` → 200 over the real binary (axum `ConnectInfo` wiring fixed in commit `2566480f` on 2026-09-20, re-verified 2026-09-26; regression-tested by `crates/pdftract-cli/tests/serve-e2e.rs`). The earlier "every request returns HTTP 500" status (re-confirmed 2026-09-15) predated that fix.
 > - **CI is not wired to git events yet** — nothing runs automatically on push/PR (bead `pdftract-a8d7bd1d`, open), and no completed end-to-end CI run has been retained — the CI cluster holds zero pdftract workflow runs (the stabilization baseline records "no retained end-to-end CI proof").
 > - **No supported release is published** — `pdftract-core` is on neither crates.io nor docs.rs; no wheels or images exist. GitHub exposes only the test-only `v0.1.0-test` release entry used for release-cascade testing, not a consumable v0.1.0 release.
@@ -35,15 +36,18 @@
 | HTTP microservice mode | ✅⁷ (`serve`) | ❌ | ❌ | ❌ |
 | Language | Rust + Python + C ABI | Python | Python | Python |
 
-🚧 = implemented in the source tree, not yet verified end-to-end · ❌ = not working at HEAD · third-party columns unchanged
+✅ = backed by committed test/fixture evidence · 🚧 = implemented in the source tree, not yet verified end-to-end · ❌ = not working at HEAD · third-party columns unchanged
 
 ¹ Implemented, but unverifiable until the page-tree parse regression is fixed (see development status above): `pdftract extract` currently fails on all fixtures, including these paths.
-² Page classification/routing and the scanned/mixed acceptance corpus are verified: the five clean 300-DPI fixtures measure WER <3% in `scripts/measure-wer.sh`, with the gate run by the `pdftract-ci` Argo WorkflowTemplate.
+² Page classification/routing and the scanned/mixed acceptance corpus are verified: the five clean 300-DPI fixtures measure WER <3% in `scripts/measure-wer.sh`, with the gate run by the `pdftract-ci` Argo WorkflowTemplate (commit `7a04f714`).
 ³ Structure-tree parser implemented and tagged-PDF corpus ready (bead `bf-5pyzm`); end-to-end verification pending the parse fix.
 ⁴ RC4/AES-128/AES-256 implemented with unit-test coverage (bead `pdftract-4mdfv`: 217/217 parser tests at close, 2026-06-03); the end-to-end encrypted-file path is blocked by the parse regression.
 ⁵ Lazy per-page decode implemented (bead `bf-2y2rp`); bounded-memory behavior on real documents is unverifiable until the parse fix.
 ⁶ Feature flag, corpus, and acceptance tests all exist; the acceptance tests fail in the most recent recorded run (0/5, `notes/bf-1wczm-cjk_encoding-run.log`).
 ⁷ Verified end-to-end at HEAD over the real binary: `GET /health` → 200, `POST /extract` → 200 (ConnectInfo wiring fixed in `2566480f`; regression-tested by `crates/pdftract-cli/tests/serve-e2e.rs`).
+
+The matrix and marked release claims are checked against their implementation,
+test, fixture, and bead evidence by [`scripts/audit_readme_capabilities.py`](scripts/audit_readme_capabilities.py). Run `make readme-audit` after changing a capability marker or release status.
 
 ## Platform Support
 
