@@ -674,6 +674,7 @@ spec:
               exit 0
             fi
 
+            TAP_REPO="jedarden/homebrew-tap"
             MIRROR="https://github.com/jedarden/homebrew-tap.git"
             echo "=== Polling ${MIRROR} (main) for ${COMMIT} ==="
             i=0

@@ -148,3 +148,77 @@ release, a tap update, or approval to publish a fixture digest.
 
 The contract intentionally contains no mutable image tag, floating release
 URL, floating artifact, or credential value.
+
+## Operator retry and recovery
+
+Treat a Homebrew failure as an incomplete publication even when the parent
+`pdftract-release-cascade` is marked successful: its `continueOn: failed`
+boundary protects an already-created GitHub release, while preserving the
+Homebrew child workflow's failed status.
+
+1. Inspect the cascade and the child Homebrew workflow, then read the failed
+   node's logs. The child workflow name is shown by the `homebrew-publish`
+   node in the parent output:
+
+   ```sh
+   argo get <cascade-workflow> -n argo-workflows
+   argo get <homebrew-workflow> -n argo-workflows
+   argo logs <homebrew-workflow> -n argo-workflows
+   ```
+
+2. If the release assets and tag are correct, retry the failed Homebrew child
+   workflow. A retry is safe for the same tag: `push-tap` re-clones the tap,
+   stages only `Formula/pdftract.rb`, and reports an idempotent no-op when the
+   formula is already present. The push step allows one automatic retry (two
+   attempts total); metadata verification allows two retries, and rendering
+   and brew verification allow one retry each.
+
+   ```sh
+   argo retry <homebrew-workflow> -n argo-workflows
+   ```
+
+   If the child workflow has expired, submit the same leg directly with the
+   versioned tag and version. This uses the existing cluster Secret by
+   reference; do not put a token in the command, URL, or logs:
+
+   ```sh
+   argo submit --from workflowtemplate/pdftract-homebrew-publish \
+     -n argo-workflows \
+     -p repo=jedarden/pdftract \
+     -p tag=vX.Y.Z \
+     -p version=X.Y.Z \
+     -p dry_run=false
+   ```
+
+3. For a tap push failure, wait for the bounded automatic retry. If both
+   attempts fail, fix the Forgejo connectivity or Secret synchronization
+   problem and repeat step 2. A failed push exits non-zero and never emits the
+   `Pushed` success line. If the first push succeeded but the pod failed
+   afterward, the retry observes an unchanged formula and safely proceeds as
+   `UNCHANGED`.
+
+4. For mirror lag, do not push a second formula or cut a new tag. The mirror
+   step polls for five minutes and then fails with the missing commit. Check
+   the Forgejo-to-GitHub push mirror, then repeat step 2; the existing tap
+   commit is the expected target. A successful mirror wait is required before
+   brew installation verification can report success.
+
+5. If the signed `SHA256SUMS` assets, source-archive line, tag, or rendered
+   formula are wrong, stop. Do not rewrite the tag or checksum assets. Create a
+   new `vX.Y.Z` release, then run the cascade with the new release inputs.
+
+Before an operator retry, the render-only path can be checked without touching
+the tap or mounting its push Secret:
+
+```sh
+argo submit --from workflowtemplate/pdftract-homebrew-publish \
+  -n argo-workflows \
+  -p repo=jedarden/pdftract \
+  -p tag=v9.9.9 \
+  -p version=9.9.9 \
+  -p dry_run=true
+```
+
+This dry run validates the deterministic archive/checksum fixture, canonical
+versioned formula URL, supplied SHA256 binding, and Ruby syntax. It is not
+evidence that a real release's signed assets or tap update succeeded.

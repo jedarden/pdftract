@@ -75,6 +75,61 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn('sha256sum "${SOURCE_ARCHIVE}" >> SHA256SUMS', self.release)
 
+    def test_versioned_cascade_orders_release_handoff_before_tap_publication(self) -> None:
+        """The release handoff must complete before Homebrew can publish."""
+        release_dag = self.release.split(
+            "    - name: release-pipeline\n", 1
+        )[1].split("    # === Setup Step ===", 1)[0]
+        release_task_positions = {
+            name: release_dag.index(f"          - name: {name}\n")
+            for name in ("compute-sha256sums", "sign-sums", "gh-release-create")
+        }
+        self.assertLess(
+            release_task_positions["compute-sha256sums"],
+            release_task_positions["sign-sums"],
+        )
+        self.assertLess(
+            release_task_positions["sign-sums"],
+            release_task_positions["gh-release-create"],
+        )
+        self.assertIn(
+            'from: "{{tasks.compute-sha256sums.outputs.artifacts.sha256sums}}"',
+            release_dag,
+        )
+
+        homebrew_dag = self.homebrew.split(
+            "    - name: homebrew-pipeline\n", 1
+        )[1].split("    # === Versioned-Tag Gate ===", 1)[0]
+        homebrew_task_positions = {
+            name: homebrew_dag.index(f"          - name: {name}\n")
+            for name in (
+                "versioned-tag-gate",
+                "verify-release-metadata",
+                "render-formula",
+                "push-tap",
+            )
+        }
+        self.assertLess(
+            homebrew_task_positions["versioned-tag-gate"],
+            homebrew_task_positions["verify-release-metadata"],
+        )
+        self.assertLess(
+            homebrew_task_positions["verify-release-metadata"],
+            homebrew_task_positions["render-formula"],
+        )
+        self.assertLess(
+            homebrew_task_positions["render-formula"],
+            homebrew_task_positions["push-tap"],
+        )
+        self.assertIn(
+            "dependencies: [versioned-tag-gate, verify-release-metadata, render-formula]",
+            homebrew_dag,
+        )
+        self.assertIn(
+            'for asset in SHA256SUMS SHA256SUMS.sig SHA256SUMS.pem',
+            self.verify,
+        )
+
     def test_render_consumes_checksum_handoff_without_archive_fetch_or_rehash(self) -> None:
         self.assertIn("source-archive-sha256", self.homebrew)
         self.assertIn("{{tasks.verify-release-metadata.outputs.parameters.source-archive-sha256}}", self.homebrew)
@@ -245,6 +300,50 @@ esac
         self.assertIn("dependencies: [versioned-tag-gate, push-tap]", self.homebrew)
         self.assertIn("GitHub mirror did not reflect tap commit", self.wait)
         self.assertIn("exit 1", self.wait)
+
+    def test_mirror_timeout_reports_failure_instead_of_false_success(self) -> None:
+        """A mirror that never advances must exhaust its bounded poll and fail."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  ls-remote) echo unrelated-commit; exit 0 ;;\n"
+                "  *) exit 0 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o700)
+            fake_sleep = fake_bin / "sleep"
+            fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_sleep.chmod(0o700)
+
+            script = self.wait.split("          - |", 1)[1].split(
+                "        resources:", 1
+            )[0]
+            script = textwrap.dedent(script)
+            script = script.replace("apk add --no-cache git", ":")
+            script = script.replace(
+                'COMMIT="{{inputs.parameters.tap-commit}}"',
+                'COMMIT="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"',
+            )
+            result = subprocess.run(
+                ["sh", "-c", script],
+                env={
+                    **os.environ,
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("GitHub mirror did not reflect tap commit", result.stderr)
+            self.assertIn("within 5 minutes", result.stderr)
+            self.assertNotIn("Mirror reflects", result.stdout)
 
     def test_publication_is_pinned_to_the_approved_tap_and_formula_path(self) -> None:
         self.assertIn(
