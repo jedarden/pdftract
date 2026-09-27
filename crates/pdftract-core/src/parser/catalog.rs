@@ -750,6 +750,7 @@ pub fn parse_catalog(
 ) -> Result<Catalog> {
     let mut catalog = Catalog::default();
     let mut diagnostics = Vec::new();
+    let diagnostic_root = crate::diagnostics::ObjRef::new(root_ref.object, root_ref.generation);
 
     // Resolve the root object using source if available, otherwise use cache-only resolve
     let root_obj = match source {
@@ -759,10 +760,13 @@ pub fn parse_catalog(
     let root_obj = match root_obj {
         Ok(obj) => obj,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!("Failed to resolve /Root: {}", e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("Failed to resolve /Root: {}", e),
+                )
+                .with_object_ref(diagnostic_root),
+            );
             return Err(diagnostics);
         }
     };
@@ -771,10 +775,13 @@ pub fn parse_catalog(
     let catalog_dict = match root_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructUnexpectedEof,
-                format!("/Root is not a dictionary (type: {})", root_obj.type_name()),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructUnexpectedEof,
+                    format!("/Root is not a dictionary (type: {})", root_obj.type_name()),
+                )
+                .with_object_ref(diagnostic_root),
+            );
             return Err(diagnostics);
         }
     };
@@ -789,22 +796,28 @@ pub fn parse_catalog(
         Some(PdfObject::Ref(ref_)) => *ref_,
         Some(other) => {
             // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructMissingKey,
-                format!(
-                    "STRUCT_MISSING_KEY: /Pages is not a reference (type: {})",
-                    other.type_name()
-                ),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!(
+                        "STRUCT_MISSING_KEY: /Pages is not a reference (type: {})",
+                        other.type_name()
+                    ),
+                )
+                .with_object_ref(diagnostic_root),
+            );
             catalog.diagnostics = diagnostics;
             return Ok(catalog);
         }
         None => {
             // Emit STRUCT_MISSING_KEY diagnostic and return empty catalog
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructMissingKey,
-                "STRUCT_MISSING_KEY: /Pages key missing from catalog".to_string(),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    "STRUCT_MISSING_KEY: /Pages key missing from catalog".to_string(),
+                )
+                .with_object_ref(diagnostic_root),
+            );
             catalog.diagnostics = diagnostics;
             return Ok(catalog);
         }

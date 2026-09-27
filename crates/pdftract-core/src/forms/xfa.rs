@@ -16,13 +16,23 @@
 //! - **Namespace handling**: XFA uses multiple namespaces (xfa, xdc, xdp, xfdf)
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::{PdfDict, PdfObject};
+use crate::parser::object::{ObjRef as ParserObjRef, PdfDict, PdfObject};
 use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
 use crate::parser::xref::XrefResolver;
 use std::collections::HashMap;
 
 /// Result type for XFA operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
+
+fn xfa_diagnostic(
+    code: DiagCode,
+    message: impl Into<String>,
+    object_ref: Option<ParserObjRef>,
+) -> Diagnostic {
+    Diagnostic::with_dynamic_no_offset(code, message.into()).with_object_ref_parts_opt(
+        object_ref.map(|reference| (reference.object, reference.generation)),
+    )
+}
 
 /// XFA field with full name and value.
 ///
@@ -78,13 +88,37 @@ pub fn extract_xfa_fields(
     source: &dyn PdfSource,
     opts: &ExtractionOptions,
 ) -> Vec<XfaField> {
+    extract_xfa_fields_with_diagnostics(resolver, acroform_dict, source, opts).0
+}
+
+/// Extract XFA fields and retain diagnostics emitted while recovering the
+/// `/XFA` entry. The original fields-only API remains available for callers
+/// that intentionally do not consume diagnostics.
+pub fn extract_xfa_fields_with_diagnostics(
+    resolver: &XrefResolver,
+    acroform_dict: &PdfDict,
+    source: &dyn PdfSource,
+    opts: &ExtractionOptions,
+) -> (Vec<XfaField>, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
     let mut decompress_counter = 0u64;
 
     // Get the /XFA entry
     let xfa_obj = match acroform_dict.get("XFA") {
         Some(obj) => obj,
-        None => return Vec::new(), // No XFA present
+        None => return (Vec::new(), diagnostics), // No XFA present
+    };
+
+    // An indirect /XFA entry is the best enclosing object location available
+    // to this layer. Stream-level decoders add a more specific location when
+    // they have one; this fallback is applied only to diagnostics that lack
+    // one already.
+    let xfa_object_ref = match xfa_obj {
+        PdfObject::Ref(reference) => Some(crate::diagnostics::ObjRef::new(
+            reference.object,
+            reference.generation,
+        )),
+        _ => None,
     };
 
     // Extract and decode the XFA XML bytes
@@ -97,11 +131,22 @@ pub fn extract_xfa_fields(
         &mut diagnostics,
     ) {
         Some(bytes) => bytes,
-        None => return Vec::new(),
+        None => {
+            let diagnostics = diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.with_available_context(xfa_object_ref, None))
+                .collect();
+            return (Vec::new(), diagnostics);
+        }
     };
 
     // Parse the XML and extract fields
-    parse_xfa_xml(&xml_bytes, &mut diagnostics)
+    let fields = parse_xfa_xml(&xml_bytes, &mut diagnostics);
+    let diagnostics = diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.with_available_context(xfa_object_ref, None))
+        .collect();
+    (fields, diagnostics)
 }
 
 /// Extract and decode XFA XML bytes from the /XFA entry.
@@ -123,6 +168,7 @@ fn extract_xfa_bytes(
             opts,
             decompress_counter,
             diagnostics,
+            None,
         )),
         // Array: alternating (Name, Stream) pairs
         PdfObject::Array(arr) => extract_xfa_bytes_from_array(
@@ -135,7 +181,17 @@ fn extract_xfa_bytes(
         ),
         // Indirect reference: resolve and try again
         PdfObject::Ref(ref_) => {
-            let resolved = resolver.resolve(*ref_).ok()?;
+            let resolved = match resolver.resolve(*ref_) {
+                Ok(object) => object,
+                Err(_) => {
+                    diagnostics.push(xfa_diagnostic(
+                        DiagCode::StructUnexpectedEof,
+                        format!("Failed to resolve XFA reference {}", ref_),
+                        Some(*ref_),
+                    ));
+                    return None;
+                }
+            };
             extract_xfa_bytes(
                 resolver,
                 &resolved,
@@ -147,12 +203,13 @@ fn extract_xfa_bytes(
         }
         // Invalid type
         _ => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(xfa_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!(
                     "Invalid /XFA type: expected stream or array, got {}",
                     xfa_obj.type_name()
                 ),
+                None,
             ));
             None
         }
@@ -204,8 +261,14 @@ fn extract_xfa_bytes_from_array(
             PdfObject::Stream(_) => {
                 // Inline stream - use directly
                 let stream = stream_obj.as_stream()?;
-                let bytes =
-                    decode_stream_bytes(stream, source, opts, decompress_counter, diagnostics);
+                let bytes = decode_stream_bytes(
+                    stream,
+                    source,
+                    opts,
+                    decompress_counter,
+                    diagnostics,
+                    None,
+                );
                 let name_str = name_obj
                     .as_name()
                     .map(|n| n.to_string())
@@ -214,13 +277,14 @@ fn extract_xfa_bytes_from_array(
                 continue;
             }
             _ => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                diagnostics.push(xfa_diagnostic(
                     DiagCode::StructUnexpectedEof,
                     format!(
                         "XFA array entry must be Name/Stream pair, got {}/{}",
                         name_obj.type_name(),
                         stream_obj.type_name()
                     ),
+                    None,
                 ));
                 continue;
             }
@@ -229,9 +293,10 @@ fn extract_xfa_bytes_from_array(
         let resolved = match resolver.resolve(stream_ref) {
             Ok(obj) => obj,
             Err(_) => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                diagnostics.push(xfa_diagnostic(
                     DiagCode::StructUnexpectedEof,
                     format!("Failed to resolve XFA stream reference {}", stream_ref),
+                    Some(stream_ref),
                 ));
                 continue;
             }
@@ -240,18 +305,26 @@ fn extract_xfa_bytes_from_array(
         let stream = match resolved.as_stream() {
             Some(s) => s,
             None => {
-                diagnostics.push(Diagnostic::with_dynamic_no_offset(
+                diagnostics.push(xfa_diagnostic(
                     DiagCode::StructUnexpectedEof,
                     format!(
                         "XFA array entry is not a stream (type: {})",
                         resolved.type_name()
                     ),
+                    Some(stream_ref),
                 ));
                 continue;
             }
         };
 
-        let bytes = decode_stream_bytes(stream, source, opts, decompress_counter, diagnostics);
+        let bytes = decode_stream_bytes(
+            stream,
+            source,
+            opts,
+            decompress_counter,
+            diagnostics,
+            Some(stream_ref),
+        );
         let name_str = name_obj
             .as_name()
             .map(|n| n.to_string())
@@ -266,9 +339,10 @@ fn extract_xfa_bytes_from_array(
     }
 
     if xdp_bytes.is_empty() {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+        diagnostics.push(xfa_diagnostic(
             DiagCode::StructUnexpectedEof,
             "XFA array produced no data".to_string(),
+            None,
         ));
         None
     } else {
@@ -285,14 +359,16 @@ fn decode_stream_bytes(
     opts: &ExtractionOptions,
     decompress_counter: &mut u64,
     diagnostics: &mut Vec<Diagnostic>,
+    object_ref: Option<ParserObjRef>,
 ) -> Vec<u8> {
     let bytes = decode_stream(stream, source, opts, decompress_counter);
     // Note: decode_stream returns Vec<u8> directly (not a Result)
     // If it fails, it returns empty Vec
     if bytes.is_empty() && stream.len_hint.is_some() {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+        diagnostics.push(xfa_diagnostic(
             DiagCode::StructUnexpectedEof,
             "Failed to decode XFA stream (returned empty bytes)".to_string(),
+            object_ref,
         ));
     }
     bytes

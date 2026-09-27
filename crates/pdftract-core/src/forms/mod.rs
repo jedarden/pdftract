@@ -23,7 +23,7 @@ pub mod value_choice;
 pub mod value_text;
 pub mod xfa;
 
-pub use xfa::{extract_xfa_fields, XfaField};
+pub use xfa::{extract_xfa_fields, extract_xfa_fields_with_diagnostics, XfaField};
 
 pub use combiner::{combine, ChoiceValue, FormFieldValue};
 pub use value_button::{extract_button_value, ButtonKind, ButtonValue};
@@ -256,6 +256,23 @@ use std::collections::{HashMap, HashSet};
 /// Result type for form operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 
+/// Build a form diagnostic while retaining the object and page context known
+/// by the field walker.  The parser's `ObjRef` and the public diagnostic's
+/// `ObjRef` deliberately have different types, so the conversion stays at
+/// this boundary instead of leaking parser types into the diagnostic model.
+fn form_diagnostic(
+    code: DiagCode,
+    message: impl Into<String>,
+    object_ref: Option<ObjRef>,
+    page_index: Option<usize>,
+) -> Diagnostic {
+    Diagnostic::with_dynamic_no_offset(code, message.into())
+        .with_object_ref_parts_opt(
+            object_ref.map(|reference| (reference.object, reference.generation)),
+        )
+        .with_page_index_opt(page_index)
+}
+
 /// AcroForm field type (/FT entry).
 ///
 /// Represents the type of an interactive form field. Per PDF 1.7 spec section 12.7.3.
@@ -462,6 +479,20 @@ pub fn walk_acroform_fields(
     catalog: &Catalog,
     pages: Option<&[PageDict]>,
 ) -> Vec<AcroFormField> {
+    walk_acroform_fields_with_diagnostics(resolver, catalog, pages).0
+}
+
+/// Walk AcroForm fields and return both fields and the structured diagnostics
+/// emitted while recovering malformed form data.
+//
+// The original `walk_acroform_fields` API remains a fields-only compatibility
+// wrapper. Extraction uses this entry point so diagnostics are not silently
+// lost at the forms boundary.
+pub fn walk_acroform_fields_with_diagnostics(
+    resolver: &XrefResolver,
+    catalog: &Catalog,
+    pages: Option<&[PageDict]>,
+) -> (Vec<AcroFormField>, Vec<Diagnostic>) {
     let mut fields = Vec::new();
     let mut diagnostics = Vec::new();
     let mut visited = HashSet::new();
@@ -469,39 +500,43 @@ pub fn walk_acroform_fields(
     // AcroForm is optional; absent means no fields
     let acroform_ref = match catalog.acroform_ref {
         Some(ref_) => ref_,
-        None => return fields,
+        None => return (fields, diagnostics),
     };
 
     // Resolve the AcroForm dictionary
     let acroform = match resolver.resolve(acroform_ref) {
         Ok(obj) => obj,
         Err(_) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(form_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve /AcroForm reference {}", acroform_ref),
+                Some(acroform_ref),
+                None,
             ));
-            return fields;
+            return (fields, diagnostics);
         }
     };
 
     let acroform_dict = match acroform.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(form_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!(
                     "/AcroForm is not a dictionary (type: {})",
                     acroform.type_name()
                 ),
+                Some(acroform_ref),
+                None,
             ));
-            return fields;
+            return (fields, diagnostics);
         }
     };
 
     // /Fields is an array of indirect references to field dictionaries
     let fields_array = match acroform_dict.get("Fields").and_then(|o| o.as_array()) {
         Some(arr) => arr,
-        None => return fields, // No /Fields means no form fields
+        None => return (fields, diagnostics), // No /Fields means no form fields
     };
 
     // Build a map of field_ref -> page_index for widget resolution
@@ -537,7 +572,7 @@ pub fn walk_acroform_fields(
         );
     }
 
-    fields
+    (fields, diagnostics)
 }
 
 /// Build a map of field_ref -> page_index by searching page /Annots arrays.
@@ -620,12 +655,14 @@ fn walk_field_recursive(
 ) {
     // Cycle detection
     if !visited.insert(field_ref) {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
+        diagnostics.push(form_diagnostic(
             DiagCode::StructUnexpectedEof,
             format!(
                 "Cycle detected in /Kids: field {} already visited",
                 field_ref
             ),
+            Some(field_ref),
+            page_map.get(&field_ref).copied(),
         ));
         return;
     }
@@ -634,9 +671,11 @@ fn walk_field_recursive(
     let field_obj = match resolver.resolve(field_ref) {
         Ok(obj) => obj,
         Err(_) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(form_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve field reference {}", field_ref),
+                Some(field_ref),
+                page_map.get(&field_ref).copied(),
             ));
             visited.remove(&field_ref);
             return;
@@ -646,9 +685,11 @@ fn walk_field_recursive(
     let field_dict = match field_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(form_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!("Field {} is not a dictionary", field_ref),
+                Some(field_ref),
+                page_map.get(&field_ref).copied(),
             ));
             visited.remove(&field_ref);
             return;
@@ -764,12 +805,14 @@ fn walk_field_recursive(
         // This is a leaf field - emit it
         // Check for name collision
         if !full_name.is_empty() && !field_names.insert(full_name.clone()) {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(form_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!(
                     "Field name collision: '{}' already emitted (keeping last)",
                     full_name
                 ),
+                Some(field_ref),
+                page_index,
             ));
         }
 

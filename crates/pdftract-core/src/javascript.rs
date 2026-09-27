@@ -23,6 +23,25 @@ pub struct JavascriptAction {
     pub code_excerpt: String,
 }
 
+/// Return a page index only when every detected action belongs to the same
+/// page. A document-level action or a multi-page aggregate must remain
+/// document-scoped rather than receiving a guessed page.
+fn common_action_page_index(actions: &[JavascriptAction]) -> Option<usize> {
+    if actions.is_empty()
+        || actions
+            .iter()
+            .any(|action| !action.location.starts_with("page."))
+    {
+        return None;
+    }
+    let mut pages = actions.iter().filter_map(|action| {
+        let rest = action.location.strip_prefix("page.")?;
+        rest.split('.').next()?.parse().ok()
+    });
+    let first = pages.next()?;
+    pages.all(|page| page == first).then_some(first)
+}
+
 /// Detect JavaScript actions in a PDF catalog and pages.
 ///
 /// This function walks the catalog and all pages to find JavaScript
@@ -115,13 +134,16 @@ pub fn detect_javascript(
                 }
             );
         }
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::SecurityJavascriptPresent,
-            format!(
-                "Detected {} JavaScript action(s) in PDF document. JavaScript was NOT executed.",
-                actions.len()
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::SecurityJavascriptPresent,
+                format!(
+                    "Detected {} JavaScript action(s) in PDF document. JavaScript was NOT executed.",
+                    actions.len()
+                ),
+            )
+            .with_page_index_opt(common_action_page_index(&actions)),
+        );
     } else {
         info!("JavaScript DETECTION COMPLETE: No JavaScript actions found in PDF document");
         debug!("JavaScript detection complete: no JavaScript actions found in PDF document");

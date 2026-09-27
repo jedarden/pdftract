@@ -23,6 +23,19 @@ use crate::parser::xref::XrefResolver;
 /// Result type for signature operations.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 
+/// Build a signature diagnostic with the indirect field location known by the
+/// AcroForm walker. Signature discovery currently has no page-tree input, so
+/// page_index remains explicitly absent here rather than using a sentinel.
+fn signature_diagnostic(
+    code: DiagCode,
+    message: impl Into<String>,
+    object_ref: Option<ObjRef>,
+) -> Diagnostic {
+    Diagnostic::with_dynamic_no_offset(code, message.into()).with_object_ref_parts_opt(
+        object_ref.map(|reference| (reference.object, reference.generation)),
+    )
+}
+
 /// A reference to a signature field in the AcroForm.
 ///
 /// Represents a discovered signature field with its location and metadata.
@@ -355,6 +368,28 @@ fn decode_pdfdocencoding(bytes: &[u8]) -> Result<String> {
     Ok(s)
 }
 
+/// Decode a signature text value and retain any structured decoding failure
+/// with the signature field's object/page context.
+fn decode_signature_text(
+    bytes: &[u8],
+    field_ref: &SigFieldRef,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    match decode_pdf_string(bytes) {
+        Ok(value) => Some(value),
+        Err(errors) => {
+            let object_ref = Some(crate::diagnostics::ObjRef::new(
+                field_ref.field_ref.object,
+                field_ref.field_ref.generation,
+            ));
+            diagnostics.extend(errors.into_iter().map(|diagnostic| {
+                diagnostic.with_available_context(object_ref, field_ref.page_index)
+            }));
+            None
+        }
+    }
+}
+
 /// Extract metadata for a single signature field.
 ///
 /// This is the core of Phase 7.3.2: resolve the /V dictionary and extract
@@ -375,6 +410,7 @@ fn extract_signature_metadata(
     field_ref: &SigFieldRef,
     resolver: &XrefResolver,
     file_size: Option<u64>,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Signature {
     // If no /V reference, the field is unsigned
     let v_ref = match field_ref.v_ref {
@@ -397,7 +433,7 @@ fn extract_signature_metadata(
     let signer_name = v_dict
         .get("Name")
         .and_then(|o| o.as_string())
-        .and_then(|bytes| decode_pdf_string(bytes).ok())
+        .and_then(|bytes| decode_signature_text(bytes, field_ref, diagnostics))
         .unwrap_or_else(String::new);
 
     // Extract /M (signing date) - parse to ISO 8601
@@ -410,13 +446,13 @@ fn extract_signature_metadata(
     let reason = v_dict
         .get("Reason")
         .and_then(|o| o.as_string())
-        .and_then(|bytes| decode_pdf_string(bytes).ok());
+        .and_then(|bytes| decode_signature_text(bytes, field_ref, diagnostics));
 
     // Extract /Location (optional)
     let location = v_dict
         .get("Location")
         .and_then(|o| o.as_string())
-        .and_then(|bytes| decode_pdf_string(bytes).ok());
+        .and_then(|bytes| decode_signature_text(bytes, field_ref, diagnostics));
 
     // Extract /SubFilter (signature format) - this is a Name, not a String
     let sub_filter = v_dict
@@ -503,10 +539,21 @@ pub fn extract_signatures(
     resolver: &XrefResolver,
     file_size: Option<u64>,
 ) -> Vec<Signature> {
-    fields
+    extract_signatures_with_diagnostics(fields, resolver, file_size).0
+}
+
+/// Extract signature metadata and retain malformed text diagnostics.
+pub fn extract_signatures_with_diagnostics(
+    fields: &[SigFieldRef],
+    resolver: &XrefResolver,
+    file_size: Option<u64>,
+) -> (Vec<Signature>, Vec<Diagnostic>) {
+    let mut diagnostics = Vec::new();
+    let signatures = fields
         .iter()
-        .map(|field| extract_signature_metadata(field, resolver, file_size))
-        .collect()
+        .map(|field| extract_signature_metadata(field, resolver, file_size, &mut diagnostics))
+        .collect();
+    (signatures, diagnostics)
 }
 
 /// A field reference from AcroForm walking.
@@ -588,45 +635,55 @@ impl FieldRef {
 /// - Constructs absolute names by joining /T values with "."
 /// - Emits diagnostics for malformed structures but continues
 fn walk_acroform_fields(resolver: &XrefResolver, catalog: &Catalog) -> Vec<FieldRef> {
+    walk_acroform_fields_with_diagnostics(resolver, catalog).0
+}
+
+/// Walk all AcroForm fields and retain diagnostics emitted during recovery.
+fn walk_acroform_fields_with_diagnostics(
+    resolver: &XrefResolver,
+    catalog: &Catalog,
+) -> (Vec<FieldRef>, Vec<Diagnostic>) {
     let mut fields = Vec::new();
     let mut diagnostics = Vec::new();
 
     // AcroForm is optional; absent means no fields
     let acroform_ref = match catalog.acroform_ref {
         Some(ref_) => ref_,
-        None => return fields,
+        None => return (fields, diagnostics),
     };
 
     // Resolve the AcroForm dictionary
     let acroform = match resolver.resolve(acroform_ref) {
         Ok(obj) => obj,
         Err(_) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(signature_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve /AcroForm reference {}", acroform_ref),
+                Some(acroform_ref),
             ));
-            return fields;
+            return (fields, diagnostics);
         }
     };
 
     let acroform_dict = match acroform.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(signature_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!(
                     "/AcroForm is not a dictionary (type: {})",
                     acroform.type_name()
                 ),
+                Some(acroform_ref),
             ));
-            return fields;
+            return (fields, diagnostics);
         }
     };
 
     // /Fields is an array of indirect references to field dictionaries
     let fields_array = match acroform_dict.get("Fields").and_then(|o| o.as_array()) {
         Some(arr) => arr,
-        None => return fields, // No /Fields means no form fields
+        None => return (fields, diagnostics), // No /Fields means no form fields
     };
 
     // Walk each field in the /Fields array
@@ -646,7 +703,7 @@ fn walk_acroform_fields(resolver: &XrefResolver, catalog: &Catalog) -> Vec<Field
         );
     }
 
-    fields
+    (fields, diagnostics)
 }
 
 /// Recursively walk a field dictionary and its /Kids.
@@ -674,9 +731,10 @@ fn walk_field_recursive(
     let field_obj = match resolver.resolve(field_ref) {
         Ok(obj) => obj,
         Err(_) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(signature_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve field reference {}", field_ref),
+                Some(field_ref),
             ));
             return;
         }
@@ -685,9 +743,10 @@ fn walk_field_recursive(
     let field_dict = match field_obj.as_dict() {
         Some(d) => d,
         None => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
+            diagnostics.push(signature_diagnostic(
                 DiagCode::StructUnexpectedEof,
                 format!("Field {} is not a dictionary", field_ref),
+                Some(field_ref),
             ));
             return;
         }
@@ -821,10 +880,23 @@ fn walk_field_recursive(
 /// }
 /// ```
 pub fn discover(resolver: &XrefResolver, catalog: &Catalog) -> Vec<SigFieldRef> {
-    walk_acroform_fields(resolver, catalog)
+    discover_with_diagnostics(resolver, catalog).0
+}
+
+/// Discover signature fields and retain malformed-AcroForm diagnostics.
+///
+/// `discover` remains the fields-only compatibility wrapper; extraction uses
+/// this entry point so recovery diagnostics reach the structured output.
+pub fn discover_with_diagnostics(
+    resolver: &XrefResolver,
+    catalog: &Catalog,
+) -> (Vec<SigFieldRef>, Vec<Diagnostic>) {
+    let (fields, diagnostics) = walk_acroform_fields_with_diagnostics(resolver, catalog);
+    let signatures = fields
         .into_iter()
         .filter_map(|f| f.into_sig_field())
-        .collect()
+        .collect();
+    (signatures, diagnostics)
 }
 
 #[cfg(test)]

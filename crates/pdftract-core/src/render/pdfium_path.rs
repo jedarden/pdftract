@@ -132,7 +132,7 @@ pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> 
             diagnostics.push(Diagnostic::with_static_no_offset(
                 DiagCode::StructMissingKey,
                 "PDFium not available (full-render feature not compiled or initialization failed)",
-            ));
+            ).with_page_index(page_index));
             return Err(diagnostics);
         }
     };
@@ -141,10 +141,13 @@ pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> 
     let document = match pdfium.load_pdf_from_byte_slice(pdf_bytes, None) {
         Ok(doc) => doc,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructInvalidType,
-                format!("Failed to load PDF with PDFium: {:?}", e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructInvalidType,
+                    format!("Failed to load PDF with PDFium: {:?}", e),
+                )
+                .with_page_index(page_index),
+            );
             return Err(diagnostics);
         }
     };
@@ -152,13 +155,16 @@ pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> 
     // Check page count
     let page_count = document.pages().len();
     if page_index as i32 >= page_count {
-        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-            DiagCode::StructMissingKey,
-            format!(
-                "Page index {} out of bounds (document has {} pages)",
-                page_index, page_count
-            ),
-        ));
+        diagnostics.push(
+            Diagnostic::with_dynamic_no_offset(
+                DiagCode::StructMissingKey,
+                format!(
+                    "Page index {} out of bounds (document has {} pages)",
+                    page_index, page_count
+                ),
+            )
+            .with_page_index(page_index),
+        );
         return Err(diagnostics);
     }
 
@@ -166,10 +172,13 @@ pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> 
     let page = match document.pages().get(page_index as i32) {
         Ok(p) => p,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::StructMissingKey,
-                format!("Failed to open page {}: {:?}", page_index, e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::StructMissingKey,
+                    format!("Failed to open page {}: {:?}", page_index, e),
+                )
+                .with_page_index(page_index),
+            );
             return Err(diagnostics);
         }
     };
@@ -193,10 +202,13 @@ pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> 
     let bitmap = match page.render_with_config(&render_config) {
         Ok(bitmap) => bitmap,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::ImgUnsupportedFormat,
-                format!("Failed to render page with PDFium: {:?}", e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::ImgUnsupportedFormat,
+                    format!("Failed to render page with PDFium: {:?}", e),
+                )
+                .with_page_index(page_index),
+            );
             return Err(diagnostics);
         }
     };
@@ -206,10 +218,13 @@ pub fn render_page_via_pdfium(pdf_bytes: &[u8], page_index: usize, dpi: u32) -> 
     let dynamic_image = match bitmap.as_image() {
         Ok(img) => img,
         Err(e) => {
-            diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                DiagCode::ImgUnsupportedFormat,
-                format!("Failed to convert PDFium bitmap to image: {:?}", e),
-            ));
+            diagnostics.push(
+                Diagnostic::with_dynamic_no_offset(
+                    DiagCode::ImgUnsupportedFormat,
+                    format!("Failed to convert PDFium bitmap to image: {:?}", e),
+                )
+                .with_page_index(page_index),
+            );
             return Err(diagnostics);
         }
     };
@@ -280,7 +295,8 @@ startxref\n\
 
         // If PDFium is not available, we expect an error
         if !has_full_render() {
-            assert!(result.is_err());
+            let diagnostics = result.expect_err("PDFium-unavailable render should fail");
+            assert!(diagnostics.iter().any(|d| d.page_index == Some(0)));
         } else {
             // If PDFium is available, we expect success
             assert!(result.is_ok());
@@ -325,5 +341,6 @@ startxref\n\
         assert!(result.is_err());
         let diags = result.unwrap_err();
         assert!(diags.iter().any(|d| d.code == DiagCode::StructMissingKey));
+        assert!(diags.iter().any(|d| d.page_index == Some(99)));
     }
 }

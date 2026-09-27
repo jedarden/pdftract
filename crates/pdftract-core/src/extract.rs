@@ -20,7 +20,9 @@ use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::diagnostics_compat::to_legacy_strings;
 use crate::document::{compute_fingerprint_lazy, resolve_root_ref};
-use crate::forms::{acro_field_to_value, combine, walk_acroform_fields, FormFieldValue};
+use crate::forms::{
+    acro_field_to_value, combine, walk_acroform_fields_with_diagnostics, FormFieldValue,
+};
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::page_extraction_error::PageExtractionError;
 use crate::parser::catalog::ReadingOrderAlgorithm;
@@ -40,7 +42,7 @@ use crate::schema::{
     TableJson, ThreadJson,
 };
 use crate::semaphore::{Semaphore, SemaphoreExt};
-use crate::signature::{discover, extract_signatures};
+use crate::signature::{discover_with_diagnostics, extract_signatures_with_diagnostics};
 use crate::table::TableCell as Cell;
 use crate::table::{detect_two_page_tables, grid_to_table_json, GridCandidate, TableDetector};
 
@@ -1014,6 +1016,7 @@ fn extract_pdf_from_source(
 
     // Add the tagged PDF deferred diagnostic if present
     let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(catalog.diagnostics.clone());
     all_diagnostics.extend(page_diagnostics);
     all_diagnostics.extend(page_range_diagnostics);
     all_diagnostics.extend(coverage_diagnostics);
@@ -1031,9 +1034,12 @@ fn extract_pdf_from_source(
 
     // Phase 7.3: Extract digital signature metadata
     // Discover signature fields and extract metadata from them
-    let sig_fields = discover(&resolver_arc, &catalog);
+    let (sig_fields, signature_diagnostics) = discover_with_diagnostics(&resolver_arc, &catalog);
+    all_diagnostics.extend(signature_diagnostics);
     let file_size = Some(source.len()?);
-    let signatures_core = extract_signatures(&sig_fields, &resolver_arc, file_size);
+    let (signatures_core, signature_metadata_diagnostics) =
+        extract_signatures_with_diagnostics(&sig_fields, &resolver_arc, file_size);
+    all_diagnostics.extend(signature_metadata_diagnostics);
     let signatures: Vec<SignatureJson> = signatures_core.into_iter().map(|s| s.into()).collect();
 
     // Phase 7.5: Extract embedded file attachments from /EmbeddedFiles and /AF
@@ -1051,7 +1057,9 @@ fn extract_pdf_from_source(
 
     // Phase 7.4: Extract form fields from AcroForm and XFA
     // Walk AcroForm fields and convert to FormFieldValue
-    let acro_fields = walk_acroform_fields(&resolver_arc, &catalog, None);
+    let (acro_fields, form_diagnostics) =
+        walk_acroform_fields_with_diagnostics(&resolver_arc, &catalog, None);
+    all_diagnostics.extend(form_diagnostics);
     let mut acro_fields_typed: Vec<(String, FormFieldValue)> = Vec::new();
     for field in acro_fields {
         let field_value = acro_field_to_value(&field);
@@ -1071,14 +1079,25 @@ fn extract_pdf_from_source(
                     max_decompress_bytes: DEFAULT_MAX_DECOMPRESS_BYTES,
                     password: None,
                 };
-                use crate::forms::extract_xfa_fields;
-                let xfa_extracted =
-                    extract_xfa_fields(
-                        &resolver_arc,
-                        acroform_dict,
-                        source.as_ref(),
-                        &stream_opts,
-                    );
+                use crate::forms::extract_xfa_fields_with_diagnostics;
+                let (xfa_extracted, xfa_diagnostics) = extract_xfa_fields_with_diagnostics(
+                    &resolver_arc,
+                    acroform_dict,
+                    source.as_ref(),
+                    &stream_opts,
+                );
+                // The AcroForm reference is the enclosing object known at
+                // this boundary. Preserve a more specific XFA stream
+                // reference if the forms decoder already supplied one.
+                all_diagnostics.extend(xfa_diagnostics.into_iter().map(|diagnostic| {
+                    diagnostic.with_available_context(
+                        Some(crate::diagnostics::ObjRef::new(
+                            acroform_ref.object,
+                            acroform_ref.generation,
+                        )),
+                        None,
+                    )
+                }));
                 xfa_extracted
                     .into_iter()
                     .filter_map(|f| f.value.map(|v| (f.full_name, v)))
@@ -1094,7 +1113,8 @@ fn extract_pdf_from_source(
     };
 
     // Combine AcroForm and XFA fields (XFA wins on collision)
-    let (combined_fields, _form_diagnostics) = combine(acro_fields_typed, xfa_fields);
+    let (combined_fields, form_diagnostics) = combine(acro_fields_typed, xfa_fields);
+    all_diagnostics.extend(form_diagnostics);
 
     // Convert to FormFieldJson
     let form_fields: Vec<FormFieldJson> = combined_fields
@@ -2086,6 +2106,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 
     // Add the page-tree and page-range diagnostics before document-level diagnostics.
     let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(catalog.diagnostics.clone());
     all_diagnostics.extend(page_diagnostics);
     all_diagnostics.extend(page_range_diagnostics);
     all_diagnostics.extend(coverage_diagnostics);
@@ -2414,6 +2435,7 @@ where
 
     // Add page decoder diagnostics before document-level diagnostics.
     let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(catalog.diagnostics.clone());
     all_diagnostics.extend(coverage_diagnostics);
     if let Some(ref deferred) = deferred_diagnostic {
         all_diagnostics.push(deferred.clone());
