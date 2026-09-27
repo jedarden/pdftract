@@ -16,11 +16,15 @@
 //! V=5 does NOT use per-object key derivation. The file key is used directly
 //! for every object, with a 16-byte IV prepended to each encrypted stream.
 
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use aes::cipher::{
+    block_padding::{NoPadding, Pkcs7},
+    BlockDecryptMut, BlockEncryptMut, KeyIvInit,
+};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use std::fmt;
 
 type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
+type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 
 /// AES-256 block size in bytes (128 bits).
 const AES_BLOCK_SIZE: usize = 16;
@@ -31,14 +35,14 @@ const SALT_SIZE: usize = 8;
 /// User/Owner key size for V=5 (32 bytes for AES-256).
 const KEY_SIZE: usize = 32;
 
-/// Validation salt offset in /U or /O.
-const VALIDATION_SALT_OFFSET: usize = 0;
+/// Validation salt offset in /U or /O (after the 32-byte hash).
+const VALIDATION_SALT_OFFSET: usize = 32;
 
-/// Key salt offset in /U or /O.
-const KEY_SALT_OFFSET: usize = 8;
+/// Key salt offset in /U or /O (after the validation salt).
+const KEY_SALT_OFFSET: usize = 40;
 
-/// Hash offset in /U or /O (after the two salts).
-const HASH_OFFSET: usize = 16;
+/// Hash offset in /U or /O.
+const HASH_OFFSET: usize = 0;
 
 /// Number of key derivation rounds for R=6 (R=5 uses fewer).
 const KEY_DERIVATION_ROUNDS: usize = 64;
@@ -86,6 +90,8 @@ pub struct Aes256Decryptor {
     perms_encrypted: Vec<u8>,
     /// Document ID (first element of /ID array, used in key derivation)
     document_id: Vec<u8>,
+    /// Standard security handler revision (R=5 or R=6).
+    revision: u8,
 }
 
 impl Aes256Decryptor {
@@ -111,6 +117,27 @@ impl Aes256Decryptor {
         perms_encrypted: Vec<u8>,
         document_id: Vec<u8>,
     ) -> Option<Self> {
+        Self::new_with_revision(
+            user_hash,
+            owner_hash,
+            user_key_encrypted,
+            owner_key_encrypted,
+            perms_encrypted,
+            document_id,
+            6,
+        )
+    }
+
+    /// Create a decryptor for a specific AES-256 security-handler revision.
+    pub fn new_with_revision(
+        user_hash: Vec<u8>,
+        owner_hash: Vec<u8>,
+        user_key_encrypted: Vec<u8>,
+        owner_key_encrypted: Vec<u8>,
+        perms_encrypted: Vec<u8>,
+        document_id: Vec<u8>,
+        revision: u8,
+    ) -> Option<Self> {
         // Validate lengths
         if user_hash.len() != 48 || owner_hash.len() != 48 {
             return None;
@@ -121,6 +148,9 @@ impl Aes256Decryptor {
         if perms_encrypted.len() != 16 {
             return None;
         }
+        if !matches!(revision, 5 | 6) {
+            return None;
+        }
 
         Some(Self {
             user_hash,
@@ -129,6 +159,7 @@ impl Aes256Decryptor {
             owner_key_encrypted,
             perms_encrypted,
             document_id,
+            revision,
         })
     }
 
@@ -148,19 +179,17 @@ impl Aes256Decryptor {
         let validation_salt =
             &self.user_hash[VALIDATION_SALT_OFFSET..VALIDATION_SALT_OFFSET + SALT_SIZE];
         let key_salt = &self.user_hash[KEY_SALT_OFFSET..KEY_SALT_OFFSET + SALT_SIZE];
-        let stored_hash = &self.user_hash[HASH_OFFSET..];
+        let stored_hash = &self.user_hash[HASH_OFFSET..HASH_OFFSET + KEY_SIZE];
 
         // Algorithm 11 step (a): compute hash for validation
-        let validation_hash =
-            self.compute_password_hash(password, validation_salt, &self.user_hash);
-
+        let validation_hash = self.compute_password_hash(password, validation_salt);
         // Compare with stored hash
         if validation_hash != stored_hash {
             return FileKeyResult::WrongPassword;
         }
 
         // Algorithm 11 step (b): compute hash for key derivation
-        let key_hash = self.compute_password_hash(password, key_salt, &self.user_hash);
+        let key_hash = self.compute_password_hash(password, key_salt);
 
         // Decrypt /UE with this key to get the file encryption key
         let file_key = self.decrypt_ue_or_oe(&self.user_key_encrypted, &key_hash);
@@ -184,13 +213,12 @@ impl Aes256Decryptor {
         let validation_salt =
             &self.owner_hash[VALIDATION_SALT_OFFSET..VALIDATION_SALT_OFFSET + SALT_SIZE];
         let key_salt = &self.owner_hash[KEY_SALT_OFFSET..KEY_SALT_OFFSET + SALT_SIZE];
-        let stored_hash = &self.owner_hash[HASH_OFFSET..];
+        let stored_hash = &self.owner_hash[HASH_OFFSET..HASH_OFFSET + KEY_SIZE];
 
         // Algorithm 12 step (a): compute hash for validation (includes /U)
         let validation_hash = self.compute_owner_password_hash(
             password,
             validation_salt,
-            &self.owner_hash,
             &self.user_hash,
         );
 
@@ -200,8 +228,7 @@ impl Aes256Decryptor {
         }
 
         // Algorithm 12 step (b): compute hash for key derivation
-        let key_hash =
-            self.compute_owner_password_hash(password, key_salt, &self.owner_hash, &self.user_hash);
+        let key_hash = self.compute_owner_password_hash(password, key_salt, &self.user_hash);
 
         // Decrypt /OE with this key to get the file encryption key
         let file_key = self.decrypt_ue_or_oe(&self.owner_key_encrypted, &key_hash);
@@ -249,7 +276,8 @@ impl Aes256Decryptor {
     /// This is the core of the PDF 2.0 key derivation - it runs 64 rounds of
     /// hashing, selecting between SHA-256, SHA-384, and SHA-512 based on
     /// the last byte of the previous hash.
-    fn compute_password_hash(&self, password: &str, salt: &[u8], u_value: &[u8]) -> Vec<u8> {
+    #[allow(dead_code)]
+    fn compute_password_hash_legacy(&self, password: &str, salt: &[u8], u_value: &[u8]) -> Vec<u8> {
         // Step 1: Initial hash H = SHA-256(password || salt || u_value)
         let mut hasher = Sha256::new();
         hasher.update(password.as_bytes());
@@ -302,10 +330,83 @@ impl Aes256Decryptor {
         h[..KEY_SIZE].to_vec()
     }
 
+    /// Compute the password hash using PDF 2.0 Algorithm 2.B.
+    ///
+    /// R=5 uses the single SHA-256 step from Algorithm 2.A. R=6 adds the
+    /// AES-128-CBC/hash loop specified by Algorithm 2.B.
+    fn compute_password_hash(&self, password: &str, salt: &[u8]) -> Vec<u8> {
+        let mut input = Vec::with_capacity(password.len() + salt.len());
+        input.extend_from_slice(password.as_bytes());
+        input.extend_from_slice(salt);
+        self.compute_algorithm_2b(password.as_bytes(), &[], &input)
+    }
+
+    /// Compute the owner-password hash using the same algorithm with the
+    /// owner value and user value included in the input.
+    fn compute_owner_password_hash(
+        &self,
+        password: &str,
+        salt: &[u8],
+        u_value: &[u8],
+    ) -> Vec<u8> {
+        let mut input = Vec::with_capacity(password.len() + salt.len() + u_value.len());
+        input.extend_from_slice(password.as_bytes());
+        input.extend_from_slice(salt);
+        input.extend_from_slice(u_value);
+        self.compute_algorithm_2b(password.as_bytes(), u_value, &input)
+    }
+
+    fn compute_algorithm_2b(&self, password: &[u8], round_input: &[u8], input: &[u8]) -> Vec<u8> {
+        let mut hash = Sha256::digest(input).to_vec();
+        if self.revision == 5 {
+            return hash;
+        }
+
+        let mut round = 0usize;
+        loop {
+            let round_len = password.len() + hash.len() + round_input.len();
+            let mut encrypted = Vec::with_capacity(round_len * 64);
+            for _ in 0..64 {
+                encrypted.extend_from_slice(password);
+                encrypted.extend_from_slice(&hash);
+                encrypted.extend_from_slice(round_input);
+            }
+
+            let key = aes::cipher::generic_array::GenericArray::from_slice(&hash[..16]);
+            let iv = aes::cipher::generic_array::GenericArray::from_slice(&hash[16..32]);
+            let encrypted_len = encrypted.len();
+            Aes128CbcEnc::new(key, iv)
+                .encrypt_padded_mut::<NoPadding>(&mut encrypted, encrypted_len)
+                .expect("Algorithm 2.B input is block aligned");
+
+            // Algorithm 2.B selects the next SHA-2 width from E modulo 3,
+            // where E is interpreted as a big-endian 128-bit integer. Since
+            // 256 is congruent to 1 modulo 3, this is the sum of E's first
+            // 16 bytes modulo 3.
+            let hash_selector = encrypted[..16].iter().fold(0u8, |remainder, byte| {
+                ((u16::from(remainder) + u16::from(*byte)) % 3) as u8
+            });
+            hash = match hash_selector {
+                0 => Sha256::digest(&encrypted).to_vec(),
+                1 => Sha384::digest(&encrypted).to_vec(),
+                _ => Sha512::digest(&encrypted).to_vec(),
+            };
+
+            round += 1;
+            let last_byte = encrypted.last().copied().unwrap_or_default() as usize;
+            if round >= KEY_DERIVATION_ROUNDS && round >= last_byte + 32 {
+                break;
+            }
+        }
+
+        hash[..KEY_SIZE].to_vec()
+    }
+
     /// Compute the owner password hash (Algorithm 12 variant).
     ///
     /// This is similar to compute_password_hash but includes both /U and /O values.
-    fn compute_owner_password_hash(
+    #[allow(dead_code)]
+    fn compute_owner_password_hash_legacy(
         &self,
         password: &str,
         salt: &[u8],
@@ -538,7 +639,7 @@ mod tests {
         let u_value = [0u8; 48];
         let password = "test";
 
-        let hash = decryptor.compute_password_hash(password, &salt, &u_value);
+        let hash = decryptor.compute_password_hash(password, &salt);
 
         // Should produce a 32-byte hash
         assert_eq!(hash.len(), 32);

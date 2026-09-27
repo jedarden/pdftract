@@ -325,19 +325,19 @@ pub fn validate_user_password_r3(
     user_hash: &[u8],
     document_id: &[u8],
 ) -> bool {
-    // Step 1: Pad password to 32 bytes
-    let padded_password = pad_password(password);
-
-    // Step 2: MD5 hash of padded password || first 16 bytes of document ID
+    // Step 1: MD5 hash of the standard padding string || first 16 bytes of
+    // the document ID. The supplied password is used only to derive the file
+    // key in Algorithm 2.
     let mut md5 = Md5::new();
-    md5.update(&padded_password);
+    md5.update(&PASSWORD_PADDING);
     if document_id.len() >= 16 {
         md5.update(&document_id[..16]);
     }
     let hash = md5.finalize();
 
-    // Step 3: RC4-encrypt the hash with the file key, 19 times
-    let mut data = hash.to_vec();
+    // Step 3: RC4-encrypt the hash with the file key, then re-encrypt it
+    // nineteen times with the file key XORed with 1 through 19.
+    let mut data = rc4_decrypt(file_key, &hash);
     for i in 1..=19 {
         // XOR key with iteration counter for each round
         let mut key_copy = vec![0u8; file_key.len()];
@@ -379,7 +379,7 @@ pub fn validate_user_password(
 ) -> bool {
     if revision == 2 {
         validate_user_password_r2(password, file_key, user_hash)
-    } else if revision == 3 {
+    } else if revision >= 3 {
         validate_user_password_r3(password, file_key, user_hash, document_id)
     } else {
         false

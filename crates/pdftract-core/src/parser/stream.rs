@@ -17,11 +17,11 @@ use secrecy::SecretString;
 
 use crate::decoder::jbig2::Jbig2GlobalsRef;
 use crate::diagnostics::{DiagCode, Diagnostic};
-use crate::parser::object::{ObjRef, PdfObject, PdfStream};
 use crate::emit;
+use crate::parser::object::{ObjRef, PdfObject, PdfStream};
 
 #[cfg(feature = "decrypt")]
-use crate::encryption::decryptor::DecryptionContext;
+use crate::encryption::{DecryptionContext, DecryptionError};
 
 /// Maximum number of filters allowed in a single stream's pipeline.
 /// This prevents stack overflow and excessive computation.
@@ -3386,7 +3386,6 @@ pub trait PdfSource {
 /// to work with parser functions that expect parser::stream::PdfSource (with read_at).
 impl<T: crate::source::PdfSource> PdfSource for T {
     fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
-        
         let data = self.read_range(offset, len)?;
         Ok(data.to_vec())
     }
@@ -3426,7 +3425,6 @@ impl SourceAdapter {
 
 impl PdfSource for SourceAdapter {
     fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
-        
         let data = self.inner.read_range(offset, len)?;
         Ok(data.to_vec())
     }
@@ -3668,9 +3666,9 @@ fn with_stream_context(
     page_index: Option<usize>,
 ) -> Diagnostic {
     diagnostic
-        .with_object_ref_parts_opt(object_ref.map(|reference| {
-            (reference.object, reference.generation)
-        }))
+        .with_object_ref_parts_opt(
+            object_ref.map(|reference| (reference.object, reference.generation)),
+        )
         .with_page_index_opt(page_index)
 }
 
@@ -3836,6 +3834,54 @@ pub fn decode_stream_with_decryption(
     .bytes
 }
 
+/// Decode a stream with a document decryption context and retain diagnostics.
+///
+/// The encrypted bytes are decrypted before the normal PDF filter pipeline is
+/// applied. This is the extraction-facing counterpart to
+/// [`decode_stream_with_decryption`]; it is separate so existing byte-only
+/// callers keep their original API.
+#[cfg(feature = "decrypt")]
+pub fn decode_stream_with_decryption_context(
+    stream: &PdfStream,
+    source: &dyn PdfSource,
+    opts: &ExtractionOptions,
+    doc_decompress_counter: &mut u64,
+    obj_ref: Option<ObjRef>,
+    page_index: Option<usize>,
+    decryption_context: Option<&DecryptionContext>,
+) -> DecodeResult {
+    decode_stream_impl(
+        stream,
+        source,
+        opts,
+        doc_decompress_counter,
+        obj_ref,
+        page_index,
+        decryption_context,
+    )
+}
+
+#[cfg(feature = "decrypt")]
+fn explicit_crypt_filter_name(stream: &PdfStream) -> Option<Option<String>> {
+    let filters = stream.filter()?;
+    let crypt_index = filters
+        .iter()
+        .position(|filter| normalize_filter_name(filter) == "Crypt")?;
+    let decode_params = stream.decode_params().unwrap_or_default();
+    let Some(params) = decode_params.get(crypt_index) else {
+        return Some(None);
+    };
+    let PdfObject::Dict(dict) = params else {
+        return Some(None);
+    };
+    let name = dict
+        .get("/Name")
+        .or_else(|| dict.get("Name"))
+        .and_then(|value| value.as_name())
+        .map(|name| name.strip_prefix('/').unwrap_or(name).to_string());
+    Some(name)
+}
+
 /// Internal implementation that returns both bytes and diagnostics.
 #[allow(clippy::too_many_arguments)]
 fn decode_stream_impl(
@@ -3873,27 +3919,50 @@ fn decode_stream_impl(
     let mut current_bytes = raw_bytes.clone();
     #[cfg(feature = "decrypt")]
     if let (Some(ctx), Some(obj_ref)) = (decryption_context, obj_ref) {
-        
-        // Decrypt the stream data using the per-object key
-        match ctx.decrypt_stream(&current_bytes, obj_ref.object, obj_ref.generation as u16) {
-            Ok(decrypted) => {
-                current_bytes = decrypted;
-            }
-            Err(_e) => {
-                // Decryption failed - emit diagnostic and return empty bytes
-                return DecodeResult::with_meta_and_diagnostic(
-                    Vec::new(),
-                    stream_meta,
-                    with_stream_context(
-                        Diagnostic::with_dynamic_no_offset(
-                            DiagCode::EncryptionWrongPassword,
-                            "Stream decryption failed: incorrect password or corrupt crypt filter"
-                                .to_string(),
+        let explicit_filter = explicit_crypt_filter_name(stream);
+        let should_decrypt = match explicit_filter.as_ref() {
+            None | Some(None) => false,
+            Some(Some(name)) => name != "Identity",
+        };
+        let should_decrypt = if explicit_filter.is_none() {
+            true
+        } else {
+            should_decrypt
+        };
+
+        if should_decrypt {
+            let filter_name = explicit_filter.as_ref().and_then(|name| name.as_deref());
+            match ctx.decrypt_stream_with_filter(
+                &current_bytes,
+                obj_ref.object,
+                obj_ref.generation as u16,
+                filter_name,
+            ) {
+                Ok(decrypted) => {
+                    current_bytes = decrypted;
+                }
+                Err(error) => {
+                    // Decryption failed - emit diagnostic and return empty bytes
+                    let (code, message) = match error {
+                        DecryptionError::UnsupportedAlgorithm => (
+                            DiagCode::EncryptionUnsupported,
+                            "Stream uses an unsupported crypt filter",
                         ),
-                        Some(obj_ref),
-                        page_index,
-                    ),
-                );
+                        _ => (
+                            DiagCode::EncryptionWrongPassword,
+                            "Stream decryption failed: incorrect password or corrupt crypt filter",
+                        ),
+                    };
+                    return DecodeResult::with_meta_and_diagnostic(
+                        Vec::new(),
+                        stream_meta,
+                        with_stream_context(
+                            Diagnostic::with_dynamic_no_offset(code, message.to_string()),
+                            Some(obj_ref),
+                            page_index,
+                        ),
+                    );
+                }
             }
         }
     }
@@ -4020,6 +4089,19 @@ fn decode_stream_impl(
                     stream_meta.jbig2_globals_ref = Some(Jbig2GlobalsRef::new(*globals_ref));
                 }
             }
+        }
+
+        #[cfg(feature = "decrypt")]
+        if normalized_name == "Crypt" && decryption_context.is_some() {
+            match CryptDecoder::pass_through(
+                &current_bytes,
+                doc_decompress_counter,
+                opts.max_decompress_bytes,
+            ) {
+                Ok(decoded) => current_bytes = decoded,
+                Err(_) => break,
+            }
+            continue;
         }
 
         match get_decoder(&normalized_name) {

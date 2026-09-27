@@ -9,10 +9,11 @@
 use std::collections::BTreeMap;
 
 use crate::parser::object::{ObjRef, PdfDict, PdfObject};
-use crate::{
-    diagnostics::Diagnostic,
-    emit,
-};
+use crate::{diagnostics::Diagnostic, emit};
+
+// Tests assert on the emitted diagnostic code.
+#[cfg(test)]
+use crate::diagnostics::DiagCode;
 
 /// Encryption metadata extracted from the PDF's /Encrypt dictionary.
 #[derive(Debug, Clone)]
@@ -51,6 +52,8 @@ pub struct CryptFiltersV4 {
     pub stream_filter: String,
     /// Default crypt filter for strings (/StrF)
     pub string_filter: String,
+    /// Default crypt filter for embedded files (/EFF), which defaults to /StmF.
+    pub embedded_file_filter: String,
     /// Named crypt filter definitions (/CF)
     pub filters: BTreeMap<String, CryptFilterDef>,
 }
@@ -118,7 +121,7 @@ pub fn detect_encryption(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<EncryptionInfo> {
     // Step 1: Look up /Encrypt in trailer
-    let encrypt_ref = trailer.get("/Encrypt")?;
+    let encrypt_ref = dict_get(trailer, "/Encrypt")?;
 
     // Step 2: Resolve ObjRef via XrefResolver
     let encrypt_dict = match encrypt_ref {
@@ -130,7 +133,7 @@ pub fn detect_encryption(
     let encrypt_dict = encrypt_dict.as_dict()?;
 
     // Step 3: Check /Filter == /Standard
-    let filter = encrypt_dict.get("/Filter")?;
+    let filter = dict_get(encrypt_dict, "/Filter")?;
     let filter_name = filter.as_name()?;
     if filter_name != "Standard" {
         // Emit ENCRYPTION_UNSUPPORTED with the filter name
@@ -250,19 +253,19 @@ impl XrefResolver for crate::parser::xref::XrefResolver {
 
 /// Parse /V field from encryption dictionary.
 fn parse_version(dict: &PdfDict) -> Option<u8> {
-    dict.get("/V")?.as_int()?.try_into().ok()
+    dict_get(dict, "/V")?.as_int()?.try_into().ok()
 }
 
 /// Parse /R field from encryption dictionary.
 fn parse_revision(dict: &PdfDict) -> Option<u8> {
-    dict.get("/R")?.as_int()?.try_into().ok()
+    dict_get(dict, "/R")?.as_int()?.try_into().ok()
 }
 
 /// Parse /KeyLength field from encryption dictionary.
 ///
 /// If not present, derive from V: V=1/2 -> 40, V=4 -> 128, V=5 -> 256
 fn parse_key_length(dict: &PdfDict, version: u8) -> Option<u32> {
-    if let Some(key_length) = dict.get("/Length") {
+    if let Some(key_length) = dict_get(dict, "/Length") {
         let length = key_length.as_int()? as u32;
         // Validate key length is a multiple of 8
         if length % 8 != 0 {
@@ -287,7 +290,7 @@ fn parse_hash_with_diagnostics(
     revision: u8,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<u8>> {
-    let hash_bytes = dict.get(key)?.as_string()?.to_vec();
+    let hash_bytes = dict_get(dict, key)?.as_string()?.to_vec();
 
     // Validate length
     let expected_len = if revision >= 5 { 48 } else { 32 };
@@ -310,12 +313,23 @@ fn parse_hash_with_diagnostics(
 
 /// Parse /P permissions field.
 fn parse_permissions(dict: &PdfDict) -> Option<u32> {
-    dict.get("/P")?.as_int()?.try_into().ok()
+    // /P is a signed PDF integer, but the encryption algorithms consume its
+    // two's-complement 32-bit representation.  In particular, normal PDFs
+    // commonly use negative permission values such as -4 or -1028.
+    let permissions = dict_get(dict, "/P")?.as_int()?;
+    // Test/build helpers sometimes represent the unsigned bit pattern as the
+    // positive i64 value 0xffff_ffff, while parsed PDFs use the signed value
+    // -1.  Accept both representations without changing the bit pattern.
+    if permissions < 0 {
+        i32::try_from(permissions).ok().map(|value| value as u32)
+    } else {
+        u32::try_from(permissions).ok()
+    }
 }
 
 /// Parse /Perms field for V=5 encryption.
 fn parse_v5_perms(dict: &PdfDict) -> Option<u32> {
-    let perms_bytes = dict.get("/Perms")?.as_string()?;
+    let perms_bytes = dict_get(dict, "/Perms")?.as_string()?;
     if perms_bytes.len() != 16 {
         return None;
     }
@@ -327,7 +341,7 @@ fn parse_v5_perms(dict: &PdfDict) -> Option<u32> {
 
 /// Parse /UE or /OE field for V=5 encryption (32-byte encrypted key).
 fn parse_v5_key(dict: &PdfDict, key: &str) -> Option<Vec<u8>> {
-    let key_bytes = dict.get(key)?.as_string()?.to_vec();
+    let key_bytes = dict_get(dict, key)?.as_string()?.to_vec();
     if key_bytes.len() != 32 {
         return None;
     }
@@ -336,7 +350,7 @@ fn parse_v5_key(dict: &PdfDict, key: &str) -> Option<Vec<u8>> {
 
 /// Parse /Perms field as raw bytes for V=5 encryption (16-byte encrypted permissions).
 fn parse_v5_perms_bytes(dict: &PdfDict) -> Option<Vec<u8>> {
-    let perms_bytes = dict.get("/Perms")?.as_string()?.to_vec();
+    let perms_bytes = dict_get(dict, "/Perms")?.as_string()?.to_vec();
     if perms_bytes.len() != 16 {
         return None;
     }
@@ -345,8 +359,7 @@ fn parse_v5_perms_bytes(dict: &PdfDict) -> Option<Vec<u8>> {
 
 /// Extract first 16 bytes of /ID[0] from trailer.
 fn extract_file_id(trailer: &PdfDict) -> Vec<u8> {
-    trailer
-        .get("/ID")
+    dict_get(trailer, "/ID")
         .and_then(|id| id.as_array())
         .and_then(|arr| arr.first())
         .and_then(|id| id.as_string())
@@ -356,16 +369,20 @@ fn extract_file_id(trailer: &PdfDict) -> Vec<u8> {
 
 /// Parse crypt filter dictionary for V>=4 encryption.
 fn parse_crypt_filters(dict: &PdfDict) -> Option<CryptFiltersV4> {
-    let stream_filter = parse_filter_name(dict.get("/StmF"))?;
-    let string_filter = parse_filter_name(dict.get("/StrF"))?;
+    let stream_filter = parse_filter_name(dict_get(dict, "/StmF"))?;
+    let string_filter = parse_filter_name(dict_get(dict, "/StrF"))?;
+    let embedded_file_filter = match dict_get(dict, "/EFF") {
+        Some(value) => parse_filter_name(Some(value))?,
+        None => stream_filter.clone(),
+    };
 
     // /CF is optional - if not present, use empty filters map
-    let filters = if let Some(cf_obj) = dict.get("/CF") {
+    let filters = if let Some(cf_obj) = dict_get(dict, "/CF") {
         let cf_dict = cf_obj.as_dict()?;
         let mut filters = BTreeMap::new();
 
         for (name, filter_def) in cf_dict {
-            let name_str = name.strip_prefix('/')?;
+            let name_str = name.strip_prefix('/').unwrap_or(name);
             let def = parse_crypt_filter_def(filter_def.as_dict()?)?;
             filters.insert(name_str.to_string(), def);
         }
@@ -377,6 +394,7 @@ fn parse_crypt_filters(dict: &PdfDict) -> Option<CryptFiltersV4> {
     Some(CryptFiltersV4 {
         stream_filter,
         string_filter,
+        embedded_file_filter,
         filters,
     })
 }
@@ -392,12 +410,11 @@ fn parse_filter_name(obj: Option<&PdfObject>) -> Option<String> {
 
 /// Parse a single crypt filter definition.
 fn parse_crypt_filter_def(dict: &PdfDict) -> Option<CryptFilterDef> {
-    let cfm = parse_cfm(dict.get("/CFM"))?;
-    let length = dict
-        .get("/Length")
+    let cfm = parse_cfm(dict_get(dict, "/CFM"))?;
+    let length = dict_get(dict, "/Length")
         .and_then(|l| l.as_int())
         .map(|l| l as u32);
-    let auth_event = parse_auth_event(dict.get("/AuthEvent")).unwrap_or(AuthEvent::DocOpen);
+    let auth_event = parse_auth_event(dict_get(dict, "/AuthEvent")).unwrap_or(AuthEvent::DocOpen);
 
     Some(CryptFilterDef {
         cfm,
@@ -409,11 +426,11 @@ fn parse_crypt_filter_def(dict: &PdfDict) -> Option<CryptFilterDef> {
 /// Parse crypt filter method (/CFM).
 fn parse_cfm(obj: Option<&PdfObject>) -> Option<CryptFilterMethod> {
     match obj {
-        Some(PdfObject::Name(name)) => match name.strip_prefix('/') {
-            Some("Identity") => Some(CryptFilterMethod::Identity),
-            Some("V2") => Some(CryptFilterMethod::V2),
-            Some("AESV2") => Some(CryptFilterMethod::AesV2),
-            Some("AESV3") => Some(CryptFilterMethod::AesV3),
+        Some(PdfObject::Name(name)) => match name.strip_prefix('/').unwrap_or(name) {
+            "Identity" => Some(CryptFilterMethod::Identity),
+            "V2" => Some(CryptFilterMethod::V2),
+            "AESV2" => Some(CryptFilterMethod::AesV2),
+            "AESV3" => Some(CryptFilterMethod::AesV3),
             _ => None,
         },
         None => Some(CryptFilterMethod::Identity),
@@ -424,9 +441,9 @@ fn parse_cfm(obj: Option<&PdfObject>) -> Option<CryptFilterMethod> {
 /// Parse auth event (/AuthEvent).
 fn parse_auth_event(obj: Option<&PdfObject>) -> Option<AuthEvent> {
     match obj {
-        Some(PdfObject::Name(name)) => match name.strip_prefix('/') {
-            Some("DocOpen") => Some(AuthEvent::DocOpen),
-            Some("EFOpen") => Some(AuthEvent::EfoOpen),
+        Some(PdfObject::Name(name)) => match name.strip_prefix('/').unwrap_or(name) {
+            "DocOpen" => Some(AuthEvent::DocOpen),
+            "EFOpen" => Some(AuthEvent::EfoOpen),
             _ => None,
         },
         None => Some(AuthEvent::DocOpen),
@@ -434,9 +451,16 @@ fn parse_auth_event(obj: Option<&PdfObject>) -> Option<AuthEvent> {
     }
 }
 
+/// Look up a PDF dictionary key while accepting both representations used by
+/// callers in this crate: the parser stores names without `/`, while a number
+/// of public test/build helpers construct dictionaries with the slash intact.
+fn dict_get<'a>(dict: &'a PdfDict, key: &str) -> Option<&'a PdfObject> {
+    let bare = key.strip_prefix('/').unwrap_or(key);
+    dict.get(key).or_else(|| dict.get(bare))
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::diagnostics::DiagCode;
     use super::*;
 
     // Mock resolver for testing

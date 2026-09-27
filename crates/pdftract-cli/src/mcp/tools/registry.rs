@@ -6,8 +6,8 @@
 
 use super::args::*;
 use super::{
-    CODE_IO_ERROR, CODE_PATH_INVALID, CODE_SSRF_BLOCKED, ERROR_IO_ERROR,
-    ERROR_PATH_INVALID, ERROR_SSRF_BLOCKED,
+    CODE_ENCRYPTION_UNSUPPORTED, CODE_ENCRYPTION_WRONG_PASSWORD, CODE_IO_ERROR, CODE_PATH_INVALID,
+    CODE_SSRF_BLOCKED, ERROR_IO_ERROR, ERROR_PATH_INVALID, ERROR_PDF_ENCRYPTED, ERROR_SSRF_BLOCKED,
 };
 use crate::mcp::framing::ErrorObject;
 use crate::mcp::root::resolve_path;
@@ -386,7 +386,11 @@ fn extract_url_host(url: &str) -> Option<&str> {
 
     // Plain host or IPv4 literal: a single separating `:port` is the only colon.
     let host = host_part.split(':').next()?;
-    if host.is_empty() { None } else { Some(host) }
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
 }
 
 /// Reason an IPv4 address is blocked, or `None` if it is publicly routable.
@@ -404,18 +408,26 @@ fn blocked_ipv4_reason(ipv4: std::net::Ipv4Addr) -> Option<String> {
     // Block RFC 1918 private networks
     let octets = ipv4.octets();
     if octets[0] == 10 {
-        return Some("RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string());
+        return Some(
+            "RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string(),
+        );
     }
     if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
-        return Some("RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string());
+        return Some(
+            "RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string(),
+        );
     }
     if octets[0] == 192 && octets[1] == 168 {
-        return Some("RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string());
+        return Some(
+            "RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string(),
+        );
     }
 
     // Block link-local (169.254.0.0/16) - includes cloud metadata
     if octets[0] == 169 && octets[1] == 254 {
-        return Some("Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string());
+        return Some(
+            "Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string(),
+        );
     }
 
     None
@@ -456,7 +468,9 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
 
                 // Block IPv6 unspecified
                 if ipv6.is_unspecified() {
-                    return Err("IPv6 unspecified addresses are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 unspecified addresses are blocked (SSRF protection)".to_string()
+                    );
                 }
 
                 // Block IPv4-mapped and IPv4-compatible literals such as
@@ -476,17 +490,26 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
                 // Block IPv6 private ranges (fc00::/7, fd00::/8)
                 let segments = ipv6.segments();
                 if segments[0] & 0xfe00 == 0xfc00 {
-                    return Err("IPv6 private addresses (fc00::/7) are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 private addresses (fc00::/7) are blocked (SSRF protection)"
+                            .to_string(),
+                    );
                 }
 
                 // Block IPv6 unique local (fd00::/8)
                 if segments[0] & 0xff00 == 0xfd00 {
-                    return Err("IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)"
+                            .to_string(),
+                    );
                 }
 
                 // Block IPv6 link-local (fe80::/10)
                 if segments[0] & 0xffc0 == 0xfe80 {
-                    return Err("IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)".to_string());
+                    return Err(
+                        "IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)"
+                            .to_string(),
+                    );
                 }
             }
         }
@@ -544,6 +567,21 @@ fn build_extraction_options_with_password(
 
 /// Map a core extraction failure to the MCP tool error shape.
 fn map_extraction_error(error: anyhow::Error) -> ErrorObject {
+    let message = error.to_string();
+    if message.contains(CODE_ENCRYPTION_WRONG_PASSWORD) {
+        return ErrorObject::server_error(
+            ERROR_PDF_ENCRYPTED,
+            "PDF password is missing or incorrect",
+        )
+        .with_data(json!({"code": CODE_ENCRYPTION_WRONG_PASSWORD}));
+    }
+    if message.contains(CODE_ENCRYPTION_UNSUPPORTED) {
+        return ErrorObject::server_error(
+            ERROR_PDF_ENCRYPTED,
+            "PDF uses an unsupported encryption handler",
+        )
+        .with_data(json!({"code": CODE_ENCRYPTION_UNSUPPORTED}));
+    }
     ErrorObject::server_error(ERROR_IO_ERROR, format!("Extraction failed: {error}"))
         .with_data(json!({"code": CODE_IO_ERROR}))
 }
@@ -579,8 +617,9 @@ impl Tool for ExtractTool {
             if let Err(reason) = validate_url_no_ssrf(&tool_args.path) {
                 return Err(ErrorObject::server_error(
                     ERROR_SSRF_BLOCKED,
-                    format!("URL blocked: {}", reason)
-                ).with_data(json!({"code": CODE_SSRF_BLOCKED})));
+                    format!("URL blocked: {}", reason),
+                )
+                .with_data(json!({"code": CODE_SSRF_BLOCKED})));
             }
 
             // URL passed SSRF checks, but remote extraction is not yet implemented
@@ -597,17 +636,15 @@ impl Tool for ExtractTool {
         let path_buf = resolve_path(&tool_args.path, root)?;
 
         // Build extraction options
-        let options = build_extraction_options(
+        let options = build_extraction_options_with_password(
             &tool_args.pages,
             &tool_args.ocr,
             tool_args.receipts.as_deref(),
+            tool_args.password.as_deref(),
         );
 
         // Perform the extraction
-        let result = extract_pdf(&path_buf, &options).map_err(|e| {
-            ErrorObject::server_error(super::ERROR_IO_ERROR, format!("Extraction failed: {}", e))
-                .with_data(json!({"code": super::CODE_IO_ERROR}))
-        })?;
+        let result = extract_pdf(&path_buf, &options).map_err(map_extraction_error)?;
 
         Ok(result_to_json(&result))
     }
@@ -646,17 +683,15 @@ impl Tool for ExtractTextTool {
         let path_buf = resolve_path(&tool_args.path, root)?;
 
         // Build extraction options
-        let options = build_extraction_options(
+        let options = build_extraction_options_with_password(
             &tool_args.pages,
             &tool_args.ocr,
             tool_args.receipts.as_deref(),
+            tool_args.password.as_deref(),
         );
 
         // Perform the extraction
-        let result = extract_pdf(&path_buf, &options).map_err(|e| {
-            ErrorObject::server_error(super::ERROR_IO_ERROR, format!("Extraction failed: {}", e))
-                .with_data(json!({"code": super::CODE_IO_ERROR}))
-        })?;
+        let result = extract_pdf(&path_buf, &options).map_err(map_extraction_error)?;
 
         // Convert to plain text
         let text = result
@@ -703,17 +738,15 @@ impl Tool for ExtractMarkdownTool {
         let path_buf = resolve_path(&tool_args.path, root)?;
 
         // Build extraction options
-        let options = build_extraction_options(
+        let options = build_extraction_options_with_password(
             &tool_args.pages,
             &tool_args.ocr,
             tool_args.receipts.as_deref(),
+            tool_args.password.as_deref(),
         );
 
         // Perform the extraction
-        let result = extract_pdf(&path_buf, &options).map_err(|e| {
-            ErrorObject::server_error(super::ERROR_IO_ERROR, format!("Extraction failed: {}", e))
-                .with_data(json!({"code": super::CODE_IO_ERROR}))
-        })?;
+        let result = extract_pdf(&path_buf, &options).map_err(map_extraction_error)?;
 
         // Convert to markdown
         let markdown = result
@@ -1071,13 +1104,16 @@ impl Tool for GetTableTool {
                 "page": tool_args.page
             }))
         })?;
-        let table = page.tables.get(tool_args.table_index as usize).ok_or_else(|| {
-            ErrorObject::invalid_params().with_data(json!({
-                "reason": "Table index is outside the selected page",
-                "page": tool_args.page,
-                "table_index": tool_args.table_index
-            }))
-        })?;
+        let table = page
+            .tables
+            .get(tool_args.table_index as usize)
+            .ok_or_else(|| {
+                ErrorObject::invalid_params().with_data(json!({
+                    "reason": "Table index is outside the selected page",
+                    "page": tool_args.page,
+                    "table_index": tool_args.table_index
+                }))
+            })?;
         Ok(json!({
             "page": tool_args.page,
             "table_index": tool_args.table_index,
@@ -1154,10 +1190,14 @@ impl Tool for GetAttachmentsTool {
             .with_data(json!({"code": CODE_IO_ERROR})));
         }
         let path = resolve_path(&tool_args.path, root)?;
-        let result = extract_pdf(&path, &ExtractionOptions::default()).map_err(map_extraction_error)?;
+        let result =
+            extract_pdf(&path, &ExtractionOptions::default()).map_err(map_extraction_error)?;
         let mut attachments = to_value(&result.attachments).map_err(|error| {
-            ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize attachments: {error}"))
-                .with_data(json!({"code": CODE_IO_ERROR}))
+            ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                format!("Failed to serialize attachments: {error}"),
+            )
+            .with_data(json!({"code": CODE_IO_ERROR}))
         })?;
         if !tool_args.include_data.unwrap_or(false) {
             if let Some(items) = attachments.as_array_mut() {
@@ -1211,8 +1251,11 @@ impl Tool for ClassifyTool {
                 .with_data(json!({"code": CODE_IO_ERROR}))
         })?;
         to_value(output).map_err(|error| {
-            ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize classification: {error}"))
-                .with_data(json!({"code": CODE_IO_ERROR}))
+            ErrorObject::server_error(
+                ERROR_IO_ERROR,
+                format!("Failed to serialize classification: {error}"),
+            )
+            .with_data(json!({"code": CODE_IO_ERROR}))
         })
     }
 }
@@ -1262,6 +1305,31 @@ mod tests {
         assert!(props.contains_key("auto_profile"));
         assert!(props.contains_key("password"));
         assert!(props.contains_key("receipts"));
+    }
+
+    #[test]
+    fn test_extract_tool_decrypts_fixture() {
+        let tool = ExtractTool;
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/encrypted/EC-04-rc4-encrypted.pdf");
+        let result = tool.execute(json!({"path": path, "password": "test"}), None, None);
+        let value = result.expect("MCP extract should decrypt the fixture");
+        assert!(value.to_string().contains("Hello, World!"));
+    }
+
+    #[test]
+    fn test_extract_tool_maps_wrong_password_to_structured_error() {
+        let tool = ExtractTool;
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/encrypted/EC-04-rc4-encrypted.pdf");
+        let error = tool
+            .execute(json!({"path": path, "password": "wrong"}), None, None)
+            .expect_err("wrong password must be an MCP error");
+        assert_eq!(error.code, ERROR_PDF_ENCRYPTED);
+        assert_eq!(
+            error.data,
+            Some(json!({"code": CODE_ENCRYPTION_WRONG_PASSWORD}))
+        );
     }
 
     #[test]
@@ -1344,7 +1412,12 @@ mod tests {
     fn test_specialized_tools_are_registered() {
         let registry = all_tools();
 
-        for name in ["get_table", "get_form_fields", "get_attachments", "classify"] {
+        for name in [
+            "get_table",
+            "get_form_fields",
+            "get_attachments",
+            "classify",
+        ] {
             assert!(registry.get(name).is_some(), "missing tool {name}");
         }
     }
@@ -1609,7 +1682,10 @@ mod ssrf_validation_tests {
         for (bracketed, literal) in [
             ("https://[::ffff:127.0.0.1]/", "https://127.0.0.1/"),
             ("https://[::ffff:10.0.0.1]/", "https://10.0.0.1/"),
-            ("https://[::ffff:169.254.169.254]/", "https://169.254.169.254/"),
+            (
+                "https://[::ffff:169.254.169.254]/",
+                "https://169.254.169.254/",
+            ),
         ] {
             assert!(
                 validate_url_no_ssrf(bracketed).is_err(),
@@ -1645,8 +1721,17 @@ mod ssrf_validation_tests {
         );
         assert_eq!(extract_url_host("https://[::1]"), Some("::1"));
         // Plain hosts and IPv4 literals still lose their port.
-        assert_eq!(extract_url_host("https://example.com:443/doc.pdf"), Some("example.com"));
-        assert_eq!(extract_url_host("https://127.0.0.1:9999/doc.pdf"), Some("127.0.0.1"));
-        assert_eq!(extract_url_host("https://user:pass@example.com/x"), Some("example.com"));
+        assert_eq!(
+            extract_url_host("https://example.com:443/doc.pdf"),
+            Some("example.com")
+        );
+        assert_eq!(
+            extract_url_host("https://127.0.0.1:9999/doc.pdf"),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            extract_url_host("https://user:pass@example.com/x"),
+            Some("example.com")
+        );
     }
 }

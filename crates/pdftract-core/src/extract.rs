@@ -20,6 +20,8 @@ use crate::attachment::name_tree::walk_embedded_files;
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::diagnostics_compat::to_legacy_strings;
 use crate::document::{compute_fingerprint_lazy, resolve_root_ref};
+#[cfg(feature = "decrypt")]
+use crate::encryption::decryptor::DecryptionContext;
 use crate::forms::{
     acro_field_to_value, combine, walk_acroform_fields_with_diagnostics, FormFieldValue,
 };
@@ -107,10 +109,13 @@ fn decode_page_content_streams(
     source: &dyn crate::parser::stream::PdfSource,
     max_decompress_bytes: u64,
     page_index: usize,
+    #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
 ) -> Result<DecodedPageContent, PageExtractionError> {
-    use crate::parser::stream::{
-        decode_stream_with_context, ExtractionOptions as StreamExtractionOptions,
-    };
+    #[cfg(not(feature = "decrypt"))]
+    use crate::parser::stream::decode_stream_with_context;
+    #[cfg(feature = "decrypt")]
+    use crate::parser::stream::decode_stream_with_decryption_context;
+    use crate::parser::stream::ExtractionOptions as StreamExtractionOptions;
 
     // Create stream extraction options with the bomb limit
     let stream_opts = StreamExtractionOptions {
@@ -127,6 +132,17 @@ fn decode_page_content_streams(
             Ok(obj) => {
                 if let Some(stream) = obj.as_stream() {
                     // Decode this stream - it will be dropped after this iteration
+                    #[cfg(feature = "decrypt")]
+                    let decoded = decode_stream_with_decryption_context(
+                        stream,
+                        source,
+                        &stream_opts,
+                        &mut doc_counter,
+                        Some(*stream_ref),
+                        Some(page_index),
+                        decryption_context,
+                    );
+                    #[cfg(not(feature = "decrypt"))]
                     let decoded = decode_stream_with_context(
                         stream,
                         source,
@@ -169,6 +185,33 @@ fn decode_page_content_streams(
     Ok(DecodedPageContent {
         bytes: all_decoded,
         diagnostics,
+    })
+}
+
+#[cfg(feature = "decrypt")]
+fn create_decryption_context(
+    trailer: Option<crate::parser::object::PdfDict>,
+    resolver: &crate::parser::xref::XrefResolver,
+    options: &ExtractionOptions,
+) -> Result<Option<DecryptionContext>> {
+    use crate::encryption::decrypt_with_password;
+
+    let Some(trailer) = trailer else {
+        return Ok(None);
+    };
+
+    let mut diagnostics = Vec::new();
+    let password = options
+        .password
+        .as_ref()
+        .map(|password| password.expose_secret());
+    decrypt_with_password(&trailer, resolver, password, &mut diagnostics).map_err(|error| {
+        let diagnostic = error.to_diagnostic();
+        anyhow::anyhow!(
+            "PDF decryption failed ({}): {}",
+            diagnostic.code,
+            diagnostic.message
+        )
     })
 }
 
@@ -677,29 +720,11 @@ fn extract_pdf_from_source(
 
     // Detect and handle encryption (Phase 1.4)
     #[cfg(feature = "decrypt")]
-    let _decryption_context = {
-        use crate::encryption::decrypt_with_password;
-
-        // Get the trailer for encryption detection
-        let trailer_dict = xref_section.trailer.as_ref().cloned();
-
-        let mut diagnostics = Vec::new();
-        let password = options.password.as_ref().map(|p| p.expose_secret());
-
-        if let Some(trailer) = trailer_dict {
-            match decrypt_with_password(&trailer, &resolver, password, &mut diagnostics) {
-                Ok(ctx_opt) => ctx_opt,
-                Err(e) => {
-                    // Emit diagnostic and return error
-                    let diag = e.to_diagnostic();
-                    return Err(anyhow::anyhow!("PDF decryption failed: {}", diag.message));
-                }
-            }
-        } else {
-            None
-        }
-    };
-
+    let decryption_context = create_decryption_context(
+        xref_section.trailer.as_ref().cloned(),
+        &resolver,
+        options,
+    )?;
     // Without `decrypt` there is no decryption step (and `crate::encryption`
     // does not exist in this build), so no context is bound here; nothing
     // downstream consumes one.
@@ -922,6 +947,8 @@ fn extract_pdf_from_source(
                 source.as_ref(),
                 options.max_decompress_bytes,
                 page_index,
+                #[cfg(feature = "decrypt")]
+                decryption_context.as_ref(),
             );
 
             let mut tracker = McidTracker::new();
@@ -951,6 +978,8 @@ fn extract_pdf_from_source(
                 Some(source.as_ref()),
                 Some(&resolver_arc),
                 Some(&default_off_ocgs),
+                #[cfg(feature = "decrypt")]
+                decryption_context.as_ref(),
             )
         }));
 
@@ -1834,6 +1863,12 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     let resolver =
         XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
+    #[cfg(feature = "decrypt")]
+    let decryption_context = create_decryption_context(
+        xref_section.trailer.as_ref().cloned(),
+        &resolver,
+        options,
+    )?;
     // Get the root reference from trailer
     let root_ref = resolve_root_ref(&xref_section)?;
 
@@ -1997,6 +2032,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 source.as_ref(),
                 options.max_decompress_bytes,
                 page_index,
+                #[cfg(feature = "decrypt")]
+                decryption_context.as_ref(),
             );
 
             let mut tracker = McidTracker::new();
@@ -2025,6 +2062,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
                 Some(source.as_ref()),
                 Some(&resolver_arc),
                 Some(&default_off_ocgs),
+                #[cfg(feature = "decrypt")]
+                decryption_context.as_ref(),
             )
         }));
 
@@ -2209,6 +2248,12 @@ where
     let resolver =
         XrefResolver::from_section_with_source(xref_section.clone(), source.clone());
 
+    #[cfg(feature = "decrypt")]
+    let decryption_context = create_decryption_context(
+        xref_section.trailer.as_ref().cloned(),
+        &resolver,
+        options,
+    )?;
     // Get the root reference from trailer
     let root_ref = resolve_root_ref(&xref_section)?;
 
@@ -2336,6 +2381,8 @@ where
                 source.as_ref(),
                 DEFAULT_MAX_DECOMPRESS_BYTES,
                 page_count,
+                #[cfg(feature = "decrypt")]
+                decryption_context.as_ref(),
             );
 
             let struct_parents = page_dict.struct_parents();
@@ -2360,6 +2407,8 @@ where
                 Some(source.as_ref()),
                 Some(&resolver_arc),
                 Some(&default_off_ocgs),
+                #[cfg(feature = "decrypt")]
+                decryption_context.as_ref(),
             )
         }));
 
@@ -2546,6 +2595,7 @@ fn extract_page_from_dict(
     source: Option<&dyn crate::parser::stream::PdfSource>,
     resolver: Option<&crate::parser::xref::XrefResolver>,
     default_off_ocgs: Option<&std::collections::HashSet<crate::parser::object::ObjRef>>,
+    #[cfg(feature = "decrypt")] decryption_context: Option<&DecryptionContext>,
 ) -> Result<PageResultInternal, PageExtractionError> {
     // Validate media box
     let [x0, y0, x1, y1] = page.media_box;
@@ -2591,6 +2641,8 @@ fn extract_page_from_dict(
             src,
             DEFAULT_MAX_DECOMPRESS_BYTES,
             page_index,
+            #[cfg(feature = "decrypt")]
+            decryption_context,
         )?)
     } else {
         None
