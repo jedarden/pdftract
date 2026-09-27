@@ -326,9 +326,11 @@ spec:
     # which is the documented trade-off).
     #
     # In a dry run there is no real release to verify: the step logs an
-    # explicit SKIP and supplies a deterministic fixture checksum to the
-    # renderer without downloading anything. It never logs "verified" for
-    # a dry run.
+    # explicit SKIP, creates a deterministic local source archive, and
+    # extracts its digest from a matching local SHA256SUMS fixture. This
+    # exercises the same archive-to-checksum handoff without downloading a
+    # release or claiming that a fake tag was verified. It never logs
+    # "verified" for a dry run.
     #
     # Retry: limit 2 (3 attempts) -- failures here are dominated by
     # transient release-asset fetches; nothing has been published yet,
@@ -360,7 +362,17 @@ spec:
 
             if [ "${DRY_RUN}" = "true" ]; then
               echo "=== DRY RUN: release-metadata verification SKIPPED -- tag ${TAG} is a stub with no release to verify ==="
-              echo "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" > /tmp/source-archive-sha256
+              echo "=== DRY RUN: building local source archive + SHA256SUMS handoff fixture ==="
+              mkdir -p "$(dirname "${SOURCE_ARCHIVE_NAME}")"
+              printf '%s\n' "pdftract Homebrew render fixture" > "${SOURCE_ARCHIVE_NAME}"
+              sha256sum "${SOURCE_ARCHIVE_NAME}" > SHA256SUMS
+              sha256sum -c SHA256SUMS
+              SOURCE_ARCHIVE_SHA256="$(awk -v expected="${SOURCE_ARCHIVE_NAME}" '$2 == expected { print $1; found += 1 } END { if (found != 1) exit 1 }' SHA256SUMS)" \
+                || { echo "ERROR: dry-run SHA256SUMS fixture has no unique source archive checksum" >&2; exit 1; }
+              printf '%s' "${SOURCE_ARCHIVE_SHA256}" | grep -Eq '^[0-9a-f]{64}$' \
+                || { echo "ERROR: dry-run source archive checksum fixture is not lowercase SHA-256" >&2; exit 1; }
+              printf '%s' "${SOURCE_ARCHIVE_SHA256}" > /tmp/source-archive-sha256
+              echo "=== DRY RUN: matching local archive/checksum handoff accepted ==="
               exit 0
             fi
 

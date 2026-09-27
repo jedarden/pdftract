@@ -28,6 +28,9 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
         cls.render = cls.homebrew.split("    # === Render Formula ===", 1)[1].split(
             "    # === Push to Tap ===", 1
         )[0]
+        cls.verify = cls.homebrew.split("    # === Verify Release Metadata ===", 1)[1].split(
+            "    # === Render Formula ===", 1
+        )[0]
         cls.push = cls.homebrew.split("    # === Push to Tap ===", 1)[1].split(
             "    # === Wait for Mirror ===", 1
         )[0]
@@ -89,6 +92,25 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
         self.assertIn(
             'when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true"',
             self.homebrew,
+        )
+
+    def test_dry_run_proves_archive_and_sha256sums_handoff_locally(self) -> None:
+        """The dry run must exercise the archive/checksum binding, not fake a digest."""
+        self.assertIn(
+            'printf \'%s\\n\' "pdftract Homebrew render fixture" > "${SOURCE_ARCHIVE_NAME}"',
+            self.verify,
+        )
+        self.assertIn(
+            'sha256sum "${SOURCE_ARCHIVE_NAME}" > SHA256SUMS', self.verify
+        )
+        self.assertIn("sha256sum -c SHA256SUMS", self.verify)
+        self.assertIn('SOURCE_ARCHIVE_SHA256="$(awk -v expected=', self.verify)
+        self.assertIn(
+            "matching local archive/checksum handoff accepted", self.verify
+        )
+        self.assertNotIn(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            self.verify,
         )
         self.assertIn(
             'when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"',
