@@ -15,7 +15,7 @@ relevant outputs:
 | Output | Canonical location | Homebrew use |
 | --- | --- | --- |
 | Versioned source archive | `https://github.com/jedarden/pdftract/archive/refs/tags/vX.Y.Z.tar.gz` | The exact bytes used as the formula `url`; its signed `source/pdftract-vX.Y.Z.tar.gz` checksum line supplies the formula `sha256`. |
-| Aggregate checksums | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS` | Consume the published file and its source-archive checksum line as immutable release-integrity metadata. Never append to, regenerate, or rewrite it. |
+| Aggregate checksums | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS` | The release workflow's `SHA256SUMS` output is passed as an explicit cascade artifact; consume it and its source-archive checksum line as immutable release-integrity metadata. Never append to, regenerate, or rewrite it. |
 | Checksum signature | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS.sig` | Verify the published `SHA256SUMS`. |
 | Checksum certificate | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS.pem` | Verify the signature identity and issuer before accepting the handoff. |
 
@@ -26,9 +26,11 @@ tag archive with a platform-specific binary archive.
 
 The release leg downloads the exact canonical tag archive once while assembling
 the release and records its digest in `SHA256SUMS` as
-`source/pdftract-vX.Y.Z.tar.gz`. The signed aggregate is the handoff: the
-Homebrew leg extracts that line and passes the digest to the renderer without
-downloading or re-hashing the archive.
+`source/pdftract-vX.Y.Z.tar.gz`. The release workflow exposes that archive,
+`SHA256SUMS`, and its signature material as outputs. The versioned cascade passes
+those outputs as explicit inputs to the Homebrew leg, which verifies the signed
+aggregate and the supplied archive bytes, then passes the digest to the renderer
+without downloading or re-hashing a second artifact.
 
 The resolved handoff passed to the renderer is:
 
@@ -105,9 +107,10 @@ The versioned release cascade has this ordering:
 3. Run the Homebrew versioned-tag gate. It accepts only the exact shape
    `^v[0-9]+\.[0-9]+\.[0-9]+$`; prereleases and all moving or unversioned refs
    are skipped without publication.
-4. Consume the three tag-specific checksum assets. Verify the checksum
-   signature and certificate, then extract the canonical source archive
-   digest from the signed `SHA256SUMS` handoff.
+4. Pass the four release-produced handoff artifacts (source archive,
+   `SHA256SUMS`, signature, and certificate) into Homebrew. Verify the checksum
+   signature and certificate plus the archive bytes, then extract the canonical
+   source archive digest from the signed `SHA256SUMS` handoff.
 5. Render and statically validate `Formula/pdftract.rb` from the template at
    the same release tag.
 6. Push the rendered formula to the Forgejo tap origin, wait for its GitHub
@@ -129,11 +132,11 @@ release, a tap update, or approval to publish a fixture digest.
 
 ## Failure and retry contract
 
-- Missing release assets, failed signature verification, a missing or invalid
+- Missing release handoff artifacts, failed signature verification, a missing or invalid
   source-archive checksum handoff, a renderer rejection, or a rejected tap push is a
   non-zero failure. No step may report publication success unless the tap
   update actually succeeded.
-- Metadata fetches and rendering may retry within their bounded workflow
+- Handoff verification and rendering may retry within their bounded workflow
   limits. They are pre-publication and deterministic.
 - The tap update may retry because it clones the current origin and is
   idempotent: an unchanged `Formula/pdftract.rb` produces no commit, while a
@@ -166,8 +169,8 @@ Homebrew child workflow's failed status.
    argo logs <homebrew-workflow> -n argo-workflows
    ```
 
-2. If the release assets and tag are correct, retry the failed Homebrew child
-   workflow. A retry is safe for the same tag: `push-tap` re-clones the tap,
+2. If the release handoff artifacts and tag are correct, retry the failed
+   Homebrew child workflow. A retry is safe for the same tag: `push-tap` re-clones the tap,
    stages only `Formula/pdftract.rb`, and reports an idempotent no-op when the
    formula is already present. The push step allows one automatic retry (two
    attempts total); metadata verification allows two retries, and rendering
@@ -177,18 +180,13 @@ Homebrew child workflow's failed status.
    argo retry <homebrew-workflow> -n argo-workflows
    ```
 
-   If the child workflow has expired, submit the same leg directly with the
-   versioned tag and version. This uses the existing cluster Secret by
-   reference; do not put a token in the command, URL, or logs:
-
-   ```sh
-   argo submit --from workflowtemplate/pdftract-homebrew-publish \
-     -n argo-workflows \
-     -p repo=jedarden/pdftract \
-     -p tag=vX.Y.Z \
-     -p version=X.Y.Z \
-     -p dry_run=false
-   ```
+   If the child workflow has expired, submit the same leg directly only when
+   the four release handoff artifacts are supplied as workflow artifact inputs.
+   This uses the existing cluster Secret by reference; do not put a token in the
+   command, URL, or logs. A parameter-only submission is intentionally rejected
+   for a real versioned tag because it has no release artifact handoff. Use the
+   cascade retry, or construct a Workflow submission that passes all four
+   release artifacts to the template's artifact inputs.
 
 3. For a tap push failure, wait for the bounded automatic retry. If both
    attempts fail, fix the Forgejo connectivity or Secret synchronization

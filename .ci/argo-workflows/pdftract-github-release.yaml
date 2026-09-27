@@ -195,6 +195,20 @@ spec:
                 - name: generated-sbom
                   from: "{{tasks.generate-sbom.outputs.artifacts.sbom}}"
 
+      # These immutable outputs are the release-to-channel handoff. The
+      # cascade passes them to publication legs only after this workflow has
+      # completed the signed release.
+      outputs:
+        artifacts:
+          - name: release-archive
+            from: "{{tasks.compute-sha256sums.outputs.artifacts.release-archive}}"
+          - name: sha256sums
+            from: "{{tasks.compute-sha256sums.outputs.artifacts.sha256sums}}"
+          - name: sha256sums-sig
+            from: "{{tasks.sign-sums.outputs.artifacts.sha256sums-sig}}"
+          - name: sha256sums-pem
+            from: "{{tasks.sign-sums.outputs.artifacts.sha256sums-pem}}"
+
     # === Setup Step ===
     # Clone repo and prepare workspace
     - name: setup
@@ -769,6 +783,9 @@ spec:
             memory: 2Gi
       outputs:
         artifacts:
+          - name: release-archive
+            path: /artifacts/source/pdftract-v{{workflow.parameters.version}}.tar.gz
+            archiveNone: false
           - name: sha256sums
             path: /artifacts/SHA256SUMS
             archiveNone: false

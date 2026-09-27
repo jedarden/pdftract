@@ -96,6 +96,18 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
             'from: "{{tasks.compute-sha256sums.outputs.artifacts.sha256sums}}"',
             release_dag,
         )
+        self.assertIn(
+            'from: "{{tasks.compute-sha256sums.outputs.artifacts.release-archive}}"',
+            release_dag,
+        )
+        self.assertIn(
+            'from: "{{tasks.sign-sums.outputs.artifacts.sha256sums-sig}}"',
+            release_dag,
+        )
+        self.assertIn(
+            'from: "{{tasks.sign-sums.outputs.artifacts.sha256sums-pem}}"',
+            release_dag,
+        )
 
         homebrew_dag = self.homebrew.split(
             "    - name: homebrew-pipeline\n", 1
@@ -125,10 +137,30 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
             "dependencies: [versioned-tag-gate, verify-release-metadata, render-formula]",
             homebrew_dag,
         )
+        for artifact in (
+            "release-archive",
+            "sha256sums",
+            "sha256sums-sig",
+            "sha256sums-pem",
+        ):
+            self.assertIn(f"- name: {artifact}", self.homebrew)
+            self.assertIn(
+                f'from: "{{{{inputs.artifacts.{artifact}}}}}"', self.homebrew
+            )
+
+    def test_homebrew_verifies_supplied_release_artifacts_without_fetching(self) -> None:
+        """The cascade handoff, not a release URL, is the verifier's input."""
         self.assertIn(
-            'for asset in SHA256SUMS SHA256SUMS.sig SHA256SUMS.pem',
+            "path: /tmp/source/pdftract-v{{workflow.parameters.version}}.tar.gz",
             self.verify,
         )
+        self.assertIn("path: /tmp/SHA256SUMS", self.verify)
+        self.assertIn("sha256sum -c -", self.verify)
+        self.assertIn(
+            "release archive does not match its SHA256SUMS handoff", self.verify
+        )
+        self.assertNotIn("curl", self.verify)
+        self.assertNotIn("releases/download", self.verify)
 
     def test_render_consumes_checksum_handoff_without_archive_fetch_or_rehash(self) -> None:
         self.assertIn("source-archive-sha256", self.homebrew)
