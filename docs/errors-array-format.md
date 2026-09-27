@@ -67,7 +67,8 @@ In the full JSON output (`schema_version` 1.0 document), the structured form is
 additionally the top-level `errors` array. In NDJSON streaming output, the
 footer frame's `errors` array is a union: it contains one synthetic
 `page_extraction_error` record per failed page first, followed by the same
-structured document diagnostics. The synthetic record is
+structured extraction diagnostics (including page-scoped entries) in metadata
+emission order. The synthetic record is
 `{"code":"page_extraction_error","severity":"error","message":"..."}`;
 it is not a `DiagCode` and never appears in either metadata array.
 
@@ -251,51 +252,17 @@ for (s, d) in result.metadata.diagnostics.iter()
 
 ## Diagnostic Categories and Codes
 
-### Structure Errors (STRUCT_*)
-- `STRUCT_INVALID_NAME` - Invalid name character or malformed name object
-- `STRUCT_INVALID_HEX` - Invalid hex character in hex string
-- `STRUCT_MISSING_KEY` - Missing required dictionary key
-- `STRUCT_CIRCULAR_REF` - Circular reference detected
-- `STRUCT_UNEXPECTED_BYTE` - Unexpected byte during parsing
-- `STRUCT_UNEXPECTED_EOF` - Unexpected end of file
+The complete 113-code registry is maintained in
+[`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
+That registry is the only normative source for code names, severities, phase
+origins, hints, reserved/feature-gated status, and the code-to-emission
+context profile. This guide intentionally does not repeat a partial list: a
+code is documented once, so the two guides cannot drift again.
 
-### Stream Errors (STREAM_*)
-- `STREAM_DECODE_ERROR` - Stream decompression failed (corrupt data)
-- `STREAM_BOMB` - Decompression bomb limit exceeded
-- `STREAM_UNKNOWN_FILTER` - Unknown filter name
-- `STREAM_INVALID_PARAMS` - Invalid filter parameters
-- `STREAM_TRUNCATED` - Stream data truncated
-
-### XRef Errors (XREF_*)
-- `XREF_INVALID_HEADER` - Invalid xref keyword or header
-- `XREF_REPAIRED` - Xref was reconstructed via forward scan
-- `XREF_TRUNCATED` - Truncated xref table
-
-### Encryption Errors (ENCRYPTION_*)
-- `ENCRYPTION_UNSUPPORTED` - Unsupported encryption or no password supplied
-- `ENCRYPTION_WRONG_PASSWORD` - Password incorrect
-- `ENCRYPTION_INVALID_DICT` - Invalid encryption dictionary
-
-### Font Errors (FONT_*)
-- `FONT_GLYPH_UNMAPPED` - Glyph could not be mapped to Unicode
-- `FONT_NOT_FOUND` - Font not found or couldn't be parsed
-- `FONT_INVALID_CMAP` - Invalid CMap format
-- `FONT_PARSE_FAILED` - Font program parsing failed
-
-### Page Errors (PAGE_*)
-- `PAGE_OUT_OF_RANGE` - Page number out of range
-- `PAGE_INVALID_COUNT` - Invalid /Count key in /Pages tree
-- `PAGE_INVALID_ROTATE` - Invalid /Rotate value (not multiple of 90)
-
-### Graphics State Errors (GSTATE_*)
-- `GSTATE_STACK_OVERFLOW` - Graphics state stack overflow
-- `GSTATE_STACK_UNDERFLOW` - Graphics state stack underflow
-- `CM_ARG_COUNT` - Invalid argument count for cm operator
-
-### OCR Errors (OCR_*)
-- `OCR_JBIG2_UNSUPPORTED` - JBIG2 decoder not available
-- `OCR_TESSERACT_FAILED` - Tesseract OCR failed
-- `OCR_LANGUAGE_UNAVAILABLE` - Requested language pack not available
+The registry's `D-PDF`, `D-OP`, `P`, and `C` profiles also specify whether
+`page_index` is omitted, required, or conditional and when `location` is
+carried. All registered codes use the same structured object fields and output
+surfaces described above; only the context profile differs.
 
 ## Assertion Patterns for Tests
 
