@@ -253,6 +253,11 @@ spec:
               parameters:
                 - name: source-archive-sha256
                   value: "{{tasks.verify-release-metadata.outputs.parameters.source-archive-sha256}}"
+              artifacts:
+                - name: release-archive
+                  from: "{{inputs.artifacts.release-archive}}"
+                - name: sha256sums
+                  from: "{{inputs.artifacts.sha256sums}}"
 
           - name: push-tap
             template: push-tap
@@ -481,6 +486,10 @@ spec:
     # comes from the signed SHA256SUMS handoff produced upstream -- the
     # formula's sha256 always describes what brew will download, never a
     # recomputed or floating artifact.
+    # The render task also receives the exact archive and SHA256SUMS handoff
+    # artifacts. It cross-checks the signed source-archive line against the
+    # verifier's digest before invoking the renderer, so a mismatched
+    # artifact cannot produce a formula that reaches push-tap.
     # The SHA256SUMS_* URLs are the canonical release URLs; the
     # renderer re-validates every field's canonical form.
     #
@@ -503,6 +512,13 @@ spec:
       inputs:
         parameters:
           - name: source-archive-sha256
+        artifacts:
+          - name: release-archive
+            path: /tmp/source/pdftract-v{{workflow.parameters.version}}.tar.gz
+            optional: true
+          - name: sha256sums
+            path: /tmp/SHA256SUMS
+            optional: true
       activeDeadlineSeconds: 600
       retryStrategy:
         limit: "1"
@@ -538,6 +554,25 @@ spec:
             SOURCE_ARCHIVE_SHA256="{{inputs.parameters.source-archive-sha256}}"
             printf '%s' "${SOURCE_ARCHIVE_SHA256}" | grep -Eq '^[0-9a-f]{64}$' \
               || { echo "ERROR: refusing to render without the signed source-archive checksum handoff" >&2; exit 1; }
+            SOURCE_ARCHIVE_NAME="source/pdftract-v${VERSION}.tar.gz"
+            SOURCE_ARCHIVE="/tmp/${SOURCE_ARCHIVE_NAME}"
+            cd /tmp
+            if [ "${DRY_RUN}" = "true" ]; then
+              # The dry-run workflow has no release artifact to pass. Recreate
+              # the same deterministic local handoff used by the verifier so
+              # the render step still exercises the archive/checksum binding.
+              mkdir -p "$(dirname "${SOURCE_ARCHIVE}")"
+              printf '%s\n' "pdftract Homebrew render fixture" > "${SOURCE_ARCHIVE}"
+              sha256sum "${SOURCE_ARCHIVE_NAME}" > /tmp/SHA256SUMS
+            fi
+            [ -s "${SOURCE_ARCHIVE}" ] \
+              || { echo "ERROR: render is missing the versioned release archive handoff for ${TAG}" >&2; exit 1; }
+            [ -s /tmp/SHA256SUMS ] \
+              || { echo "ERROR: render is missing the SHA256SUMS handoff for ${TAG}" >&2; exit 1; }
+            HANDOFF_SHA256="$(awk -v expected="${SOURCE_ARCHIVE_NAME}" '$2 == expected { print $1; found += 1 } END { if (found != 1) exit 1 }' /tmp/SHA256SUMS)" \
+              || { echo "ERROR: SHA256SUMS has no unique source archive checksum for ${TAG}" >&2; exit 1; }
+            [ "${HANDOFF_SHA256}" = "${SOURCE_ARCHIVE_SHA256}" ] \
+              || { echo "ERROR: render archive checksum does not match the verified SHA256SUMS handoff for ${TAG}" >&2; exit 1; }
             echo "=== Consuming signed source archive checksum handoff for ${TAG} ==="
 
             # The renderer and template ship in the tag's own tree (the

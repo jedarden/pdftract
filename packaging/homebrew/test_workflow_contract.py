@@ -166,6 +166,28 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
         self.assertIn("source-archive-sha256", self.homebrew)
         self.assertIn("{{tasks.verify-release-metadata.outputs.parameters.source-archive-sha256}}", self.homebrew)
         self.assertIn('SOURCE_ARCHIVE_SHA256="{{inputs.parameters.source-archive-sha256}}"', self.render)
+        self.assertIn(
+            "path: /tmp/source/pdftract-v{{workflow.parameters.version}}.tar.gz",
+            self.render,
+        )
+        self.assertIn("path: /tmp/SHA256SUMS", self.render)
+        self.assertIn(
+            'from: "{{inputs.artifacts.release-archive}}"',
+            self.homebrew.split("          - name: render-formula\n", 1)[1].split(
+                "          - name: push-tap\n", 1
+            )[0],
+        )
+        self.assertIn(
+            'from: "{{inputs.artifacts.sha256sums}}"',
+            self.homebrew.split("          - name: render-formula\n", 1)[1].split(
+                "          - name: push-tap\n", 1
+            )[0],
+        )
+        self.assertIn("HANDOFF_SHA256=", self.render)
+        self.assertIn(
+            'ERROR: render archive checksum does not match the verified SHA256SUMS handoff',
+            self.render,
+        )
         self.assertNotIn("curl -fsSL --retry 3 \"${ARCHIVE_URL}\"", self.render)
         self.assertNotIn("sha256sum /tmp/source.tar.gz", self.render)
         self.assertIn("python3 render_formula.py", self.render)
