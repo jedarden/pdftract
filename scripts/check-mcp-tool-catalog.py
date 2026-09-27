@@ -9,6 +9,19 @@ must remain successful JSON-RPC responses whose result has ``isError: true``;
 turning one into a top-level JSON-RPC error would break MCP clients that expect
 to inspect the call result.
 
+Beyond that generic smoke, every documented client configuration — the Claude
+Desktop and Cursor JSON snippets and the Continue YAML snippet in
+``docs/integrations/mcp-clients.md`` — is smoke-tested against its own stdio
+server. Each snippet's exact ``command``/``args`` vector is launched (the
+binary under test is substituted for the ``pdftract`` command name; resolving
+a name through ``PATH`` or an absolute path is client behavior, which the
+Claude Desktop absolute-path variant documents) and must complete the full
+connection lifecycle: initialize handshake, ``tools/list`` discovery against
+the catalog, a successful invocation, a missing-argument in-band failure, an
+unknown-tool ``-32601`` rejection, and a clean exit on stdin EOF. This is what
+catches a documentation edit that changes a snippet's arguments without the
+server contract following along.
+
 Set ``PDFTRACT_MCP_BIN`` to a prebuilt binary (and optionally include
 arguments) to avoid compiling. Otherwise the checker starts the workspace
 binary through Cargo. ``PDFTRACT_MCP_TIMEOUT`` controls the per-frame timeout
@@ -49,6 +62,19 @@ DOCUMENTED_ADVERTISED_NAMES = (
     "get_attachments",
     "classify",
 )
+
+# The stdio argument vector every documented client configuration must carry,
+# and the initialize handshake every MCP client performs after spawning.
+DEFAULT_STDIO_ARGS = ["mcp", "--stdio"]
+INITIALIZE_PARAMS: dict[str, Any] = {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {"name": "mcp-tool-contract-check", "version": "1"},
+}
+
+# Deliberately absent fixture: a schema-valid path whose document cannot be
+# opened, exercising the in-band failure clients see for bad documents.
+MISSING_DOCUMENT = "tests/fixtures/mcp-contract-missing.pdf"
 
 VALID_ARGUMENTS: dict[str, dict[str, Any]] = {
     "extract": {"path": "tests/fixtures/test-minimal.pdf"},
@@ -96,7 +122,8 @@ def _fenced_blocks(section: str, language: str) -> list[str]:
     return re.findall(pattern, section, flags=re.DOTALL)
 
 
-def _assert_stdio_config(config: Any, client: str, block_number: int) -> None:
+def _documented_server(config: Any, client: str, block_number: int) -> dict[str, Any]:
+    """Pull the pdftract server entry out of a parsed client configuration."""
     if not isinstance(config, dict):
         raise CheckFailure(
             f"{client} configuration block {block_number} is not an object"
@@ -110,8 +137,11 @@ def _assert_stdio_config(config: Any, client: str, block_number: int) -> None:
         raise CheckFailure(
             f"{client} configuration block {block_number} lacks mcp server pdftract"
         )
+    return servers["pdftract"]
 
-    server = servers["pdftract"]
+
+def _assert_stdio_config(config: Any, client: str, block_number: int) -> None:
+    server = _documented_server(config, client, block_number)
     command = server.get("command")
     if (
         not isinstance(command, str)
@@ -120,19 +150,87 @@ def _assert_stdio_config(config: Any, client: str, block_number: int) -> None:
         raise CheckFailure(
             f"{client} configuration block {block_number} does not launch pdftract"
         )
-    if server.get("args") != ["mcp", "--stdio"]:
+    if server.get("args") != DEFAULT_STDIO_ARGS:
         raise CheckFailure(
-            f"{client} configuration block {block_number} must use args ['mcp', '--stdio']"
+            f"{client} configuration block {block_number} "
+            f"must use args {DEFAULT_STDIO_ARGS}"
         )
 
 
-def validate_client_configurations() -> None:
-    """Validate the JSON/YAML snippets users are told to paste into clients."""
+def _parse_simple_yaml(block: str, source: str) -> dict[str, Any]:
+    """Parse the YAML subset the client guide uses: nested mappings and
+    sequences of scalars. Anything outside that subset is a documentation
+    contract failure rather than a parsing guess (CI has no PyYAML, and the
+    documented snippets are the contract being checked)."""
+    lines = [line for line in block.splitlines() if line.strip()]
+    root: dict[str, Any] = {}
+    stack: list[tuple[int, Any]] = [(-1, root)]
+    for index, raw_line in enumerate(lines):
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        line = raw_line.strip()
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+        container = stack[-1][1]
+
+        if line.startswith("- "):
+            if not isinstance(container, list):
+                raise CheckFailure(
+                    f"{source} YAML line {raw_line!r} is a sequence item "
+                    "inside a mapping"
+                )
+            container.append(line[2:].strip())
+            continue
+
+        match = re.fullmatch(r"([^:\s]+):\s*(.*)", line)
+        if not match:
+            raise CheckFailure(
+                f"{source} YAML line {raw_line!r} is not a supported mapping entry"
+            )
+        key, value = match.group(1), match.group(2).strip()
+        if value:
+            if not isinstance(container, dict):
+                raise CheckFailure(
+                    f"{source} YAML line {raw_line!r} puts a mapping key "
+                    "inside a sequence"
+                )
+            container[key] = value
+            continue
+
+        # Empty value: the nested container's type is decided by the next line.
+        next_indent = -1
+        next_line = ""
+        if index + 1 < len(lines):
+            next_raw = lines[index + 1]
+            next_indent = len(next_raw) - len(next_raw.lstrip(" "))
+            next_line = next_raw.strip()
+        child: Any = [] if next_indent > indent and next_line.startswith("- ") else {}
+        if not isinstance(container, dict):
+            raise CheckFailure(
+                f"{source} YAML line {raw_line!r} puts a mapping key inside a sequence"
+            )
+        container[key] = child
+        stack.append((indent, child))
+    return root
+
+
+@dataclass(frozen=True)
+class ClientConfig:
+    """One documented client snippet, reduced to its launch vector."""
+
+    client: str
+    label: str
+    command: str
+    args: list[str]
+
+
+def parse_client_configs() -> list[ClientConfig]:
+    """Parse and validate every client snippet users are told to paste."""
     try:
         markdown = CLIENT_GUIDE.read_text(encoding="utf-8")
     except OSError as error:
         raise CheckFailure(f"cannot read {CLIENT_GUIDE}: {error}") from error
 
+    configs: list[ClientConfig] = []
     for client in ("Claude Desktop", "Cursor"):
         blocks = _fenced_blocks(_client_section(markdown, client), "json")
         if not blocks:
@@ -145,31 +243,49 @@ def validate_client_configurations() -> None:
                     f"{client} configuration block {number} is invalid JSON: {error}"
                 ) from error
             _assert_stdio_config(config, client, number)
+            server = _documented_server(config, client, number)
+            configs.append(
+                ClientConfig(
+                    client=client,
+                    label=f"{client} block {number}",
+                    command=server["command"],
+                    args=list(server["args"]),
+                )
+            )
 
     continue_blocks = _fenced_blocks(_client_section(markdown, "Continue"), "yaml")
-    expected_continue = [
-        "mcpServers:",
-        "  pdftract:",
-        "    command: pdftract",
-        "    args:",
-        "      - mcp",
-        "      - --stdio",
-    ]
-    if continue_blocks != ["\n".join(expected_continue) + "\n"]:
+    if len(continue_blocks) != 1:
         raise CheckFailure(
-            "Continue configuration must contain the documented pdftract stdio block"
+            "Continue configuration must contain exactly one YAML block"
         )
+    parsed = _parse_simple_yaml(continue_blocks[0], "Continue")
+    _assert_stdio_config(parsed, "Continue", 1)
+    server = _documented_server(parsed, "Continue", 1)
+    configs.append(
+        ClientConfig(
+            client="Continue",
+            label="Continue block 1",
+            command=server["command"],
+            args=list(server["args"]),
+        )
+    )
+    return configs
 
-    print("MCP client configurations OK: Claude Desktop, Cursor, Continue")
 
+def server_argv(stdio_args: list[str]) -> list[str]:
+    """Full argv that launches the server binary with the given stdio args.
 
-def command() -> list[str]:
+    Every documented client configuration is launched through this with its
+    own snippet args, so a snippet edit reaches the wire even though
+    ``_assert_stdio_config`` pins the documented shape.
+    """
     configured = os.environ.get("PDFTRACT_MCP_BIN")
     if configured:
         parts = shlex.split(configured)
-        if "mcp" not in parts:
-            parts.extend(["mcp", "--stdio"])
-        return parts
+        # Replace a trailing generic stdio tail rather than stacking onto it.
+        if len(parts) >= 2 and parts[-2:] == DEFAULT_STDIO_ARGS:
+            parts = parts[:-2]
+        return [*parts, *stdio_args]
     return [
         "cargo",
         "run",
@@ -179,8 +295,7 @@ def command() -> list[str]:
         "--features",
         "mcp",
         "--",
-        "mcp",
-        "--stdio",
+        *stdio_args,
     ]
 
 
@@ -282,26 +397,48 @@ class FrameClient:
         self.stdin.write(body)
         self.stdin.flush()
 
-    def close(self) -> None:
+    def close(self, require_clean_exit: bool = False) -> None:
+        """Close stdin (the documented terminate step) and reap the process.
+
+        Every wait is bounded so a wedged server can never hang the checker.
+        With ``require_clean_exit`` the documented exit-on-EOF behavior is
+        asserted: the server must have exited on its own within the bound and
+        with status 0.
+        """
         self.selector.close()
         try:
             self.stdin.close()
         except OSError:
             pass
+        exited = False
         try:
             self.process.wait(timeout=5)
+            exited = True
         except subprocess.TimeoutExpired:
+            pass
+        if not exited:
             self.process.terminate()
             try:
                 self.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=5)
+        if require_clean_exit:
+            if not exited:
+                raise CheckFailure(
+                    "server did not exit within 5s of stdin EOF "
+                    "(documented terminate step broken)"
+                )
+            if self.process.returncode != 0:
+                raise CheckFailure(
+                    f"server exited with code {self.process.returncode} on "
+                    "stdin EOF (expected 0)"
+                )
 
 
-def start_client(timeout: float) -> FrameClient:
+def start_client(timeout: float, argv: list[str] | None = None) -> FrameClient:
     process = subprocess.Popen(
-        command(),
+        argv if argv is not None else server_argv(DEFAULT_STDIO_ARGS),
         cwd=ROOT,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -424,18 +561,78 @@ def assert_call_result(response: dict[str, Any], name: str, want_error: bool) ->
         raise CheckFailure(f"tools/call {name} result lacks content")
 
 
+def assert_initialize_result(result: dict[str, Any]) -> None:
+    """Assert the handshake fields clients inspect to show a connection."""
+    if result.get("protocolVersion") != "2024-11-05":
+        raise CheckFailure(
+            "initialize advertised protocolVersion "
+            f"{result.get('protocolVersion')!r}, expected '2024-11-05'"
+        )
+    capabilities = result.get("capabilities")
+    if not isinstance(capabilities, dict) or not isinstance(
+        capabilities.get("tools"), dict
+    ):
+        raise CheckFailure("initialize did not advertise a tools capability object")
+    server_info = result.get("serverInfo")
+    if (
+        not isinstance(server_info, dict)
+        or not isinstance(server_info.get("name"), str)
+        or not server_info["name"]
+    ):
+        raise CheckFailure("initialize did not return serverInfo with a name")
+
+
+def smoke_client_config(
+    config: ClientConfig, catalog_by_name: dict[str, dict[str, Any]], timeout: float
+) -> str:
+    """Smoke-test one documented client configuration end to end.
+
+    Launches the snippet's exact argument vector, then walks the documented
+    connection lifecycle: initialize, tools/list discovery against the
+    catalog, invocation behavior (success, in-band document failure,
+    unknown-tool rejection), and a clean exit on stdin EOF.
+    """
+    argv = server_argv(config.args)
+    client = start_client(timeout, argv)
+    try:
+        assert_initialize_result(
+            result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
+        )
+        client.notify("notifications/initialized")
+        compare_tools_list(
+            result_of(client.send("tools/list", {}), "tools/list"), catalog_by_name
+        )
+
+        good = client.send(
+            "tools/call",
+            {"name": "extract_text", "arguments": VALID_ARGUMENTS["extract_text"]},
+        )
+        assert_call_result(good, "extract_text", want_error=False)
+
+        missing = client.send(
+            "tools/call",
+            {"name": "extract_text", "arguments": {"path": MISSING_DOCUMENT}},
+        )
+        assert_call_result(missing, "extract_text", want_error=True)
+
+        unknown = client.send(
+            "tools/call",
+            {"name": "definitely_not_a_pdftract_tool", "arguments": {}},
+        )
+        error = unknown.get("error")
+        if not isinstance(error, dict) or error.get("code") != -32601:
+            raise CheckFailure(
+                f"unknown tool must be rejected with top-level -32601, got {error!r}"
+            )
+    except BaseException:
+        client.close()
+        raise
+    client.close(require_clean_exit=True)
+    return f"{Path(argv[0]).name} {' '.join(config.args)}"
+
+
 def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -> None:
-    result_of(
-        client.send(
-            "initialize",
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "mcp-tool-contract-check", "version": "1"},
-            },
-        ),
-        "initialize",
-    )
+    result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
     client.notify("notifications/initialized")
     catalog_result = result_of(client.send("tools/list", {}), "tools/list")
     compare_tools_list(catalog_result, catalog_by_name)
@@ -456,7 +653,7 @@ def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -
         invalid_calls += 1
 
         document_args = dict(arguments)
-        document_args["path"] = "tests/fixtures/mcp-contract-missing.pdf"
+        document_args["path"] = MISSING_DOCUMENT
         document_failure = client.send(
             "tools/call", {"name": name, "arguments": document_args}
         )
@@ -475,16 +672,25 @@ def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -
 
 def main() -> int:
     try:
-        validate_client_configurations()
+        configs = parse_client_configs()
         _, catalog_by_name = load_catalog()
         timeout = float(os.environ.get("PDFTRACT_MCP_TIMEOUT", DEFAULT_TIMEOUT))
         if timeout <= 0:
             fail("PDFTRACT_MCP_TIMEOUT must be positive")
+
         client = start_client(timeout)
         try:
             run_smoke(client, catalog_by_name)
         finally:
             client.close()
+
+        for config in configs:
+            vector = smoke_client_config(config, catalog_by_name, timeout)
+            print(f"MCP client config smoke OK: {config.label} [{vector}]")
+        print(
+            f"MCP client configuration interop OK: {len(configs)} documented "
+            f"configurations ({', '.join(dict.fromkeys(c.client for c in configs))})"
+        )
     except (CheckFailure, OSError, ValueError) as error:
         fail(str(error))
     return 0

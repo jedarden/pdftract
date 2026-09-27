@@ -33,10 +33,18 @@ implementation is genuinely incomplete; such an entry may return
 
 Every client should discover tools with `tools/list` after connecting and use
 the returned names rather than assuming that a client-specific prefix or a
-future catalog entry is available. The same check parses the Claude Desktop,
-Cursor, and Continue snippets below and verifies their documented stdio
-command and arguments. To check the configurations and the actual wire
-response, run:
+future catalog entry is available. The automated check parses the Claude
+Desktop, Cursor, and Continue snippets below, verifies their documented stdio
+command and arguments, and then smoke-tests each configuration against the
+stdio server: one server is launched per snippet using that snippet's exact
+`command` and `args`, and the run must complete the documented connection
+lifecycle — initialize handshake, `tools/list` discovery against the catalog,
+a successful invocation, an in-band missing-document failure, an unknown-tool
+`-32601` rejection, and a clean exit on stdin EOF. The binary under test is
+substituted for the snippet's `pdftract` command name, since resolving a name
+through `PATH` or an absolute path is client behavior; the snippet's
+arguments are what the configuration controls, and they are launched verbatim.
+To check the configurations and the actual wire response, run:
 
 ```bash
 scripts/check-mcp-tool-catalog.py
@@ -243,7 +251,7 @@ if __name__ == "__main__":
 - **Tool failures:** implemented tools report document-specific failures in-band with `isError: true`; clients should not treat an error result as an empty extraction
 - **Resilience:** None of the above kill the server — every error response still echoes the request `id`, the server keeps serving valid requests afterwards, and it still exits cleanly on stdin EOF. Only a genuinely broken pipe or a dead subprocess requires restarting.
 
-These behaviors are asserted end-to-end by the `mcp-client-lifecycle` integration test (`crates/pdftract-cli/tests/mcp-client-lifecycle.rs`).
+These behaviors are asserted end-to-end by the `mcp-client-lifecycle` integration test (`crates/pdftract-cli/tests/mcp-client-lifecycle.rs`); `scripts/check-mcp-tool-catalog.py` exercises the same lifecycle once per documented client configuration (Claude Desktop, Cursor, Continue).
 
 For the complete subprocess contract, see [`docs/notes/sdk-invocation.md`](../notes/sdk-invocation.md).
 

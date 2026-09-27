@@ -32,12 +32,16 @@ download-grep-corpus:
 	@echo "Generating grep-corpus ($(COUNT) PDFs)..."
 	@bash scripts/download-grep-corpus.sh $(COUNT)
 
-# Build the real MCP server before checking its wire contract. This keeps the
-# checker's per-frame timeout focused on protocol startup instead of a cold
-# Cargo compilation. PDFTRACT_MCP_BIN may point at a prebuilt binary.
+# Build the real MCP server before checking its wire contract, then point the
+# checker at that binary: the checker launches one server per documented
+# client configuration, so going through `cargo run` per spawn would multiply
+# build latency into the per-frame timeout. PDFTRACT_MCP_BIN may point at a
+# prebuilt binary.
 mcp-verify:
 	cargo build --locked --package pdftract-cli --bin pdftract --features mcp
-	python3 scripts/check-mcp-tool-catalog.py
+	PDFTRACT_MCP_BIN="$$(cargo metadata --format-version 1 --no-deps \
+	  | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')/debug/pdftract" \
+	  python3 scripts/check-mcp-tool-catalog.py
 
 # Verify every README capability/release marker against tracked evidence and
 # the checkpoint state of any bead that keeps a claim in progress.
