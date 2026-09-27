@@ -823,7 +823,7 @@
           "type": "string"
         },
         "hint": {
-          "description": "Optional hint for resolving the diagnostic (e.g., \"Install Tesseract for OCR recovery\").",
+          "description": "Optional hint for resolving the diagnostic (e.g., \"Install Tesseract for OCR recovery\").\nMissing and explicit `null` input both deserialize to `None`.",
           "type": [
             "string",
             "null"
@@ -838,14 +838,14 @@
               "type": "null"
             }
           ],
-          "description": "PDF object reference where the issue originated, if applicable."
+          "description": "PDF object reference where the issue originated, if applicable.\nMissing and explicit `null` input both deserialize to `None`."
         },
         "message": {
           "description": "Human-readable description of the diagnostic.",
           "type": "string"
         },
         "page_index": {
-          "description": "Zero-based page index where this diagnostic occurred; omitted (not\nserialized as `null`) for document-level events.",
+          "description": "Zero-based page index where this diagnostic occurred; omitted (not\nserialized as `null`) for document-level events. Missing and explicit\n`null` input both deserialize to `None`.",
           "format": "uint",
           "minimum": 0,
           "type": [
