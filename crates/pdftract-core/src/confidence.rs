@@ -36,10 +36,6 @@
 //! original resolution from the PDF. OCR is never affected by corrections.
 
 use crate::font::resolver::UnicodeSource;
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// The source of confidence for an extracted text span.
 ///
 /// This enum provides a stable, three-variant taxonomy for categorizing

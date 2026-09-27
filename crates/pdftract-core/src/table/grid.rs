@@ -3,10 +3,6 @@
 //! A GridCandidate represents a potential table reconstructed from
 //! horizontal and vertical ruling lines.
 
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// Epsilon tolerance for floating point comparison.
 const EPSILON: f32 = 0.1;
 

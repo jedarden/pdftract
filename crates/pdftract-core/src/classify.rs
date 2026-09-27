@@ -26,9 +26,6 @@
 //! 5. If no signal voted, default to Vector with confidence 0.5
 
 use crate::diagnostics::{DiagCode, Diagnostic};
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 /// Comprehensive error type for page classification failures.

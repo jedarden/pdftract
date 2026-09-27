@@ -28,10 +28,6 @@ pub mod verifier;
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// A visual citation receipt for extracted text.
 ///
 /// Receipts provide cryptographic proof that a piece of extracted text

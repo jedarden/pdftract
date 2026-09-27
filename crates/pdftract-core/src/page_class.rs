@@ -18,9 +18,6 @@
 //! `BrokenVector`). This internal representation is distinct from the `page_type`
 //! strings emitted in JSON output (see Phase 5.1.1 page_type mapping table).
 
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 /// Classification result for a single page, combining the class with confidence

@@ -7,9 +7,6 @@
 //! `group_lines_into_blocks` function that applies 5 ordered heuristics
 //! to group lines into semantic blocks.
 
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use unicode_bidi::{bidi_class, BidiClass};
 
 /// Text direction for a line.

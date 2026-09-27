@@ -3,10 +3,6 @@
 //! Segments are extracted from PDF path operators (m, l, re) terminated
 //! by stroke (S/s) or fill (f/F/B/B*) operators.
 
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// A path segment in PDF user space.
 ///
 /// Segments are axis-aligned (horizontal or vertical) and represent

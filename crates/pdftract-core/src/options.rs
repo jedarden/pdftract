@@ -6,10 +6,6 @@
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 use secrecy::SecretString;
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// Receipt generation mode.
 ///
 /// Controls whether visual citation receipts are generated during extraction.

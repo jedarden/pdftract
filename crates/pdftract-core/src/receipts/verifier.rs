@@ -15,9 +15,6 @@
 //! - 1: extraction failed (PDF unreadable, encrypted without password, etc.)
 
 use crate::receipts::Receipt;
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 

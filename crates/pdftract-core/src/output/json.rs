@@ -23,14 +23,8 @@
 
 use crate::extract::ExtractionResult;
 use crate::schema::{
-    BlockJson, CellJson, DiagnosticJson, DocumentMetadata, ExtractionQuality, FormFieldJson,
-    JavascriptActionJson, LinkJson, Output, OutlineNode, PageJson, RowJson, SignatureJson,
-    SpanJson, TableJson, ThreadJson, AttachmentJson, AnnotationJson,
+    DiagnosticJson, DocumentMetadata, ExtractionQuality, Output, PageJson, TableJson,
 };
-use crate::parser::outline::{Outline, DestAnchor};
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde_json::{json, Value};
 
 /// Convert an `ExtractionResult` to the full JSON `Output` schema.
 ///

@@ -9,8 +9,6 @@
 use crate::schema::{BlockJson, ExtractionQuality, SpanJson, TableJson};
 // serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
 use serde_json::Value;
 use std::io::Write;
 

@@ -7,10 +7,6 @@
 //! - Spans not contained in any cell become orphans
 //! - Within each cell, sort spans by (round(y0/2), x0) for reading order
 
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// Y-bucket size for span ordering within cells (2 pt).
 ///
 /// Spans with y-coordinates within 2 pt of each other are considered

@@ -25,9 +25,6 @@ use crate::parser::xref::{
 use crate::receipts::verifier::SpanData;
 use crate::source::FileSource;
 use anyhow::{anyhow, Context, Result};
-// serde is an optional capability: JSON call sites gate on the feature so `--no-default-features` (the wasm32 library edge) compiles (pdftract-c1fceb36).
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
