@@ -50,12 +50,18 @@ class RenderFormulaContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             inputs_path = Path(temp_dir) / "release.json"
             output_path = Path(temp_dir) / "Formula" / "pdftract.rb"
+            second_output_path = Path(temp_dir) / "Formula" / "pdftract-second.rb"
             inputs_path.write_text(json.dumps(release_inputs()), encoding="utf-8")
 
             result = self.run_renderer("--inputs", str(inputs_path), "--output", str(output_path))
+            second_result = self.run_renderer(
+                "--inputs", str(inputs_path), "--output", str(second_output_path)
+            )
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(second_result.returncode, 0, second_result.stderr)
             formula = output_path.read_text(encoding="utf-8")
+            self.assertEqual(formula, second_output_path.read_text(encoding="utf-8"))
             self.assertNotIn("<VERSION>", formula)
             self.assertNotIn("<SHA256>", formula)
             self.assertIn(f'url "{release_inputs()["SOURCE_ARCHIVE_URL"]}"', formula)

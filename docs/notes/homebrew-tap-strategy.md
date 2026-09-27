@@ -22,7 +22,7 @@ mechanical; deviations must reopen this note, not silently fork the strategy.
 | Formula source in this repo | `packaging/homebrew/pdftract.rb.template` (authored by pdftract-2ba6e643, rendered by the cascade) |
 | Formula kind | **Build-from-source** from the versioned-tag source archive; `depends_on "rust"` |
 | Formula `url` | `https://github.com/jedarden/pdftract/archive/refs/tags/v<VERSION>.tar.gz` |
-| Formula `sha256` | sha256 of the exact bytes the `url` serves, computed by the render leg at render time (see §5) |
+| Formula `sha256` | sha256 of the exact bytes the `url` serves, handed from the signed release `SHA256SUMS` (see §5) |
 | Version policy | Versioned `vX.Y.Z` release tags only; **`:latest`, bare SHAs, branch names, and rc tags are rejected** (§6) |
 | homebrew-core | Deferred until the notability criteria are met (§3); tap ships now |
 | User install command | `brew install jedarden/tap/pdftract` |
@@ -178,15 +178,12 @@ Homebrew's `bin` — the exact template is pdftract-2ba6e643's deliverable
   new release asset, and the mirror repo is **public** (verified 2026-09-14 via
   `gh repo view jedarden/pdftract` → `PUBLIC`), so unauthenticated brew clients can
   download it.
-- **`sha256` source:** the render leg (pdftract-da3c85cd) downloads the `url` once at
-  render time and hashes those exact bytes; the formula checksum is therefore
-  verifiably the checksum of what brew will download. The aggregate `SHA256SUMS`
-  published by `pdftract-github-release` (pdftract-2x7y) covers the *built* artifacts
-  (10 binary archives, wheels, sdist, SBOM) and is cosign-signed as a unit
-  (`SHA256SUMS.sig`) — it must **not** be appended-to after signing, so the source
-  archive checksum deliberately lives outside it. The render leg MAY cross-check its
-  computed hash against a `SHA256SUMS` line for the same asset if one ever exists,
-  but no step may modify a published `SHA256SUMS`.
+- **`sha256` source:** the release leg downloads the canonical `url` once and
+  records its digest in the signed aggregate as
+  `source/pdftract-vX.Y.Z.tar.gz`. The Homebrew render leg extracts that exact
+  handoff and does not independently download or hash the archive. The
+  aggregate remains immutable after signing; no Homebrew step appends to or
+  rewrites it.
 - **Platform coverage:** source build works wherever a rust toolchain installs via
   Homebrew (macOS x86_64/aarch64, Linux x86_64/aarch64). No Windows formula —
   Homebrew does not distribute Windows binaries.
@@ -209,18 +206,16 @@ canonical URLs are:
 |---|---|
 | Release tag | `vX.Y.Z`, where `X.Y.Z` is non-prerelease semver; the tag must resolve to the release commit and must not be rewritten. |
 | Formula version | `X.Y.Z` — the tag with its leading `v` removed. |
-| Source archive | `https://github.com/jedarden/pdftract/archive/refs/tags/vX.Y.Z.tar.gz`; the generator downloads these exact bytes and computes the formula's 64-hex `<SHA256>`. |
+| Source archive | `https://github.com/jedarden/pdftract/archive/refs/tags/vX.Y.Z.tar.gz`; the release leg records the exact bytes' digest as `source/pdftract-vX.Y.Z.tar.gz` in signed `SHA256SUMS`, and the generator consumes that 64-hex handoff. |
 | Aggregate checksums | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS`; consume the file as published, with no append or rewrite. |
 | Checksum signature | `https://github.com/jedarden/pdftract/releases/download/vX.Y.Z/SHA256SUMS.sig` and the matching `SHA256SUMS.pem`; verify these against the downloaded `SHA256SUMS` before accepting the release metadata. |
 | Formula source | `packaging/homebrew/pdftract.rb.template` from the same `vX.Y.Z` tag. |
 
-`SHA256SUMS` is the release-integrity input, not the source of the formula's
-`sha256`: the current release contract lists the built binary archives, Python
-wheels/sdist, and CycloneDX SBOM in that aggregate, while GitHub's generated tag
-archive is not an attached release asset. Therefore the generator must not look
-for or invent a source-archive line in `SHA256SUMS`, and must never alter the
-signed file to add one. If the release is missing `SHA256SUMS`, its signature or
-certificate, or the required checksum verification fails, formula generation
+`SHA256SUMS` is both the release-integrity input and the source of the formula's
+`sha256` handoff. The release producer adds the canonical source archive line
+before signing; the Homebrew leg must not invent, append, or rewrite it. If the
+release is missing `SHA256SUMS`, its signature or certificate, the unique source
+archive line, or the required checksum verification fails, formula generation
 stops.
 
 The handoff to the formula-rendering child is the resolved tuple
@@ -296,8 +291,8 @@ Checked 2026-09-14; owners in parentheses.
    (pdftract-2x7y; template in-tree at `.ci/argo-workflows/pdftract-github-release.yaml`
    — confirm it is ArgoCD-synced via the credential-free kubectl endpoint before
    relying on it: `kubectl --server=http://traefik-iad-ci:8001 get workflowtemplates
-   -n argo-workflows`). Per §5 the formula's sha256 comes from hashing the tag
-   archive itself; `SHA256SUMS` is the built-artifact verification surface and is not
+   -n argo-workflows`). Per §5 the release producer's signed `SHA256SUMS`
+   source-archive line supplies the formula's sha256; the aggregate is not
    modified post-signature. (pdftract-da3c85cd)
 3. **Tap push credential — OpenBao path reference, never a literal:**
    `secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token` on the

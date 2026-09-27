@@ -36,13 +36,14 @@ The JSON input is an object with exactly these required release fields:
 }
 ```
 
-The caller owns downloading the exact `SOURCE_ARCHIVE_URL` bytes and verifying
-the signed `SHA256SUMS` inputs. The renderer binds the supplied archive digest
-to the formula's `sha256`; it never appends a source-archive line to, or
-rewrites, the signed aggregate checksum file. It rejects prerelease tags,
-branches, rolling refs, bare commit SHAs, mismatched version/archive URLs, and
-incomplete placeholders. If `ruby` is installed it runs `ruby -c` on both the
-template and rendered formula; otherwise it continues with an explicit warning.
+The caller owns verifying the signed `SHA256SUMS` inputs and extracting the
+`source/pdftract-vX.Y.Z.tar.gz` checksum handoff produced by the release leg.
+The renderer binds that supplied digest to the formula's `sha256`; it never
+downloads or re-hashes an archive and never appends to or rewrites the signed
+aggregate checksum file. It rejects prerelease tags, branches, rolling refs,
+bare commit SHAs, mismatched version/archive URLs, and incomplete placeholders.
+If `ruby` is installed it runs `ruby -c` on both the template and rendered
+formula; otherwise it continues with an explicit warning.
 
 Strategy and rationale: `docs/notes/homebrew-tap-strategy.md` (decision record,
 bead pdftract-8f4e91aa). This directory was authored by pdftract-2ba6e643; the
@@ -59,7 +60,7 @@ and retry behavior.
 | Placeholder | Meaning | Filled from |
 |---|---|---|
 | `<VERSION>` | The release version as plain semver — no leading `v`, no prerelease suffix (rc tags are never rendered). Appears twice: in the `url` and the `version` line. | The versioned release tag `vX.Y.Z` the cascade is publishing. |
-| `<SHA256>` | sha256 of the exact bytes the `url` serves — the tag's source archive on the GitHub mirror. | Computed by the render leg at render time: download the `url` once and hash the downloaded bytes. Not copied from the release's aggregate `SHA256SUMS` — that file covers the *built* artifacts and is cosign-signed as a unit, so the source-archive hash deliberately lives outside it (strategy §5). The render leg MAY cross-check its computed hash against a `SHA256SUMS` line for the same asset if one ever exists, but no step may modify a published `SHA256SUMS`. |
+| `<SHA256>` | sha256 of the exact bytes the `url` serves — the tag's source archive on the GitHub mirror. | Extracted from the signed release `SHA256SUMS` line `source/pdftract-vX.Y.Z.tar.gz`; the release leg hashes the canonical archive once and the Homebrew render leg consumes that handoff without re-downloading it. |
 
 Substitution of `<VERSION>` must be global (it occurs in both the `url` and the
 `version` line); `<SHA256>` must always describe the exact bytes brew will

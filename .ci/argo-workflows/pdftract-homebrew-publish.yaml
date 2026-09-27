@@ -10,9 +10,9 @@
 # - verify-release-metadata consumes the release's published SHA256SUMS
 #   aggregate -- downloaded as published with its cosign signature and
 #   certificate, verified against the iad-ci OIDC identity before any
-#   formula work is accepted (strategy §5 handoff: "If the release is
-#   missing SHA256SUMS, its signature or certificate, or the required
-#   checksum verification fails, formula generation stops").
+#   formula work is accepted. It extracts the signed checksum handoff for
+#   the canonical source archive; the render leg never downloads or
+#   re-hashes that archive.
 # - render-formula resolves the release tuple and renders
 #   Formula/pdftract.rb through packaging/homebrew/render_formula.py --
 #   the deterministic renderer authored by pdftract-fb684d69 -- taken
@@ -22,11 +22,10 @@
 #   canonical release-tuple URLs, prerelease/floating-ref rejection,
 #   placeholder completeness, exactly-one url/version/sha256 binding,
 #   forbidden refs, bare-SHA detection, and `ruby -c` on both the
-#   template and the rendered formula. The formula's sha256 is the hash
-#   of the exact bytes the formula url serves (the tag's source
-#   archive, downloaded once here) -- never a value copied from or
-#   appended to SHA256SUMS, which is cosign-signed as a unit and is
-#   never rewritten by this leg.
+#   template and the rendered formula. The formula's sha256 is the signed
+#   checksum handoff for the exact bytes the formula url serves (the tag's
+#   source archive, hashed once by the release producer) -- never a value
+#   recomputed or copied from a floating artifact.
 # - push-tap commits the rendered formula to the Forgejo tap
 #   (git.ardenone.com/jedarden/homebrew-tap, source of truth) and
 #   pushes ONLY to that origin; GitHub hosts the read-only push mirror
@@ -55,7 +54,7 @@
 # In a dry run the verify-release-metadata step logs an explicit SKIP
 # (a fake tag has no release to verify -- it never claims "verified"),
 # render-formula still runs the real renderer from the repo's default
-# branch against a stub archive, and push-tap/wait-for-mirror/brew-verify
+# branch against a deterministic checksum fixture, and push-tap/wait-for-mirror/brew-verify
 # are omitted entirely -- so the push credential is never even mounted
 # and nothing reaches any tap.
 #
@@ -196,7 +195,7 @@ spec:
         description: "Version from the tag, no leading v (X.Y.Z)"
       - name: dry_run
         value: "false"
-        description: "'true' renders against a stub archive and stops before any push -- no credential needed"
+        description: "'true' renders against a deterministic checksum fixture and stops before any push -- no credential needed"
       - name: brew-image
         value: homebrew/brew:4.6.20
         description: "Pinned Homebrew image (semver tag, never a floating ref) used for install verification"
@@ -229,6 +228,10 @@ spec:
             template: render-formula
             dependencies: [versioned-tag-gate, verify-release-metadata]
             when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true"
+            arguments:
+              parameters:
+                - name: source-archive-sha256
+                  value: "{{tasks.verify-release-metadata.outputs.parameters.source-archive-sha256}}"
 
           - name: push-tap
             template: push-tap
@@ -300,17 +303,17 @@ spec:
     # Strategy §5 handoff: the leg consumes the release's published
     # SHA256SUMS as-is, together with its cosign signature
     # (SHA256SUMS.sig) and signing certificate (SHA256SUMS.pem), and
-    # verifies them BEFORE accepting the release metadata. A release
-    # missing any of the three assets, or whose verification fails,
+    # verifies them BEFORE accepting the release metadata. The release
+    # producer includes the canonical source archive's checksum in the
+    # signed aggregate. A release missing any of the three assets, the
+    # source-archive checksum line, or whose verification fails,
     # stops formula generation here (fail closed) -- the tap is never
     # updated from an unverified release.
     #
-    # The aggregate is never rewritten and never appended to: the tag
-    # source archive GitHub serves is not an attached release asset, so
-    # SHA256SUMS deliberately has no line for it. The formula's sha256
-    # is computed separately (render-formula) from the archive bytes;
-    # this step only establishes that the release's own integrity
-    # metadata is the one iad-ci signed.
+    # The aggregate is never rewritten or appended to by this leg. The
+    # release producer hashes the exact canonical tag archive once while
+    # assembling the signed aggregate, and this leg consumes that signed
+    # source-archive line as the formula's sha256 handoff.
     #
     # One alpine container fetches the three assets, sanity-checks them,
     # and verifies the signature with cosign from alpine 3.19's frozen
@@ -329,8 +332,9 @@ spec:
     # which is the documented trade-off).
     #
     # In a dry run there is no real release to verify: the step logs an
-    # explicit SKIP and succeeds without downloading anything. It never
-    # logs "verified" for a dry run.
+    # explicit SKIP and supplies a deterministic fixture checksum to the
+    # renderer without downloading anything. It never logs "verified" for
+    # a dry run.
     #
     # Retry: limit 2 (3 attempts) -- failures here are dominated by
     # transient release-asset fetches; nothing has been published yet,
@@ -357,10 +361,12 @@ spec:
             IDENTITY_REGEXP="{{workflow.parameters.sums-identity-regexp}}"
             OIDC_ISSUER="{{workflow.parameters.sums-oidc-issuer}}"
             BASE="https://github.com/${REPO}/releases/download/${TAG}"
+            SOURCE_ARCHIVE_NAME="source/pdftract-v${TAG#v}.tar.gz"
             cd /tmp
 
             if [ "${DRY_RUN}" = "true" ]; then
               echo "=== DRY RUN: release-metadata verification SKIPPED -- tag ${TAG} is a stub with no release to verify ==="
+              echo "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" > /tmp/source-archive-sha256
               exit 0
             fi
 
@@ -391,7 +397,18 @@ spec:
               SHA256SUMS \
               || { echo "ERROR: SHA256SUMS for ${TAG} failed signature/identity verification -- refusing to publish (strategy §5 handoff)" >&2; exit 1; }
 
+            SOURCE_ARCHIVE_SHA256="$(awk -v expected="${SOURCE_ARCHIVE_NAME}" '$2 == expected { print $1; found += 1 } END { if (found != 1) exit 1 }' SHA256SUMS)" \
+              || { echo "ERROR: signed SHA256SUMS has no unique checksum for ${SOURCE_ARCHIVE_NAME}" >&2; exit 1; }
+            printf '%s' "${SOURCE_ARCHIVE_SHA256}" | grep -Eq '^[0-9a-f]{64}$' \
+              || { echo "ERROR: source archive checksum handoff is not lowercase SHA-256" >&2; exit 1; }
+            printf '%s' "${SOURCE_ARCHIVE_SHA256}" > /tmp/source-archive-sha256
+            echo "=== Source archive checksum handoff accepted for ${SOURCE_ARCHIVE_NAME} ==="
             echo "=== Release metadata VERIFIED: signed SHA256SUMS accepted for ${TAG} ($(wc -l < SHA256SUMS) checksum lines) ==="
+        outputs:
+          parameters:
+            - name: source-archive-sha256
+              valueFrom:
+                path: /tmp/source-archive-sha256
         resources:
           requests:
             cpu: 100m
@@ -410,10 +427,10 @@ spec:
     # landed fails closed here.
     #
     # Inputs to the renderer (packaging/homebrew/README.md contract):
-    # the seven-field immutable release tuple. The leg downloads the
-    # exact SOURCE_ARCHIVE_URL bytes once and hashes them for
-    # SOURCE_ARCHIVE_SHA256 -- the formula's sha256 always describes
-    # what brew will download, never a recomputed or floating artifact.
+    # the seven-field immutable release tuple. The source-archive digest
+    # comes from the signed SHA256SUMS handoff produced upstream -- the
+    # formula's sha256 always describes what brew will download, never a
+    # recomputed or floating artifact.
     # The SHA256SUMS_* URLs are the canonical release URLs; the
     # renderer re-validates every field's canonical form.
     #
@@ -422,8 +439,8 @@ spec:
     # ruby -c on template and output) and exits nonzero on any
     # violation -- a formula that fails validation never reaches the
     # push step. That validation is the dry-run "prove before push"
-    # path: in dry_run the same renderer runs against a stub archive
-    # with the real template from the default branch.
+    # path: in dry_run the same renderer runs against a deterministic
+    # checksum fixture with the real template from the default branch.
     #
     # The rendered formula is handed to push-tap as a base64 parameter,
     # not an artifact: iad-ci has no artifact repository, and an
@@ -433,6 +450,9 @@ spec:
     # Retry: limit 1 (2 attempts) -- transient clone/download failures
     # only; rendering is deterministic and nothing is published yet.
     - name: render-formula
+      inputs:
+        parameters:
+          - name: source-archive-sha256
       activeDeadlineSeconds: 600
       retryStrategy:
         limit: "1"
@@ -446,7 +466,7 @@ spec:
         args:
           - |
             set -eu
-            apk add --no-cache python3 git curl ruby
+            apk add --no-cache python3 git ruby
 
             REPO="{{workflow.parameters.repo}}"
             TAG="{{workflow.parameters.tag}}"
@@ -465,22 +485,10 @@ spec:
             # render_formula.py rejects any other form.
             ARCHIVE_URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
             SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
-
-            if [ "${DRY_RUN}" = "true" ]; then
-              echo "=== DRY RUN: stubbing the source archive for ${TAG} (no fetch) ==="
-              printf 'pdftract dry-run source-archive stub for tag %s\n' "${TAG}" > /tmp/source.tar.gz
-              printf '(stub archive; real runs hash the bytes %s serves)\n' "${ARCHIVE_URL}" >> /tmp/source.tar.gz
-            else
-              echo "=== Downloading ${ARCHIVE_URL} ==="
-              curl -fsSL --retry 3 "${ARCHIVE_URL}" -o /tmp/source.tar.gz \
-                || { echo "ERROR: tag source archive ${ARCHIVE_URL} did not resolve (is the tag pushed and mirrored?)" >&2; exit 1; }
-              gzip -t /tmp/source.tar.gz \
-                || { echo "ERROR: ${ARCHIVE_URL} did not serve a gzip archive" >&2; exit 1; }
-            fi
-            [ "$(wc -c < /tmp/source.tar.gz)" -gt 32 ] \
-              || { echo "ERROR: archive is implausibly small" >&2; exit 1; }
-            SHA256="$(sha256sum /tmp/source.tar.gz | awk '{print $1}')"
-            echo "=== source archive sha256: ${SHA256} ==="
+            SOURCE_ARCHIVE_SHA256="{{inputs.parameters.source-archive-sha256}}"
+            printf '%s' "${SOURCE_ARCHIVE_SHA256}" | grep -Eq '^[0-9a-f]{64}$' \
+              || { echo "ERROR: refusing to render without the signed source-archive checksum handoff" >&2; exit 1; }
+            echo "=== Consuming signed source archive checksum handoff for ${TAG} ==="
 
             # The renderer and template ship in the tag's own tree (the
             # tag carries the formula contract it was released with) --
@@ -507,7 +515,7 @@ spec:
               "RELEASE_TAG": "${TAG}",
               "VERSION": "${VERSION}",
               "SOURCE_ARCHIVE_URL": "${ARCHIVE_URL}",
-              "SOURCE_ARCHIVE_SHA256": "${SHA256}",
+              "SOURCE_ARCHIVE_SHA256": "${SOURCE_ARCHIVE_SHA256}",
               "SHA256SUMS_URL": "${SUMS_URL}",
               "SHA256SUMS_SIG_URL": "${SUMS_URL}.sig",
               "SHA256SUMS_PEM_URL": "${SUMS_URL}.pem"

@@ -9,6 +9,7 @@
 # Artifacts attached to the release:
 # - 10 binary archives (5 triples × 2 feature variants)
 # - 5 Python wheels + 1 sdist
+# - canonical tag source archive checksum handoff in SHA256SUMS
 # - SHA256SUMS (aggregate checksum)
 # - SHA256SUMS.sig (cosign signature)
 # - multiple.intoto.jsonl (SLSA L3 provenance)
@@ -668,9 +669,26 @@ spec:
         args:
           - |
             set -e
-            apk add --no-cache coreutils
+            apk add --no-cache coreutils curl gzip
 
             cd /artifacts
+
+            TAG="{{workflow.parameters.tag}}"
+            VERSION="{{workflow.parameters.version}}"
+            REPO="{{workflow.parameters.repo}}"
+            SOURCE_ARCHIVE="source/pdftract-v${VERSION}.tar.gz"
+            SOURCE_ARCHIVE_URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+
+            # Resolve the exact immutable tag archive once in the release
+            # producer. Its digest becomes part of the signed SHA256SUMS
+            # handoff consumed by the Homebrew render leg; that leg never
+            # downloads or re-hashes the archive independently.
+            mkdir -p source
+            echo "=== Fetching canonical source archive ${SOURCE_ARCHIVE_URL} ==="
+            curl -fsSL --retry 3 "${SOURCE_ARCHIVE_URL}" -o "${SOURCE_ARCHIVE}" \
+              || { echo "ERROR: canonical source archive did not resolve for ${TAG}" >&2; exit 1; }
+            gzip -t "${SOURCE_ARCHIVE}" \
+              || { echo "ERROR: canonical source archive is not a gzip stream" >&2; exit 1; }
 
             echo "=== Generating SHA256SUMS for pdftract {{workflow.parameters.tag}} ==="
 
@@ -712,6 +730,11 @@ spec:
                 sha256sum "$file" >> SHA256SUMS
               fi
             done
+
+            # The source archive is the Homebrew formula's canonical input.
+            # Keep its path stable so the signed handoff can be extracted
+            # without guessing among release artifacts.
+            sha256sum "${SOURCE_ARCHIVE}" >> SHA256SUMS
 
             # Sort deterministically by filename (field 2) for reproducibility
             # LC_ALL=C ensures byte-level sorting consistency across locales
@@ -924,7 +947,7 @@ spec:
             print(f"Subjects: {len(provenance['subject'])}")
             print(f"Builder ID: {builder['id']}")
             print(f"Build Type: {build_def['buildType']}")
-EOF
+            EOF
 
             echo "=== Finding a binary archive to verify ==="
             # Find one binary archive to verify (prefer x86_64-unknown-linux-musl)
@@ -941,44 +964,6 @@ EOF
           limits:
             cpu: 1000m
             memory: 2Gi
-            ARCHIVE_FILE=""
-            if [ -f "/artifacts/binaries/pdftract-v${VERSION}-x86_64-unknown-linux-musl.tar.gz" ]; then
-              ARCHIVE_FILE="/artifacts/binaries/pdftract-v${VERSION}-x86_64-unknown-linux-musl.tar.gz"
-            elif [ -f "/artifacts/binaries/pdftract-full-v${VERSION}-x86_64-unknown-linux-musl.tar.gz" ]; then
-              ARCHIVE_FILE="/artifacts/binaries/pdftract-full-v${VERSION}-x86_64-unknown-linux-musl.tar.gz"
-            else
-              # Find any tar.gz or zip file
-              ARCHIVE_FILE=$(find /artifacts/binaries -type f \( -name "*.tar.gz" -o -name "*.zip" \) | head -1 || echo "")
-            fi
-
-            if [ -z "${ARCHIVE_FILE}" ]; then
-              echo "WARNING: No binary archive found for verification"
-              echo "Skipping slsa-verifier test (structure validated above)"
-              exit 0
-            fi
-
-            echo "=== Verifying artifact with slsa-verifier ==="
-            echo "Archive: ${ARCHIVE_FILE}"
-            echo "Provenance: ${PROVENANCE_FILE}"
-            echo "Source URI: github.com/${REPO}"
-            echo "Source Tag: ${TAG}"
-
-            # Run slsa-verifier verify-artifact
-            # Note: Full cryptographic verification requires the provenance to be signed
-            # For now, we verify the structure and that the provenance matches the artifact
-            # The --provenance-path option validates the predicate structure
-            slsa-verifier verify-artifact \
-              --provenance-path "${PROVENANCE_FILE}" \
-              --source-uri "github.com/${REPO}" \
-              --source-tag "${TAG}" \
-              "${ARCHIVE_FILE}" || {
-              echo "WARNING: slsa-verifier verification failed"
-              echo "This may be expected if the provenance is not yet signed by Fulcio"
-              echo "The structure validation passed above, so the predicate is valid"
-              exit 0
-            }
-
-            echo "=== SLSA provenance verification passed ==="
         volumeMounts:
           - name: release-artifacts
             mountPath: /artifacts
@@ -995,7 +980,7 @@ EOF
     - name: git-cliff-notes
       activeDeadlineSeconds: 600
       container:
-        image: orhunp/git-cliff:latest
+        image: orhunp/git-cliff:2.13.1
         command: [sh, -c]
         args:
           - |
