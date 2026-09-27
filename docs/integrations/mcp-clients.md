@@ -33,8 +33,10 @@ implementation is genuinely incomplete; such an entry may return
 
 Every client should discover tools with `tools/list` after connecting and use
 the returned names rather than assuming that a client-specific prefix or a
-future catalog entry is available. To check the documentation against the
-actual wire response, run:
+future catalog entry is available. The same check parses the Claude Desktop,
+Cursor, and Continue snippets below and verifies their documented stdio
+command and arguments. To check the configurations and the actual wire
+response, run:
 
 ```bash
 scripts/check-mcp-tool-catalog.py

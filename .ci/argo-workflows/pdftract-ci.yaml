@@ -201,6 +201,10 @@ spec:
             template: sdk-conformance
             dependencies: [setup]
 
+          - name: mcp-client-smoke
+            template: mcp-client-smoke
+            dependencies: [setup]
+
           - name: build-matrix
             template: build-matrix
             dependencies: [setup]
@@ -287,7 +291,7 @@ spec:
 
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, verify-provenance]
+            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, verify-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
@@ -565,6 +569,41 @@ spec:
             from: "{{tasks.validate.outputs.artifacts.sdk-conformance-exit-codes}}"
           - name: sdk-conformance-manifest
             from: "{{tasks.validate.outputs.artifacts.sdk-conformance-manifest}}"
+
+    # === MCP Client Configuration and Catalog Smoke ===
+    # This gate is deliberately non-secret: it builds the real stdio server,
+    # validates the three documented client snippets, performs initialize and
+    # tools/list, compares the ten-tool catalog, and calls every advertised tool.
+    - name: mcp-client-smoke
+      activeDeadlineSeconds: 1200
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+            cd /workspace
+            export CARGO_HOME=/cache/cargo/registry
+            export CARGO_TARGET_DIR=/cache/cargo/target-mcp-client-smoke
+
+            echo "=== Building the real MCP stdio server ==="
+            cargo build --locked --package pdftract-cli --bin pdftract --features mcp
+
+            echo "=== Validating documented client configurations and tool contract ==="
+            PDFTRACT_MCP_BIN="$CARGO_TARGET_DIR/debug/pdftract" \
+              python3 scripts/check-mcp-tool-catalog.py
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
 
     - name: sdk-conformance-rust
       activeDeadlineSeconds: 1800

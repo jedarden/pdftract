@@ -19,18 +19,20 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import selectors
 import shlex
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "docs/integrations/mcp-tool-catalog.json"
+CLIENT_GUIDE = ROOT / "docs/integrations/mcp-clients.md"
 DEFAULT_TIMEOUT = 30.0
 
 # Keep this explicit list next to the checker so a documentation-only rename
@@ -78,6 +80,87 @@ class CheckFailure(RuntimeError):
 def fail(message: str) -> NoReturn:
     print(f"MCP catalog/client contract failure: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def _client_section(markdown: str, client: str) -> str:
+    heading = f"## {client}"
+    start = markdown.find(heading)
+    if start < 0:
+        raise CheckFailure(f"{client} section is missing from {CLIENT_GUIDE}")
+    end = markdown.find("\n## ", start + len(heading))
+    return markdown[start:] if end < 0 else markdown[start:end]
+
+
+def _fenced_blocks(section: str, language: str) -> list[str]:
+    pattern = rf"```{re.escape(language)}\s*\n(.*?)```"
+    return re.findall(pattern, section, flags=re.DOTALL)
+
+
+def _assert_stdio_config(config: Any, client: str, block_number: int) -> None:
+    if not isinstance(config, dict):
+        raise CheckFailure(
+            f"{client} configuration block {block_number} is not an object"
+        )
+    if client == "Cursor":
+        mcp = config.get("mcp")
+        servers = mcp.get("servers") if isinstance(mcp, dict) else None
+    else:
+        servers = config.get("mcpServers")
+    if not isinstance(servers, dict) or not isinstance(servers.get("pdftract"), dict):
+        raise CheckFailure(
+            f"{client} configuration block {block_number} lacks mcp server pdftract"
+        )
+
+    server = servers["pdftract"]
+    command = server.get("command")
+    if (
+        not isinstance(command, str)
+        or PurePosixPath(command.replace("\\", "/")).name != "pdftract"
+    ):
+        raise CheckFailure(
+            f"{client} configuration block {block_number} does not launch pdftract"
+        )
+    if server.get("args") != ["mcp", "--stdio"]:
+        raise CheckFailure(
+            f"{client} configuration block {block_number} must use args ['mcp', '--stdio']"
+        )
+
+
+def validate_client_configurations() -> None:
+    """Validate the JSON/YAML snippets users are told to paste into clients."""
+    try:
+        markdown = CLIENT_GUIDE.read_text(encoding="utf-8")
+    except OSError as error:
+        raise CheckFailure(f"cannot read {CLIENT_GUIDE}: {error}") from error
+
+    for client in ("Claude Desktop", "Cursor"):
+        blocks = _fenced_blocks(_client_section(markdown, client), "json")
+        if not blocks:
+            raise CheckFailure(f"{client} has no JSON configuration block")
+        for number, block in enumerate(blocks, start=1):
+            try:
+                config = json.loads(block)
+            except json.JSONDecodeError as error:
+                raise CheckFailure(
+                    f"{client} configuration block {number} is invalid JSON: {error}"
+                ) from error
+            _assert_stdio_config(config, client, number)
+
+    continue_blocks = _fenced_blocks(_client_section(markdown, "Continue"), "yaml")
+    expected_continue = [
+        "mcpServers:",
+        "  pdftract:",
+        "    command: pdftract",
+        "    args:",
+        "      - mcp",
+        "      - --stdio",
+    ]
+    if continue_blocks != ["\n".join(expected_continue) + "\n"]:
+        raise CheckFailure(
+            "Continue configuration must contain the documented pdftract stdio block"
+        )
+
+    print("MCP client configurations OK: Claude Desktop, Cursor, Continue")
 
 
 def command() -> list[str]:
@@ -392,6 +475,7 @@ def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -
 
 def main() -> int:
     try:
+        validate_client_configurations()
         _, catalog_by_name = load_catalog()
         timeout = float(os.environ.get("PDFTRACT_MCP_TIMEOUT", DEFAULT_TIMEOUT))
         if timeout <= 0:
