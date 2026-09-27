@@ -1846,7 +1846,7 @@ fn forward_scan_trailer(source: &dyn PdfSource) -> Option<PdfDict> {
 /// Zero-width fields default to 0.
 pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> XrefSection {
     use crate::parser::object::ObjectParser;
-    use crate::parser::stream::{decode_stream, ExtractionOptions};
+    use crate::parser::stream::{decode_stream_with_context, ExtractionOptions};
 
     let mut result = XrefSection::new();
 
@@ -1865,14 +1865,37 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
 
     let mut parser = ObjectParser::new(&obj_bytes);
     let indirect = match parser.parse_indirect_object() {
-        Some(i) => i,
+        Some(i) => {
+            // ObjectParser retains lexer/body diagnostics until its caller
+            // drains them. Preserve them on the xref section instead of
+            // silently dropping malformed xref-stream syntax.
+            result.diagnostics.extend(parser.take_diagnostics());
+            i
+        }
         None => {
+            result.diagnostics.extend(parser.take_diagnostics());
             result.diagnostics.push(Diag::with_static(
                 DiagCode::XrefInvalidStreamFormat,
                 stream_obj_offset,
                 "Failed to parse xref stream as indirect object",
             ));
             return result;
+        }
+    };
+    let stream_obj_ref = indirect.id;
+
+    // Every diagnostic produced after the indirect header has a known xref
+    // stream object. Keep that location on the structured record, while
+    // leaving pre-header parse failures document-level because no valid
+    // object identity existed yet.
+    let attach_stream_object = |diagnostics: &mut Vec<Diag>| {
+        for diagnostic in diagnostics {
+            if diagnostic.object_ref.is_none() {
+                diagnostic.object_ref = Some(crate::diagnostics::ObjRef::new(
+                    stream_obj_ref.object,
+                    stream_obj_ref.generation,
+                ));
+            }
         }
     };
 
@@ -1885,6 +1908,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 stream_obj_offset,
                 "Xref stream object is not a stream",
             ));
+            attach_stream_object(&mut result.diagnostics);
             return result;
         }
     };
@@ -1909,6 +1933,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 stream_obj_offset,
                 "Missing or invalid /Size in xref stream",
             ));
+            attach_stream_object(&mut result.diagnostics);
             return result;
         }
     };
@@ -1923,6 +1948,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                     stream_obj_offset,
                     format!("/W array must have 3 elements, got {}", widths.len()),
                 ));
+                attach_stream_object(&mut result.diagnostics);
                 return result;
             }
             // Widths can be 0, but negative is invalid
@@ -1932,6 +1958,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                     stream_obj_offset,
                     "/W array contains negative values",
                 ));
+                attach_stream_object(&mut result.diagnostics);
                 return result;
             }
             widths
@@ -1942,6 +1969,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 stream_obj_offset,
                 "Missing or invalid /W in xref stream",
             ));
+            attach_stream_object(&mut result.diagnostics);
             return result;
         }
     };
@@ -1966,6 +1994,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                             stream_obj_offset,
                             "Invalid /Index first value",
                         ));
+                        attach_stream_object(&mut result.diagnostics);
                         return result;
                     }
                 };
@@ -1977,6 +2006,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                             stream_obj_offset,
                             "Invalid /Index count value",
                         ));
+                        attach_stream_object(&mut result.diagnostics);
                         return result;
                     }
                 };
@@ -1989,6 +2019,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                     stream_obj_offset,
                     "/Index array is empty",
                 ));
+                attach_stream_object(&mut result.diagnostics);
                 return result;
             }
             pairs
@@ -2000,6 +2031,7 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 stream_obj_offset,
                 "Invalid /Index in xref stream (not an array)",
             ));
+            attach_stream_object(&mut result.diagnostics);
             return result;
         }
     };
@@ -2020,21 +2052,35 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
     // from those bytes to decode the stream data correctly.
     let local_source = MemorySource::new(obj_bytes);
 
-    let decoded = decode_stream(
+    let decoded_result = decode_stream_with_context(
         &stream,
         &local_source,
         &ExtractionOptions::default(),
         &mut 0,
+        Some(stream_obj_ref),
+        None,
     );
+    let decoded = decoded_result.bytes;
+    result.diagnostics.extend(decoded_result.diagnostics);
+    attach_stream_object(&mut result.diagnostics);
 
     if decoded.is_empty() {
         // Check if this is a legitimate empty stream (no objects) or an error
         // A valid xref stream with no objects would have /Size 0, which is unusual
-        result.diagnostics.push(Diag::with_static(
-            DiagCode::StreamDecodeError,
-            stream_obj_offset,
-            "Xref stream decompression produced empty output",
-        ));
+        if !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagCode::StreamDecodeError)
+        {
+            result.diagnostics.push(
+                Diag::with_static(
+                    DiagCode::StreamDecodeError,
+                    stream_obj_offset,
+                    "Xref stream decompression produced empty output",
+                )
+                .with_object_ref_parts(stream_obj_ref.object, stream_obj_ref.generation),
+            );
+        }
         return result;
     }
 
@@ -2048,11 +2094,14 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
 
             // Check we have enough bytes for this entry
             if data_pos + entry_stride > decoded.len() {
-                result.diagnostics.push(Diag::with_dynamic(
-                    DiagCode::XrefInvalidStreamEntry,
-                    stream_obj_offset,
-                    format!("Xref stream truncated at object {}", obj_nr),
-                ));
+                result.diagnostics.push(
+                    Diag::with_dynamic(
+                        DiagCode::XrefInvalidStreamEntry,
+                        stream_obj_offset,
+                        format!("Xref stream truncated at object {}", obj_nr),
+                    )
+                    .with_object_ref_parts(stream_obj_ref.object, stream_obj_ref.generation),
+                );
                 break;
             }
 
@@ -2105,14 +2154,17 @@ pub fn parse_xref_stream(source: &dyn PdfSource, stream_obj_offset: u64) -> Xref
                 }
                 _ => {
                     // Unknown type - emit diagnostic and treat as free
-                    result.diagnostics.push(Diag::with_dynamic(
-                        DiagCode::XrefInvalidStreamEntry,
-                        stream_obj_offset,
-                        format!(
-                            "Invalid xref entry type {} for object {}",
-                            entry_type, obj_nr
-                        ),
-                    ));
+                    result.diagnostics.push(
+                        Diag::with_dynamic(
+                            DiagCode::XrefInvalidStreamEntry,
+                            stream_obj_offset,
+                            format!(
+                                "Invalid xref entry type {} for object {}",
+                                entry_type, obj_nr
+                            ),
+                        )
+                        .with_object_ref_parts(stream_obj_ref.object, stream_obj_ref.generation),
+                    );
                     XrefEntry::Free {
                         next_free: 0,
                         gen_nr: 0,
@@ -2725,6 +2777,7 @@ pub fn load_xref_with_prev_chain(source: &dyn PdfSource, start_offset: u64) -> X
 mod tests {
     use super::*;
     use crate::parser::object::cycle;
+    use crate::schema::DiagnosticJson;
 
     #[test]
     fn test_obj_ref() {
@@ -4150,6 +4203,56 @@ trailer\n<< /Size 3 >>\n";
             .diagnostics
             .iter()
             .any(|d| d.code == DiagCode::XrefInvalidStreamFormat));
+    }
+
+    #[test]
+    fn test_parse_xref_stream_diagnostic_retains_public_context() {
+        let xref_stream_data = build_xref_stream_fixture_missing_size(&[1, 4, 2]);
+        let source = MemorySource::new(xref_stream_data);
+        let result = parse_xref_stream(&source, 0);
+
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|d| d.code == DiagCode::XrefInvalidStreamFormat)
+            .expect("missing /Size should emit a diagnostic");
+
+        assert_eq!(diagnostic.byte_offset, Some(0));
+        assert_eq!(
+            diagnostic.object_ref.map(|reference| reference.object),
+            Some(1)
+        );
+        assert_eq!(
+            diagnostic.object_ref.map(|reference| reference.generation),
+            Some(0)
+        );
+        assert_eq!(diagnostic.page_index, None);
+
+        let structured = DiagnosticJson::from(diagnostic);
+        assert_eq!(structured.code, "XREF_INVALID_STREAM_FORMAT");
+        assert_eq!(structured.severity, "warning");
+        assert_eq!(
+            structured.message,
+            "Missing or invalid /Size in xref stream"
+        );
+        assert_eq!(structured.page_index, None);
+        assert_eq!(
+            structured.location,
+            Some(crate::schema::ObjectLocationJson {
+                object_number: 1,
+                generation_number: 0,
+            })
+        );
+        assert_eq!(
+            structured.hint.as_deref(),
+            Some(
+                "The xref stream has a malformed header or invalid /W array; the stream is skipped"
+            )
+        );
+        assert_eq!(
+            crate::diagnostics_compat::to_legacy_string(diagnostic),
+            structured.message
+        );
     }
 
     #[test]

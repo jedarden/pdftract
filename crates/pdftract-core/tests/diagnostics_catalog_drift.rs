@@ -148,8 +148,20 @@ fn parse_enum_variants() -> Vec<Variant> {
 fn parse_doc_rows() -> Vec<DocRow> {
     let document = fs::read_to_string(DOC_PATH).expect("cannot read diagnostics-codes.md");
     let mut rows = Vec::new();
+    let mut in_code_catalog = false;
 
     for (index, line) in document.lines().enumerate() {
+        if line.trim() == "## Code Categories" {
+            in_code_catalog = true;
+            continue;
+        }
+        if in_code_catalog && line.starts_with("## ") {
+            break;
+        }
+        if !in_code_catalog {
+            continue;
+        }
+
         let Some(rest) = line.strip_prefix("| `") else {
             continue;
         };
