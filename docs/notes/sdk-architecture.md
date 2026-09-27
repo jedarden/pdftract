@@ -669,6 +669,7 @@ Related documentation:
 
 - **[`sdk-invocation.md`](sdk-invocation.md)** — Subprocess and HTTP invocation patterns for all supported languages
 - **[`sdk-contract.md`](sdk-contract.md)** — The constitutional SDK specification (method surface, error mapping, versioning, conformance)
+- **Canonical path:** `docs/notes/sdk-contract.md`. The SDK generator reads this file; keep it separate from the runner and report guidance in `docs/notes/sdk-conformance-runner.md`.
 - **[`ocr-language-packs.md`](ocr-language-packs.md)** — Tesseract language pack distribution and installation
 - **[`docs/plan/plan.md`](../plan/plan.md)** — The source of truth for all architectural decisions (workspace layout, cross-compile matrix, ADR-009 CI policy, KU-12 platform testing)
 

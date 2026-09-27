@@ -163,6 +163,6 @@ All 8 exception types implemented per contract:
 - Plan section: SDK Architecture / The Ten SDKs, line 3476
 - Plan section: SDK Architecture / Per-SDK Release Channels, line 3573
 - Plan section: SDK Acceptance Criteria, line 3587
-- Contract: `/home/coding/pdftract/docs/conformance/sdk-contract.md`
+- Contract: `/home/coding/pdftract/docs/notes/sdk-contract.md`
 - Schema: `/home/coding/pdftract/tests/sdk-conformance/schema.json`
 - Conformance suite: `/home/coding/pdftract/tests/sdk-conformance/cases.json`

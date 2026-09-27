@@ -146,6 +146,10 @@ SDK code generation commands
 
 Generate SDK skeleton from templates
 
+The generator reads the canonical SDK contract from
+`docs/notes/sdk-contract.md`. Run `python3 scripts/validate-sdk-documentation.py`
+after changing the contract, its links, or the conformance report requirements.
+
 **Usage:** `pdftract sdk codegen --lang <LANG> --out <OUT>`
 
 ###### **Options:**

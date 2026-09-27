@@ -7,3 +7,4 @@ if [[ "${1:-}" != "--fast" ]]; then
 fi
 
 python3 scripts/audit_readme_capabilities.py
+python3 scripts/validate-sdk-documentation.py

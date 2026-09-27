@@ -2,7 +2,7 @@
 pdftract Python SDK Conformance Test Runner
 
 This module implements the conformance test suite for the Python SDK.
-It follows the pattern described in docs/conformance/sdk-contract.md.
+It follows the runner pattern described in docs/notes/sdk-conformance-runner.md.
 
 Usage:
     pytest tests/test_conformance.py -v

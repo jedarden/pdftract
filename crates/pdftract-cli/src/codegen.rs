@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 use tera::{Tera, Value};
 use walkdir::WalkDir;
 
+/// Repository-relative path to the canonical SDK contract specification.
+pub const SDK_CONTRACT_PATH: &str = "docs/notes/sdk-contract.md";
+
 /// Supported languages for code generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Language {
@@ -144,9 +147,9 @@ impl CodeGenerator {
         })
     }
 
-    /// Loads the SDK contract from docs/notes/sdk-contract.md.
+    /// Loads the canonical SDK contract from [`SDK_CONTRACT_PATH`].
     fn load_contract() -> Result<SdkContract> {
-        let contract_path = PathBuf::from("docs/notes/sdk-contract.md");
+        let contract_path = PathBuf::from(SDK_CONTRACT_PATH);
 
         // Try to load from the markdown file, fall back to hardcoded contract
         if contract_path.exists() {

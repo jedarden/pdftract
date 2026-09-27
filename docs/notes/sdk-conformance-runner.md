@@ -2,6 +2,10 @@
 
 This document describes the conformance test runner pattern that every SDK implements for pdftract.
 
+The API contract itself is maintained separately at
+[`docs/notes/sdk-contract.md`](sdk-contract.md). Keep the runner and report
+requirements here aligned with that canonical specification.
+
 ## Overview
 
 The conformance test suite is the SDK API contract. Every SDK must implement a test runner that:
@@ -21,9 +25,18 @@ Key fields:
 - `sdk`: SDK name (e.g., "pdftract-py", "pdftract-node")
 - `sdk_version`: SDK version that produced the report
 - `suite_version`: Version of the conformance suite run
+- `schema_version`: Version of the pdftract output schema targeted
 - `results`: Array of per-case results with `id`, `status`, `actual`, `expected`, `error`, `reason`, `duration_ms`
 - `summary`: Aggregate counts for `total`, `passed`, `failed`, `skipped`, `errors`
 - `environment`: OS, arch, binary version, runtime version
+
+The required report fields are `sdk`, `sdk_version`, `suite_version`,
+`schema_version`, `timestamp`, `results`, and `summary`. A runner MUST emit
+all of them, even when a case fails. The report schema at
+`tests/sdk-conformance/report-schema.json` is the machine-readable source for
+these requirements.
+
+Allowed result statuses are `"pass"`, `"fail"`, `"skip"`, and `"error"`.
 
 ## Per-Language Runners
 
