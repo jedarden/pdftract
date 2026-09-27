@@ -844,16 +844,28 @@ pub struct DiagnosticJson {
     pub severity: String,
 
     /// Zero-based page index where this diagnostic occurred; omitted (not
-    /// serialized as `null`) for document-level events.
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    /// serialized as `null`) for document-level events. Missing and explicit
+    /// `null` input both deserialize to `None`.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub page_index: Option<usize>,
 
     /// PDF object reference where the issue originated, if applicable.
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    /// Missing and explicit `null` input both deserialize to `None`.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub location: Option<ObjectLocationJson>,
 
     /// Optional hint for resolving the diagnostic (e.g., "Install Tesseract for OCR recovery").
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    /// Missing and explicit `null` input both deserialize to `None`.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub hint: Option<String>,
 }
 
