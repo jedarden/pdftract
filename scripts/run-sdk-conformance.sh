@@ -19,6 +19,11 @@ shift 3
 
 mkdir -p "$(dirname "$report_path")" "$(dirname "$exit_code_path")"
 
+# A retry can reuse the shared workspace. Remove stale outputs so a runner
+# that exits before writing a new report cannot accidentally validate the
+# previous attempt's report.
+rm -f "$report_path" "$exit_code_path"
+
 runner_exit=0
 "$@" || runner_exit=$?
 

@@ -563,6 +563,8 @@ spec:
             from: "{{tasks.validate.outputs.artifacts.sdk-conformance-reports}}"
           - name: sdk-conformance-exit-codes
             from: "{{tasks.validate.outputs.artifacts.sdk-conformance-exit-codes}}"
+          - name: sdk-conformance-manifest
+            from: "{{tasks.validate.outputs.artifacts.sdk-conformance-manifest}}"
 
     - name: sdk-conformance-rust
       activeDeadlineSeconds: 1800
@@ -883,8 +885,10 @@ spec:
             set -eo pipefail
             cd /workspace
             python3 scripts/validate-sdk-conformance-report.py \
+              --suite tests/sdk-conformance/cases.json \
               --reports-root /workspace/sdk-conformance/reports \
-              --exit-codes-root /workspace/sdk-conformance/exit-codes
+              --exit-codes-root /workspace/sdk-conformance/exit-codes \
+              --manifest /workspace/sdk-conformance/conformance-manifest.json
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -901,6 +905,8 @@ spec:
             path: /workspace/sdk-conformance/reports
           - name: sdk-conformance-exit-codes
             path: /workspace/sdk-conformance/exit-codes
+          - name: sdk-conformance-manifest
+            path: /workspace/sdk-conformance/conformance-manifest.json
 
     # === Build Matrix ===
     # Cross-compile for 5 targets using cross (Docker-based)

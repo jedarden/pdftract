@@ -4,7 +4,7 @@
   "title": "pdftract SDK Conformance Report Schema",
   "description": "Schema for conformance test reports produced by SDK conformance runners.",
   "type": "object",
-  "required": ["sdk", "sdk_version", "suite_version", "timestamp", "results", "summary"],
+  "required": ["sdk", "sdk_version", "suite_version", "schema_version", "timestamp", "results", "summary"],
   "properties": {
     "sdk": {
       "type": "string",
