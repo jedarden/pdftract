@@ -1,69 +1,146 @@
 # pdftract-homebrew-publish WorkflowTemplate
 #
-# Homebrew distribution channel: renders Formula/pdftract.rb from
-# packaging/homebrew/pdftract.rb.template at the versioned release tag (the
-# tag's own tree is the formula source of truth), fills the <VERSION> and
-# <SHA256> placeholders -- the SHA256 is computed at render time by hashing
-# the exact bytes the formula's url serves -- validates the rendered formula,
-# pushes it to the Forgejo tap repo (source of truth), waits for the
-# Forgejo->GitHub push mirror to catch up, then verifies the channel
-# end-to-end through the client-facing path: `brew tap jedarden/tap` against
-# the GitHub mirror, `brew install jedarden/tap/pdftract`, `pdftract
-# --version` reporting the released version.
+# Homebrew distribution channel. Pipeline:
 #
-# Runs as a step of the release cascade (pdftract-release-cascade) after
-# pdftract-github-release has published the release (where the cascade's
-# continueOn makes a tap failure non-fatal for the release), and can be
-# invoked standalone for a repaired/re-run channel (the tap is then that
-# run's deliverable and failures are fatal):
+#   versioned-tag-gate -> verify-release-metadata -> render-formula
+#                      -> push-tap -> wait-for-mirror -> brew-verify
+#
+# - versioned-tag-gate publishes only for immutable, non-prerelease
+#   versioned tags vX.Y.Z; everything else SKIPS as a Succeeded no-op.
+# - verify-release-metadata consumes the release's published SHA256SUMS
+#   aggregate -- downloaded as published with its cosign signature and
+#   certificate, verified against the iad-ci OIDC identity before any
+#   formula work is accepted (strategy §5 handoff: "If the release is
+#   missing SHA256SUMS, its signature or certificate, or the required
+#   checksum verification fails, formula generation stops").
+# - render-formula resolves the release tuple and renders
+#   Formula/pdftract.rb through packaging/homebrew/render_formula.py --
+#   the deterministic renderer authored by pdftract-fb684d69 -- taken
+#   from the release tag's own tree, next to its
+#   packaging/homebrew/pdftract.rb.template sibling
+#   (pdftract-2ba6e643). The renderer owns every structural check:
+#   canonical release-tuple URLs, prerelease/floating-ref rejection,
+#   placeholder completeness, exactly-one url/version/sha256 binding,
+#   forbidden refs, bare-SHA detection, and `ruby -c` on both the
+#   template and the rendered formula. The formula's sha256 is the hash
+#   of the exact bytes the formula url serves (the tag's source
+#   archive, downloaded once here) -- never a value copied from or
+#   appended to SHA256SUMS, which is cosign-signed as a unit and is
+#   never rewritten by this leg.
+# - push-tap commits the rendered formula to the Forgejo tap
+#   (git.ardenone.com/jedarden/homebrew-tap, source of truth) and
+#   pushes ONLY to that origin; GitHub hosts the read-only push mirror
+#   that Homebrew clients actually fetch.
+# - wait-for-mirror bounded-polls the GitHub mirror for the pushed
+#   commit; brew-verify install-verifies through the client-facing
+#   path: `brew tap jedarden/tap` against the GitHub mirror,
+#   `brew install jedarden/tap/pdftract`, `pdftract --version`
+#   reporting the released version.
+#
+# Runs as a step of the release cascade (pdftract-release-cascade)
+# strictly after pdftract-github-release has published the release
+# (tag push precedes the release; the tag's source archive and the
+# signed SHA256SUMS only resolve afterwards), and can be invoked
+# standalone for a repaired/re-run channel:
 #
 #   argo submit --from workflowtemplate/pdftract-homebrew-publish \
 #     -p tag=vX.Y.Z -p version=X.Y.Z
 #
-# A dry run renders the formula against a stub archive (the formula template
-# comes from the repo's default branch, since the stub tag has no ref to
-# clone) and stops before any push (no credential needed):
+# A dry run proves the render+validation path end to end with a stub
+# archive and stops before any push:
 #
 #   argo submit --from workflowtemplate/pdftract-homebrew-publish \
 #     -p tag=v9.9.9 -p version=9.9.9 -p dry_run=true
 #
-# Version policy (docs/notes/homebrew-tap-strategy.md §6): the leg gates on
-# immutable, non-prerelease versioned tags vX.Y.Z only. The
-# versioned-tag-gate step SKIPS anything else -- rc/prerelease tags,
-# :latest-style aliases, branch names and bare git SHAs are never published
-# to the tap. Every container image this template runs is pinned to a semver
-# tag; :latest is rejected org-wide.
+# In a dry run the verify-release-metadata step logs an explicit SKIP
+# (a fake tag has no release to verify -- it never claims "verified"),
+# render-formula still runs the real renderer from the repo's default
+# branch against a stub archive, and push-tap/wait-for-mirror/brew-verify
+# are omitted entirely -- so the push credential is never even mounted
+# and nothing reaches any tap.
 #
-# Hosting (strategy §4): the tap's source of truth is Forgejo
-# (git.ardenone.com/jedarden/homebrew-tap); GitHub hosts the read-only
-# Forgejo push mirror that Homebrew clients actually fetch. CI writes ONLY
-# to the Forgejo origin.
+# === Failure and retry behavior ===
 #
-# Credential (strategy §8.3, as corrected 2026-09-15): the tap push token
-# travels by reference. The push-tap step injects it from the
-# `homebrew-tap-push-token` k8s Secret and hands it to git through a
-# credential helper -- no value appears in this manifest, in any argv, or in
-# any log line. The intended end state (authored by the credential sibling;
-# none of it exists yet): an ExternalSecret named homebrew-tap-push-token,
-# added alongside this template's copy in declarative-config, syncing the
-# OpenBao path secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token (the
-# rs-manager instance -- the one iad-ci's ClusterSecretStore "openbao" reads;
-# the strategy note's original ardenone-cluster path cannot be served by that
-# store) into that Secret. Enabling that ExternalSecret -- with the token
-# provisioned and the eso-iad-ci policy taught the new prefix -- is what
-# turns on live pushes; until it lands, the leg runs in dry_run only. The
-# value must never be printed; verification is by downstream effect (git
-# push succeeds, the mirror reflects the commit).
+# No step in this leg ever reports success for work it did not do:
 #
-# Formula shape (strategy §5): build-from-source against the versioned-tag
-# source archive with depends_on "rust" -- no bottles in the first
-# iteration. The rendered formula is generated content; hand fixes go to
-# packaging/homebrew/pdftract.rb.template in jedarden/pdftract, never to the
-# tap.
+# - Step level: verify-release-metadata and render-formula carry an
+#   Argo retryStrategy (limit 2 / 1, exponential backoff) because their
+#   failures are dominated by transient network fetches; every fetch
+#   additionally uses `curl --retry 3`. A retry re-runs the step from
+#   scratch, which is safe: rendering is deterministic, and nothing has
+#   been published yet.
+# - push-tap retries once: it is idempotent by construction -- it
+#   re-clones, re-writes the formula, and pushes nothing when the
+#   rendered formula is unchanged ("Formula unchanged ... idempotent
+#   re-run"), so a retry after a failed push cannot double-publish.
+# - wait-for-mirror is itself a bounded poll (10s interval, 5 min
+#   ceiling); on timeout it FAILS with a mirror-lag message naming the
+#   missing commit, not a generic error.
+# - brew-verify retries once (brew downloads are network-flaky); it
+#   FAILS unless `pdftract --version` prints the released version.
+# - Hard verification failures (missing/invalid SHA256SUMS assets,
+#   cosign rejection, renderer rejection, push rejection) exit nonzero
+#   and are never retried past the limits above -- they fail the leg
+#   loudly.
+# - Workflow level: activeDeadlineSeconds (16200s) is a backstop over
+#   the worst-case serial sum of per-step deadlines x attempts
+#   (60 + 3x420 + 2x600 + 2x300 + 420 + 2x5400 = 14340s, ~13%
+#   headroom) so a wedged pod can never hang the run forever.
+# - Cascade level: the cascade invokes this leg with
+#   `continueOn: failed` -- a tap failure must not fail an
+#   already-published release -- but the leg's own workflow status is
+#   Failed and visible. A standalone run has no such shield: the tap
+#   is that run's deliverable and failures are fatal.
+# - Re-runs for the same tag are safe (idempotent no-op push). A
+#   botched release is re-cut under a NEW tag (org no-force-push rule);
+#   tags are never rewritten.
 #
-# Bead: pdftract-da3c85cd
-# Strategy: docs/notes/homebrew-tap-strategy.md (§4 hosting, §5 formula,
-#           §6 version policy, §7 cascade placement, §8 prerequisites)
+# === Version policy (strategy §6) ===
+#
+# The leg gates on immutable, non-prerelease versioned tags vX.Y.Z
+# only. Anything else -- rc/prerelease tags, `:latest`-style aliases,
+# branch names, bare git SHAs, empty -- is SKIPPED by the gate as a
+# Succeeded no-op, and the render step re-checks the same policy as
+# defense in depth (no code path can render past policy). Every
+# container image this template runs is pinned to a semver tag;
+# `:latest` is rejected org-wide.
+#
+# === Hosting (strategy §4) ===
+#
+# The tap's source of truth is Forgejo; GitHub hosts the read-only
+# Forgejo push mirror that Homebrew clients actually fetch. CI writes
+# ONLY to the Forgejo origin.
+#
+# === Credential (strategy §8.3, as corrected 2026-09-15) ===
+#
+# The tap push token travels by reference end to end:
+# secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token on the
+# rs-manager OpenBao instance (the one iad-ci's ClusterSecretStore
+# "openbao" serves) -> ExternalSecret homebrew-tap-push-token
+# (declarative-config k8s/iad-ci/argo-workflows/
+# homebrew-tap-push-token-externalsecret.yml, enabled 2026-09-15 by
+# pdftract-54cad4cb; verified SecretSynced=True 2026-09-26) -> the
+# homebrew-tap-push-token k8s Secret this template's push-tap step
+# injects as an env var and hands to git through a credential helper.
+# No token value appears in this manifest, in any argv, in any
+# parameter, or in any log line; the value's correctness is verified
+# only by its downstream effect (git push succeeds, the mirror
+# reflects the commit). Only push-tap mounts the Secret, and in a dry
+# run that step is omitted, so the credential is never mounted at all.
+#
+# === Formula shape (strategy §5) ===
+#
+# Build-from-source against the versioned-tag source archive with
+# depends_on "rust" -- no bottles in the first iteration. The rendered
+# formula is generated content; hand fixes go to
+# packaging/homebrew/pdftract.rb.template in jedarden/pdftract, never
+# to the tap.
+#
+# Bead: pdftract-93b464bb (rework of the pdftract-da3c85cd leg onto the
+#       pdftract-966cd3fd / pdftract-fb684d69 contract)
+# Contract: docs/notes/homebrew-tap-strategy.md (§4 hosting, §5 formula
+#           + handoff tuple, §6 version policy, §7 cascade placement,
+#           §8 prerequisites); packaging/homebrew/README.md
 # Plan section: Release Engineering / Argo WorkflowTemplates, line 3393
 #
 apiVersion: argoproj.io/v1alpha1
@@ -79,18 +156,20 @@ spec:
   entrypoint: homebrew-pipeline
   serviceAccountName: argo-workflow
 
-  # Backstop: sum of per-step deadlines x attempts = 6780s, +50% headroom.
-  # Per-step activeDeadlineSeconds does not cover a pod that hangs before it
-  # starts; without a workflow-level cap such a run is never terminated.
-  activeDeadlineSeconds: 10200
+  # Backstop: see "Failure and retry behavior" above for the math.
+  # Per-step activeDeadlineSeconds does not cover a pod that hangs
+  # before it starts; without a workflow-level cap such a run is never
+  # terminated.
+  activeDeadlineSeconds: 16200
 
   # Object form + ttlStrategy: the string podGC and the Job-style
-  # ttlSecondsAfterFinished keys are not valid against this cluster's Argo
-  # CRD -- the string podGC failed the WorkflowTemplate apply outright
-  # ("spec.podGC in body must be of type object", argo-workflows-ns-iad-ci
-  # sync Failed 2026-09-15), and ttlSecondsAfterFinished is not an Argo field
-  # at all (silently pruned; the TTL never applied). Same shape as the SDK
-  # publish siblings in this directory.
+  # ttlSecondsAfterFinished keys are not valid against this cluster's
+  # Argo CRD -- the string podGC failed the WorkflowTemplate apply
+  # outright ("spec.podGC in body must be of type object",
+  # argo-workflows-ns-iad-ci sync Failed 2026-09-15), and
+  # ttlSecondsAfterFinished is not an Argo field at all (silently
+  # pruned; the TTL never applied). Same shape as the SDK publish
+  # siblings in this directory.
   podGC:
     strategy: OnPodCompletion
 
@@ -102,7 +181,7 @@ spec:
     parameters:
       - name: repo
         value: jedarden/pdftract
-        description: "Source mirror slug on GitHub; the template and the tag source archive are fetched from it anonymously"
+        description: "Source mirror slug on GitHub; the release tuple, template, and renderer are fetched from it anonymously"
       - name: tap-repo
         value: jedarden/homebrew-tap
         description: "Tap repo slug (Forgejo origin and GitHub mirror share it)"
@@ -120,23 +199,35 @@ spec:
         description: "'true' renders against a stub archive and stops before any push -- no credential needed"
       - name: brew-image
         value: homebrew/brew:4.6.20
-        description: "Pinned Homebrew image (semver tag, never :latest) used for install verification"
+        description: "Pinned Homebrew image (semver tag, never a floating ref) used for install verification"
+      - name: sums-identity-regexp
+        value: "https://iad-ci-oidc.ardenone.com.*"
+        description: "Certificate identity regexp the SHA256SUMS signing certificate must match -- must equal pdftract-github-release's COSIGN_CERTIFICATE_IDENTITY"
+      - name: sums-oidc-issuer
+        value: "https://iad-ci-oidc.ardenone.com"
+        description: "OIDC issuer the SHA256SUMS signing certificate must name -- must equal pdftract-github-release's COSIGN_OIDC_ISSUER"
 
   templates:
     # === Top-level DAG ===
-    # gate -> render -> push -> wait-for-mirror -> brew-verify.
-    # Every step after the gate is omitted for non-versioned tags, and the
-    # push/verify steps are additionally omitted in dry_run, so a dry run or
-    # a non-versioned ref completes Succeeded with nothing published.
+    # gate -> verify-release-metadata -> render -> push -> wait-for-mirror
+    # -> brew-verify. Every step after the gate is omitted for
+    # non-versioned tags (proceed=false), and push/verify are
+    # additionally omitted in dry_run, so a dry run or a non-versioned
+    # ref completes Succeeded with nothing published.
     - name: homebrew-pipeline
       dag:
         tasks:
           - name: versioned-tag-gate
             template: versioned-tag-gate
 
+          - name: verify-release-metadata
+            template: verify-release-metadata
+            dependencies: [versioned-tag-gate]
+            when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true"
+
           - name: render-formula
             template: render-formula
-            dependencies: [versioned-tag-gate]
+            dependencies: [versioned-tag-gate, verify-release-metadata]
             when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true"
 
           - name: push-tap
@@ -164,7 +255,7 @@ spec:
 
     # === Versioned-Tag Gate ===
     # Publishes to the tap only for immutable, non-prerelease versioned tags
-    # vX.Y.Z (strategy §6). Anything else -- rc tags, :latest-style aliases,
+    # vX.Y.Z (strategy §6). Anything else -- rc tags, `:latest`-style aliases,
     # branch names, bare SHAs, empty -- SKIPS the leg (proceed=false): a
     # skipped leg is a Succeeded workflow with every downstream step omitted,
     # never a failed release.
@@ -205,98 +296,235 @@ spec:
             valueFrom:
               path: /tmp/proceed
 
-    # === Render Formula ===
-    # Fetches packaging/homebrew/pdftract.rb.template from the tag's own tree
-    # (the tag ships the formula shape it was released with), downloads the
-    # source archive the formula url points at, hashes those exact bytes, and
-    # substitutes <VERSION>/<SHA256>. The rendered formula must contain no
-    # leftover placeholder, exactly one 64-hex sha256 line, and parse as Ruby
-    # (ruby -c) before it is handed to the push step as a base64 parameter --
-    # a formula that fails validation must never reach the push step.
+    # === Verify Release Metadata ===
+    # Strategy §5 handoff: the leg consumes the release's published
+    # SHA256SUMS as-is, together with its cosign signature
+    # (SHA256SUMS.sig) and signing certificate (SHA256SUMS.pem), and
+    # verifies them BEFORE accepting the release metadata. A release
+    # missing any of the three assets, or whose verification fails,
+    # stops formula generation here (fail closed) -- the tap is never
+    # updated from an unverified release.
     #
-    # dry_run=true stubs the archive download and takes the template from the
-    # repo's default branch instead of the (fake) tag -- so the render+validate
-    # path is fully exercisable with a made-up version before the first real
-    # release exists, and no code path ever clones a nonexistent ref.
-    - name: render-formula
-      activeDeadlineSeconds: 600
+    # The aggregate is never rewritten and never appended to: the tag
+    # source archive GitHub serves is not an attached release asset, so
+    # SHA256SUMS deliberately has no line for it. The formula's sha256
+    # is computed separately (render-formula) from the archive bytes;
+    # this step only establishes that the release's own integrity
+    # metadata is the one iad-ci signed.
+    #
+    # One alpine container fetches the three assets, sanity-checks them,
+    # and verifies the signature with cosign from alpine 3.19's frozen
+    # community repo (2.2.1-r3; the signing leg runs the cosign 2.2.3
+    # image -- verify-blob semantics for this flag set are identical
+    # across 2.2.x, and the apk pin is as immutable as the alpine release
+    # it ships from. If exact signer parity is ever required, switch to
+    # the digest-pinned upstream binary
+    # f669f41176cb1d58bb6a3fdb06e24861540cfdb5a571b4ec5eb2218b0df5d304).
+    # The verification enforces the iad-ci OIDC identity constraints --
+    # the same identity/issuer pdftract-github-release signs with.
+    # --insecure-ignore-tlog skips only the rekor inclusion check so the
+    # verdict is deterministic from inside the cluster; the signature,
+    # the Fulcio certificate chain, and the iad-ci OIDC identity are
+    # still fully verified (cosign warns about the skipped tlog check,
+    # which is the documented trade-off).
+    #
+    # In a dry run there is no real release to verify: the step logs an
+    # explicit SKIP and succeeds without downloading anything. It never
+    # logs "verified" for a dry run.
+    #
+    # Retry: limit 2 (3 attempts) -- failures here are dominated by
+    # transient release-asset fetches; nothing has been published yet,
+    # so re-running the whole fetch+verify from scratch is safe.
+    - name: verify-release-metadata
+      activeDeadlineSeconds: 420
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnFailure
+        backoff:
+          duration: "10s"
+          factor: "2"
       container:
         image: alpine:3.19
         command: [sh, -c]
         args:
           - |
             set -eu
-            apk add --no-cache curl git ruby
+            apk add --no-cache curl cosign
+
+            REPO="{{workflow.parameters.repo}}"
+            TAG="{{workflow.parameters.tag}}"
+            DRY_RUN="{{workflow.parameters.dry_run}}"
+            IDENTITY_REGEXP="{{workflow.parameters.sums-identity-regexp}}"
+            OIDC_ISSUER="{{workflow.parameters.sums-oidc-issuer}}"
+            BASE="https://github.com/${REPO}/releases/download/${TAG}"
+            cd /tmp
+
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "=== DRY RUN: release-metadata verification SKIPPED -- tag ${TAG} is a stub with no release to verify ==="
+              exit 0
+            fi
+
+            echo "=== Fetching release integrity metadata for ${TAG} ==="
+            for asset in SHA256SUMS SHA256SUMS.sig SHA256SUMS.pem; do
+              curl -fsSL --retry 3 "${BASE}/${asset}" -o "${asset}" \
+                || { echo "ERROR: release ${TAG} is missing its ${asset} asset -- refusing to publish (strategy §5 handoff)" >&2; exit 1; }
+            done
+
+            # Structural sanity before crypto verification: the
+            # aggregate must be a non-empty list of checksum lines.
+            [ -s SHA256SUMS ] \
+              || { echo "ERROR: SHA256SUMS for ${TAG} is empty" >&2; exit 1; }
+            grep -Eq '^[0-9a-f]{64}  ' SHA256SUMS \
+              || { echo "ERROR: SHA256SUMS for ${TAG} contains no checksum lines" >&2; exit 1; }
+            [ -s SHA256SUMS.sig ] && [ -s SHA256SUMS.pem ] \
+              || { echo "ERROR: signature or certificate asset for ${TAG} is empty" >&2; exit 1; }
+
+            echo "=== Verifying SHA256SUMS for ${TAG} with $(cosign version 2>/dev/null | head -1) ==="
+            echo "    identity: ${IDENTITY_REGEXP} / issuer: ${OIDC_ISSUER}"
+            echo "    (tlog inclusion check skipped for an in-cluster-deterministic verdict; cosign warns -- expected)"
+            cosign verify-blob \
+              --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+              --certificate-oidc-issuer "${OIDC_ISSUER}" \
+              --insecure-ignore-tlog \
+              --signature SHA256SUMS.sig \
+              --certificate SHA256SUMS.pem \
+              SHA256SUMS \
+              || { echo "ERROR: SHA256SUMS for ${TAG} failed signature/identity verification -- refusing to publish (strategy §5 handoff)" >&2; exit 1; }
+
+            echo "=== Release metadata VERIFIED: signed SHA256SUMS accepted for ${TAG} ($(wc -l < SHA256SUMS) checksum lines) ==="
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+    # === Render Formula ===
+    # Resolves the release tuple and renders the formula through
+    # packaging/homebrew/render_formula.py -- the deterministic
+    # renderer (pdftract-fb684d69) -- taken from the release tag's own
+    # tree so the renderer, the template
+    # (packaging/homebrew/pdftract.rb.template, pdftract-2ba6e643), and
+    # the release are version-coherent. A tag cut before the renderer
+    # landed fails closed here.
+    #
+    # Inputs to the renderer (packaging/homebrew/README.md contract):
+    # the seven-field immutable release tuple. The leg downloads the
+    # exact SOURCE_ARCHIVE_URL bytes once and hashes them for
+    # SOURCE_ARCHIVE_SHA256 -- the formula's sha256 always describes
+    # what brew will download, never a recomputed or floating artifact.
+    # The SHA256SUMS_* URLs are the canonical release URLs; the
+    # renderer re-validates every field's canonical form.
+    #
+    # The renderer performs ALL structural validation (placeholders,
+    # url/version/sha256 binding, floating-ref and bare-SHA rejection,
+    # ruby -c on template and output) and exits nonzero on any
+    # violation -- a formula that fails validation never reaches the
+    # push step. That validation is the dry-run "prove before push"
+    # path: in dry_run the same renderer runs against a stub archive
+    # with the real template from the default branch.
+    #
+    # The rendered formula is handed to push-tap as a base64 parameter,
+    # not an artifact: iad-ci has no artifact repository, and an
+    # outputs.artifacts node fails there with exit 64. The formula is
+    # ~2 KB, comfortably inside a workflow-status parameter.
+    #
+    # Retry: limit 1 (2 attempts) -- transient clone/download failures
+    # only; rendering is deterministic and nothing is published yet.
+    - name: render-formula
+      activeDeadlineSeconds: 600
+      retryStrategy:
+        limit: "1"
+        retryPolicy: OnFailure
+        backoff:
+          duration: "10s"
+          factor: "2"
+      container:
+        image: alpine:3.19
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            apk add --no-cache python3 git curl ruby
 
             REPO="{{workflow.parameters.repo}}"
             TAG="{{workflow.parameters.tag}}"
             VERSION="{{workflow.parameters.version}}"
             DRY_RUN="{{workflow.parameters.dry_run}}"
 
-            # Defense in depth: the DAG gate already skipped non-versioned
-            # tags; re-check here so no code path can render past policy.
+            # Defense in depth: the DAG gate already skipped
+            # non-versioned tags; re-check so no code path can render
+            # past policy (the renderer re-checks the tuple too).
             printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
               || { echo "ERROR: refusing to render for non-versioned tag '${TAG}'" >&2; exit 1; }
             [ "v${VERSION}" = "${TAG}" ] \
               || { echo "ERROR: version '${VERSION}' does not match tag '${TAG}'" >&2; exit 1; }
 
-            URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+            # Canonical release-tuple URLs (strategy §5 handoff table);
+            # render_formula.py rejects any other form.
+            ARCHIVE_URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
+            SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS"
 
             if [ "${DRY_RUN}" = "true" ]; then
               echo "=== DRY RUN: stubbing the source archive for ${TAG} (no fetch) ==="
               printf 'pdftract dry-run source-archive stub for tag %s\n' "${TAG}" > /tmp/source.tar.gz
-              printf '(stub archive; real runs hash the bytes %s serves)\n' "${URL}" >> /tmp/source.tar.gz
+              printf '(stub archive; real runs hash the bytes %s serves)\n' "${ARCHIVE_URL}" >> /tmp/source.tar.gz
             else
-              echo "=== Downloading ${URL} ==="
-              curl -fsSL --retry 3 "${URL}" -o /tmp/source.tar.gz
+              echo "=== Downloading ${ARCHIVE_URL} ==="
+              curl -fsSL --retry 3 "${ARCHIVE_URL}" -o /tmp/source.tar.gz \
+                || { echo "ERROR: tag source archive ${ARCHIVE_URL} did not resolve (is the tag pushed and mirrored?)" >&2; exit 1; }
               gzip -t /tmp/source.tar.gz \
-                || { echo "ERROR: ${URL} did not serve a gzip archive" >&2; exit 1; }
+                || { echo "ERROR: ${ARCHIVE_URL} did not serve a gzip archive" >&2; exit 1; }
             fi
             [ "$(wc -c < /tmp/source.tar.gz)" -gt 32 ] \
               || { echo "ERROR: archive is implausibly small" >&2; exit 1; }
             SHA256="$(sha256sum /tmp/source.tar.gz | awk '{print $1}')"
-            echo "=== source archive sha256: ${SHA256}"
+            echo "=== source archive sha256: ${SHA256} ==="
 
-            # The template ships in the tag's own tree (the tag carries the
-            # formula shape it was released with) -- but a dry run's tag is
-            # deliberately fake (v9.9.9 et al.), so no such ref exists to
-            # clone. A dry run therefore takes the template from the repo's
-            # default branch: what is under test is the render+validate path,
-            # not the tag's tree.
+            # The renderer and template ship in the tag's own tree (the
+            # tag carries the formula contract it was released with) --
+            # but a dry run's tag is deliberately fake (v9.9.9 et al.),
+            # so no such ref exists to clone. A dry run therefore takes
+            # them from the repo's default branch: what is under test
+            # is the render+validate path, not the tag's tree.
             TEMPLATE_REF="${TAG}"
             if [ "${DRY_RUN}" = "true" ]; then
               TEMPLATE_REF="main"
-              echo "=== DRY RUN: template from default branch 'main' (stub tag ${TAG} has no ref to clone) ==="
+              echo "=== DRY RUN: renderer + template from default branch 'main' (stub tag ${TAG} has no ref to clone) ==="
             fi
-            echo "=== Fetching packaging/homebrew/pdftract.rb.template from ${TEMPLATE_REF} ==="
+            echo "=== Cloning ${REPO} at ${TEMPLATE_REF} for packaging/homebrew ==="
             git clone --quiet --depth 1 --branch "${TEMPLATE_REF}" "https://github.com/${REPO}.git" /src
-            TEMPLATE="/src/packaging/homebrew/pdftract.rb.template"
-            [ -f "${TEMPLATE}" ] \
-              || { echo "ERROR: ${TEMPLATE} is not present at ${TEMPLATE_REF}" >&2; exit 1; }
 
-            sed -e "s|<VERSION>|${VERSION}|g" -e "s|<SHA256>|${SHA256}|g" \
-              "${TEMPLATE}" > /tmp/pdftract.rb
+            cd /src/packaging/homebrew
+            [ -f render_formula.py ] \
+              || { echo "ERROR: packaging/homebrew/render_formula.py is not present at ${TEMPLATE_REF} (tag predates the renderer contract, pdftract-fb684d69)" >&2; exit 1; }
+            [ -f pdftract.rb.template ] \
+              || { echo "ERROR: packaging/homebrew/pdftract.rb.template is not present at ${TEMPLATE_REF}" >&2; exit 1; }
 
-            if grep -Eq '<VERSION>|<SHA256>' /tmp/pdftract.rb; then
-              echo "ERROR: unsubstituted placeholder left in rendered formula" >&2
-              exit 1
-            fi
-            [ "$(grep -c 'sha256 "' /tmp/pdftract.rb)" = "1" ] \
-              || { echo "ERROR: expected exactly one sha256 line in the formula" >&2; exit 1; }
-            grep -Eq 'sha256 "[0-9a-f]{64}"' /tmp/pdftract.rb \
-              || { echo "ERROR: sha256 line is not a 64-hex digest" >&2; exit 1; }
-            ruby -c /tmp/pdftract.rb \
-              || { echo "ERROR: rendered formula does not parse as Ruby" >&2; exit 1; }
+            cat > /tmp/release-inputs.json <<JSON
+            {
+              "RELEASE_TAG": "${TAG}",
+              "VERSION": "${VERSION}",
+              "SOURCE_ARCHIVE_URL": "${ARCHIVE_URL}",
+              "SOURCE_ARCHIVE_SHA256": "${SHA256}",
+              "SHA256SUMS_URL": "${SUMS_URL}",
+              "SHA256SUMS_SIG_URL": "${SUMS_URL}.sig",
+              "SHA256SUMS_PEM_URL": "${SUMS_URL}.pem"
+            }
+            JSON
+            echo "=== Release tuple (no secrets; hashes and canonical URLs only) ==="
+            cat /tmp/release-inputs.json
+
+            echo "=== Rendering via render_formula.py (its validators + ruby -c are the gate) ==="
+            python3 render_formula.py \
+              --inputs /tmp/release-inputs.json \
+              --output /tmp/Formula/pdftract.rb
 
             echo "=== Rendered Formula/pdftract.rb for ${TAG} (dry_run=${DRY_RUN}) ==="
-            cat /tmp/pdftract.rb
+            cat /tmp/Formula/pdftract.rb
 
-            # Handed to push-tap as a base64 parameter, not an artifact: the
-            # iad-ci cluster has no artifact repository configured, and an
-            # outputs.artifacts node fails there with exit 64 ("artifact
-            # storage is not configured"). The formula is ~2 KB, comfortably
-            # inside a workflow-status parameter.
-            base64 -w0 /tmp/pdftract.rb > /tmp/formula.b64
+            base64 /tmp/Formula/pdftract.rb | tr -d '\n' > /tmp/formula.b64
         resources:
           requests:
             cpu: 200m
@@ -311,21 +539,34 @@ spec:
               path: /tmp/formula.b64
 
     # === Push to Tap ===
-    # Commits the rendered formula to the Forgejo tap repo (source of truth)
-    # with the org git identity and pushes to main. Idempotent: re-runs with
-    # an unchanged formula push nothing (the mirror wait then also no-ops).
+    # Commits the rendered formula to the Forgejo tap repo (source of
+    # truth) with the org git identity and pushes to main. Idempotent:
+    # re-runs with an unchanged formula push nothing (the mirror wait
+    # then also no-ops), so a retry after a failed push cannot
+    # double-publish.
     #
-    # The push token is injected as an env var from the homebrew-tap-push-token
-    # Secret and passed to git through a credential helper, so it never appears
-    # in a URL, in argv, or in output. That Secret is meant to be
-    # ExternalSecret-synced from OpenBao once the credential sibling lands it
-    # (see the header) -- the reference here does not depend on it existing
-    # yet, because this step never runs until a real (non-dry-run) push.
+    # The push token is injected as an env var from the
+    # homebrew-tap-push-token Secret (ExternalSecret-synced from OpenBao,
+    # see the header) and passed to git through a credential helper, so
+    # it never appears in a URL, in argv, or in output. The helper also
+    # authenticates the clone itself, which keeps the step working
+    # under the Forgejo instance's sign-in-required policy. The value's
+    # correctness is verified only by downstream effect.
+    #
+    # Retry: limit 1 (2 attempts) -- safe because the step is a
+    # clone-write-diff-commit-push sequence that no-ops on an unchanged
+    # formula.
     - name: push-tap
       inputs:
         parameters:
           - name: formula-b64
       activeDeadlineSeconds: 300
+      retryStrategy:
+        limit: "1"
+        retryPolicy: OnFailure
+        backoff:
+          duration: "10s"
+          factor: "2"
       container:
         image: alpine:3.19
         command: [sh, -c]
@@ -354,7 +595,7 @@ spec:
             fi
 
             git commit --quiet -m "pdftract v${VERSION}" \
-              -m "Formula rendered from packaging/homebrew/pdftract.rb.template in jedarden/pdftract by the pdftract-homebrew-publish leg of the release cascade. Generated file -- do not edit by hand."
+              -m "Formula rendered by packaging/homebrew/render_formula.py (jedarden/pdftract) in the pdftract-homebrew-publish leg of the release cascade. Generated file -- do not edit by hand."
             git push --quiet origin main
             COMMIT="$(git rev-parse HEAD)"
             echo "=== Pushed ${COMMIT} to the Forgejo tap (main) ==="
@@ -441,8 +682,17 @@ spec:
     # public, so no credential is needed here. The formula builds from
     # source (depends_on "rust"), so brew pulls the rust toolchain first --
     # hence the generous deadline and memory.
+    #
+    # Retry: limit 1 (2 attempts) -- brew downloads are network-flaky;
+    # a retry re-installs into a fresh container and cannot double-publish.
     - name: brew-verify
       activeDeadlineSeconds: 5400
+      retryStrategy:
+        limit: "1"
+        retryPolicy: OnFailure
+        backoff:
+          duration: "30s"
+          factor: "2"
       container:
         image: "{{workflow.parameters.brew-image}}"
         command: [bash, -c]
@@ -468,8 +718,11 @@ spec:
             echo "=== brew verify PASS: pdftract ${VERSION} installed and runs ==="
         resources:
           requests:
-            cpu: 2000m
-            memory: 4Gi
+            cpu: 1000m
+            memory: 2Gi
           limits:
-            cpu: 4000m
-            memory: 8Gi
+            # iad-ci's largest compute1-8 node exposes 3500m CPU / 6.16GiB;
+            # higher limits can never schedule and are rejected by the
+            # cluster's manifest guardrail.
+            cpu: 3500m
+            memory: 6Gi
