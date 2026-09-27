@@ -3,6 +3,11 @@
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -17,12 +22,45 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.homebrew = HOMEBREW_WORKFLOW.read_text(encoding="utf-8")
         cls.release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-        cls.render = cls.homebrew.split("    - name: render-formula", 1)[1].split(
+        cls.gate = cls.homebrew.split("    # === Versioned-Tag Gate ===", 1)[1].split(
+            "    # === Verify Release Metadata ===", 1
+        )[0]
+        cls.render = cls.homebrew.split("    # === Render Formula ===", 1)[1].split(
             "    # === Push to Tap ===", 1
         )[0]
-        cls.push = cls.homebrew.split("    - name: push-tap", 1)[1].split(
+        cls.push = cls.homebrew.split("    # === Push to Tap ===", 1)[1].split(
             "    # === Wait for Mirror ===", 1
         )[0]
+        cls.wait = cls.homebrew.split("    # === Wait for Mirror ===", 1)[1].split(
+            "    # === Brew Install Verification ===", 1
+        )[0]
+
+    def _run_gate(self, tag: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+        """Run the checked-in gate shell with an isolated proceed output."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proceed = Path(temp_dir) / "proceed"
+            gate_task = self.gate.split("    - name: versioned-tag-gate", 1)[1].split(
+                "        resources:", 1
+            )[0]
+            script = gate_task.split("          - |", 1)[1]
+            script = textwrap.dedent(script).replace(
+                'TAG="{{workflow.parameters.tag}}"', 'TAG="${GATE_TAG}"'
+            )
+            script = script.replace("/tmp/proceed", str(proceed))
+            result = subprocess.run(
+                ["sh", "-c", script],
+                env={**os.environ, "GATE_TAG": tag},
+                text=True,
+                capture_output=True,
+            )
+            saved_handle = tempfile.NamedTemporaryFile(
+                prefix="pdftract-gate-result-", delete=False
+            )
+            saved = Path(saved_handle.name)
+            saved_handle.close()
+            if proceed.exists():
+                saved.write_text(proceed.read_text(encoding="utf-8"), encoding="utf-8")
+            return result, saved
 
     def test_release_producer_hands_off_signed_source_archive_digest(self) -> None:
         self.assertIn(
@@ -57,6 +95,133 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
             self.homebrew,
         )
 
+    def test_non_versioned_tags_are_successful_noops(self) -> None:
+        for tag in ("", "main", "v1.2.3-rc.1", ":latest", "deadbeef" * 5):
+            with self.subTest(tag=tag):
+                result, proceed_path = self._run_gate(tag)
+                try:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(
+                        proceed_path.read_text(encoding="utf-8"), "false\n"
+                    )
+                finally:
+                    proceed_path.unlink(missing_ok=True)
+
+        result, proceed_path = self._run_gate("v1.2.3")
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(proceed_path.read_text(encoding="utf-8"), "true\n")
+        finally:
+            proceed_path.unlink(missing_ok=True)
+
+        # The false gate result is a no-op for every publication task, not a
+        # path around the gate.
+        self.assertEqual(
+            self.homebrew.count(
+                'when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true'
+            ),
+            5,
+        )
+
+    def test_approved_tap_urls_are_pinned_and_secrets_are_only_referenced(self) -> None:
+        self.assertIn(
+            'TAP_URL="https://git.ardenone.com/jedarden/homebrew-tap.git"',
+            self.push,
+        )
+        self.assertIn(
+            'MIRROR="https://github.com/jedarden/homebrew-tap.git"', self.homebrew
+        )
+        self.assertNotIn("releases/latest", self.homebrew)
+        self.assertNotIn("archive/refs/heads", self.homebrew)
+        for image in re.findall(
+            r"^\s+image:\s*(\S+)", self.homebrew, re.MULTILINE
+        ):
+            self.assertNotRegex(image, r":latest(?:$|\s)")
+
+        # The manifest may name the secret and its environment variable, but
+        # must not carry a token-shaped literal or interpolate one into a URL.
+        self.assertRegex(self.push, r"name: homebrew-tap-push-token")
+        self.assertRegex(
+            self.push, r"secretKeyRef:\n\s+name: homebrew-tap-push-token"
+        )
+        self.assertNotRegex(
+            self.homebrew,
+            r"(?:ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+|xox[baprs]-[A-Za-z0-9-]+)",
+        )
+        self.assertNotRegex(self.push, r"TAP_TOKEN\s*=\s*[^$\s\"']")
+
+    def test_render_failure_is_retryable_but_cannot_reach_tap(self) -> None:
+        self.assertIn('limit: "1"\n        retryPolicy: OnFailure', self.render)
+        self.assertIn("set -eu", self.render)
+        self.assertIn(
+            "refusing to render without the signed source-archive checksum handoff",
+            self.render,
+        )
+        self.assertIn(
+            "dependencies: [versioned-tag-gate, verify-release-metadata, render-formula]",
+            self.homebrew,
+        )
+        self.assertNotIn("git push", self.render)
+
+    def test_failed_tap_update_retries_without_false_success(self) -> None:
+        """Execute the tap step with a fake git whose push fails."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                """#!/bin/sh
+case "$1" in
+  clone|config|add|commit) exit 0 ;;
+  diff)
+    [ "$3" = "--name-only" ] && { echo Formula/pdftract.rb; exit 0; }
+    exit 1
+    ;;
+  push) exit 42 ;;
+  rev-parse) echo 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o700)
+
+            script = self.push.split("          - |", 1)[1].split(
+                "        env:", 1
+            )[0]
+            script = textwrap.dedent(script)
+            script = script.replace("apk add --no-cache git", ":")
+            script = script.replace("/tap", str(root / "tap"))
+            script = script.replace(
+                'VERSION="{{workflow.parameters.version}}"', 'VERSION="1.2.3"'
+            )
+            script = script.replace(
+                'FORMULA_B64="{{inputs.parameters.formula-b64}}"',
+                'FORMULA_B64="Zm9ybXVsYQ=="',
+            )
+            result = subprocess.run(
+                ["sh", "-c", script],
+                env={
+                    **os.environ,
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                    "TAP_TOKEN": "fixture-token-not-in-workflow",
+                },
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 42, result.stderr)
+            self.assertNotIn("Pushed", result.stdout + result.stderr)
+            self.assertFalse((root / "tap-commit").exists())
+
+        self.assertIn(
+            'retryStrategy:\n        limit: "1"\n        retryPolicy: OnFailure', self.push
+        )
+        self.assertIn("dependencies: [versioned-tag-gate, push-tap]", self.homebrew)
+        self.assertIn("GitHub mirror did not reflect tap commit", self.wait)
+        self.assertIn("exit 1", self.wait)
+
     def test_publication_is_pinned_to_the_approved_tap_and_formula_path(self) -> None:
         self.assertIn(
             'TAP_URL="https://git.ardenone.com/jedarden/homebrew-tap.git"',
@@ -83,8 +248,10 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
 
     def test_workflow_images_are_not_floating(self) -> None:
         for workflow in (self.homebrew, self.release):
-            self.assertNotIn("image: alpine:latest", workflow)
-            self.assertNotIn("image: orhunp/git-cliff:latest", workflow)
+            for image in re.findall(
+                r"^\s+image:\s*(\S+)", workflow, re.MULTILINE
+            ):
+                self.assertNotRegex(image, r":latest(?:$|\s)")
 
 
 if __name__ == "__main__":
