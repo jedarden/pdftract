@@ -214,7 +214,9 @@ esac
             )[0]
             script = textwrap.dedent(script)
             script = script.replace("apk add --no-cache git", ":")
+            script = script.replace("/tmp/tap-commit", "__TAP_COMMIT_OUTPUT__")
             script = script.replace("/tap", str(root / "tap"))
+            script = script.replace("__TAP_COMMIT_OUTPUT__", str(root / "tap-commit"))
             script = script.replace(
                 'VERSION="{{workflow.parameters.version}}"', 'VERSION="1.2.3"'
             )
@@ -253,7 +255,64 @@ esac
         self.assertNotIn("{{workflow.parameters.tap-repo}}", self.homebrew)
         self.assertIn('MIRROR="https://github.com/jedarden/homebrew-tap.git"', self.homebrew)
         self.assertIn("git add -- Formula/pdftract.rb", self.push)
-        self.assertIn('[ "${STAGED_PATHS}" = "Formula/pdftract.rb" ]', self.push)
+        self.assertIn(
+            'if [ -n "${STAGED_PATHS}" ] && [ "${STAGED_PATHS}" != "Formula/pdftract.rb" ]; then',
+            self.push,
+        )
+
+    def test_unchanged_formula_is_an_idempotent_success(self) -> None:
+        """A retry after a successful push must accept an empty staged path list."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                """#!/bin/sh
+case "$1" in
+  clone|config|add) exit 0 ;;
+  diff)
+    [ "$3" = "--name-only" ] && exit 0
+    exit 0
+    ;;
+  push) exit 99 ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o700)
+
+            script = self.push.split("          - |", 1)[1].split(
+                "        env:", 1
+            )[0]
+            script = textwrap.dedent(script)
+            script = script.replace("apk add --no-cache git", ":")
+            script = script.replace("/tmp/tap-commit", "__TAP_COMMIT_OUTPUT__")
+            script = script.replace("/tap", str(root / "tap"))
+            script = script.replace("__TAP_COMMIT_OUTPUT__", str(root / "tap-commit"))
+            script = script.replace(
+                'VERSION="{{workflow.parameters.version}}"', 'VERSION="1.2.3"'
+            )
+            script = script.replace(
+                'FORMULA_B64="{{inputs.parameters.formula-b64}}"',
+                'FORMULA_B64="Zm9ybXVsYQ=="',
+            )
+            result = subprocess.run(
+                ["sh", "-c", script],
+                env={
+                    **os.environ,
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                    "TAP_TOKEN": "fixture-token-not-in-workflow",
+                },
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("idempotent re-run", result.stdout)
+            self.assertNotIn("Pushed", result.stdout + result.stderr)
+            self.assertTrue((root / "tap-commit").exists())
 
     def test_publication_waits_for_render_validation_and_uses_bounded_retry(self) -> None:
         self.assertIn(

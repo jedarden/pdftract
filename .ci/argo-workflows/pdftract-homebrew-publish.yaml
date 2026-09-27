@@ -607,8 +607,10 @@ spec:
             # destination if the tap gains other generated or user files.
             git add -- Formula/pdftract.rb
             STAGED_PATHS="$(git diff --cached --name-only)"
-            [ "${STAGED_PATHS}" = "Formula/pdftract.rb" ] \
-              || { echo "ERROR: refusing to publish paths other than Formula/pdftract.rb" >&2; exit 1; }
+            if [ -n "${STAGED_PATHS}" ] && [ "${STAGED_PATHS}" != "Formula/pdftract.rb" ]; then
+              echo "ERROR: refusing to publish paths other than Formula/pdftract.rb" >&2
+              exit 1
+            fi
             if git diff --cached --quiet; then
               echo "Formula unchanged since the last push -- nothing to commit (idempotent re-run)"
               echo UNCHANGED > /tmp/tap-commit
