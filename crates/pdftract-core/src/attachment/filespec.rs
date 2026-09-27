@@ -255,7 +255,7 @@ pub fn extract_one(
 /// Extract filename from Filespec, preferring /UF over /F.
 fn extract_filename(filespec_dict: &crate::parser::object::PdfDict) -> Result<String> {
     // Try /UF (Unicode filename) first
-    if let Some(uf_obj) = filespec_dict.get("/UF") {
+    if let Some(uf_obj) = filespec_dict.get("UF").or_else(|| filespec_dict.get("/UF")) {
         if let Some(uf_bytes) = uf_obj.as_string() {
             let decoded = decode_pdf_string(uf_bytes);
             if !decoded.is_empty() {
@@ -265,7 +265,7 @@ fn extract_filename(filespec_dict: &crate::parser::object::PdfDict) -> Result<St
     }
 
     // Fall back to /F (system-independent filename)
-    if let Some(f_obj) = filespec_dict.get("/F") {
+    if let Some(f_obj) = filespec_dict.get("F").or_else(|| filespec_dict.get("/F")) {
         if let Some(f_bytes) = f_obj.as_string() {
             let decoded = decode_pdfdocencoding(f_bytes);
             if !decoded.is_empty() {
@@ -284,7 +284,8 @@ fn extract_filename(filespec_dict: &crate::parser::object::PdfDict) -> Result<St
 /// Extract description from Filespec (/Desc, optional).
 fn extract_description(filespec_dict: &crate::parser::object::PdfDict) -> Option<String> {
     filespec_dict
-        .get("/Desc")
+        .get("Desc")
+        .or_else(|| filespec_dict.get("/Desc"))
         .and_then(|obj| obj.as_string())
         .and_then(|bytes| {
             let decoded = decode_pdf_string(bytes);
@@ -298,12 +299,15 @@ fn extract_description(filespec_dict: &crate::parser::object::PdfDict) -> Option
 
 /// Extract /EF /F stream reference from Filespec.
 fn extract_ef_stream_ref(filespec_dict: &crate::parser::object::PdfDict) -> Result<ObjRef> {
-    let ef_obj = filespec_dict.get("/EF").ok_or_else(|| {
-        vec![Diagnostic::with_static_no_offset(
-            DiagCode::StructMissingKey,
-            "Filespec missing /EF dictionary",
-        )]
-    })?;
+    let ef_obj = filespec_dict
+        .get("EF")
+        .or_else(|| filespec_dict.get("/EF"))
+        .ok_or_else(|| {
+            vec![Diagnostic::with_static_no_offset(
+                DiagCode::StructMissingKey,
+                "Filespec missing /EF dictionary",
+            )]
+        })?;
 
     let ef_dict = ef_obj.as_dict().ok_or_else(|| {
         vec![Diagnostic::with_dynamic_no_offset(
@@ -314,12 +318,15 @@ fn extract_ef_stream_ref(filespec_dict: &crate::parser::object::PdfDict) -> Resu
 
     // Get /F from /EF (the embedded file stream reference)
     // Note: /EF may also have /UF, /DOS, /Mac, /Unix variants, but /F is the canonical
-    let stream_ref_obj = ef_dict.get("/F").ok_or_else(|| {
-        vec![Diagnostic::with_static_no_offset(
-            DiagCode::StructMissingKey,
-            "/EF missing /F stream reference",
-        )]
-    })?;
+    let stream_ref_obj = ef_dict
+        .get("F")
+        .or_else(|| ef_dict.get("/F"))
+        .ok_or_else(|| {
+            vec![Diagnostic::with_static_no_offset(
+                DiagCode::StructMissingKey,
+                "/EF missing /F stream reference",
+            )]
+        })?;
 
     stream_ref_obj.as_ref().ok_or_else(|| {
         vec![Diagnostic::with_dynamic_no_offset(
@@ -335,7 +342,8 @@ fn extract_ef_stream_ref(filespec_dict: &crate::parser::object::PdfDict) -> Resu
 /// Extract MIME type from stream dictionary (/Subtype, optional).
 fn extract_mime_type(stream_dict: &crate::parser::object::PdfDict) -> Option<String> {
     stream_dict
-        .get("/Subtype")
+        .get("Subtype")
+        .or_else(|| stream_dict.get("/Subtype"))
         .and_then(|obj| obj.as_name())
         .map(|s| s.to_string())
 }
@@ -343,9 +351,10 @@ fn extract_mime_type(stream_dict: &crate::parser::object::PdfDict) -> Option<Str
 /// Extract original size from stream params (/Params /Size, optional).
 fn extract_size(stream_dict: &crate::parser::object::PdfDict) -> Option<u64> {
     stream_dict
-        .get("/Params")
+        .get("Params")
+        .or_else(|| stream_dict.get("/Params"))
         .and_then(|obj| obj.as_dict())
-        .and_then(|params| params.get("/Size"))
+        .and_then(|params| params.get("Size").or_else(|| params.get("/Size")))
         .and_then(|obj| obj.as_int())
         .filter(|&size| size >= 0)
         .map(|size| size as u64)
@@ -354,9 +363,15 @@ fn extract_size(stream_dict: &crate::parser::object::PdfDict) -> Option<u64> {
 /// Extract and parse a date field from stream params (/CreationDate or /ModDate).
 fn extract_date(stream_dict: &crate::parser::object::PdfDict, key: &str) -> Option<String> {
     stream_dict
-        .get("/Params")
+        .get("Params")
+        .or_else(|| stream_dict.get("/Params"))
         .and_then(|obj| obj.as_dict())
-        .and_then(|params| params.get(key))
+        .and_then(|params| {
+            params.get(key).or_else(|| {
+                let key_with_slash = format!("/{key}");
+                params.get(key_with_slash.as_str())
+            })
+        })
         .and_then(|obj| obj.as_string())
         .and_then(parse_pdf_date)
 }
@@ -367,9 +382,10 @@ fn extract_date(stream_dict: &crate::parser::object::PdfDict, key: &str) -> Opti
 /// as 32 lowercase hex characters.
 fn extract_checksum(stream_dict: &crate::parser::object::PdfDict) -> Option<String> {
     stream_dict
-        .get("/Params")
+        .get("Params")
+        .or_else(|| stream_dict.get("/Params"))
         .and_then(|obj| obj.as_dict())
-        .and_then(|params| params.get("/CheckSum"))
+        .and_then(|params| params.get("CheckSum").or_else(|| params.get("/CheckSum")))
         .and_then(|obj| obj.as_string())
         .map(|bytes| {
             bytes
@@ -395,9 +411,10 @@ fn decode_stream_content(
     // Check if we have a /Size hint from /Params
     let size_hint = stream
         .dict
-        .get("/Params")
+        .get("Params")
+        .or_else(|| stream.dict.get("/Params"))
         .and_then(|p| p.as_dict())
-        .and_then(|params| params.get("/Size"))
+        .and_then(|params| params.get("Size").or_else(|| params.get("/Size")))
         .and_then(|s| s.as_int())
         .filter(|&s| s > 0)
         .map(|s| s as u64);

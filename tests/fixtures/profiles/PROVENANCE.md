@@ -26,6 +26,12 @@ bash scripts/check-provenance.sh
 
 | Path | Source URL | License | Downloaded Date | SHA256 | Notes |
 |------|------------|---------|-----------------|-------|-------|
+| auxiliary/article-thread.pdf | tests/fixtures/auxiliary/generate_fixtures.py | MIT-0 | 2026-09-27 | 316a6ad026febb17f6a9604dfc26729e1281f040ca90f4ff89e570ab7d62291f | Synthetic two-page article thread fixture for end-to-end thread extraction |
+| auxiliary/attachment.pdf | tests/fixtures/auxiliary/generate_fixtures.py | MIT-0 | 2026-09-27 | 2473a2f38a476c50b21526183f32fd5648dea5b36da983203da20c9d5d1fe995 | Synthetic embedded-file fixture for attachment extraction and serialization |
+| auxiliary/form-and-javascript.pdf | tests/fixtures/auxiliary/generate_fixtures.py | MIT-0 | 2026-09-27 | 1cd0498973cb562cd1188c703012e17eb94dd07e9d39dd2b5d2500e3ac6f3e20 | Synthetic AcroForm and catalog JavaScript fixture |
+| auxiliary/links.pdf | tests/fixtures/auxiliary/generate_fixtures.py | MIT-0 | 2026-09-27 | 86038d9a655c0a6d9f56b970a53462f4396a98de86c2995cc1b2225d676baf3e | Synthetic URI and named-link fixture |
+| auxiliary/plain.pdf | tests/fixtures/auxiliary/generate_fixtures.py | MIT-0 | 2026-09-27 | bd320834e4e136b865189cfb6d3776603a86e961075d4a44708bd7be9f36e5fb | Synthetic baseline fixture with empty auxiliary result surfaces |
+| auxiliary/signature.pdf | tests/fixtures/auxiliary/generate_fixtures.py | MIT-0 | 2026-09-27 | 88a61c754d88208228bd3e8ca0d2694f48211cd5bee050d643c00fe6dbd8e5b9 | Synthetic signature-field metadata fixture |
 | EC-04-rc4-encrypted.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | 83826e9f7e21a809d2ac5e54e9faf0b6d3bb901bc04e5b566c4dfc013bd2c997 | RC4-40 encrypted PDF (V=1, R=2), password "test" |
 | EC-05-aes128-encrypted.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | ad83d1e4857cdf3f90cdabf8f69047aa7117636acebc5c5cecafe84e54ec2544 | AES-128 encrypted PDF (V=4, R=4), password "test" |
 | EC-06-aes256-encrypted.pdf | tests/fixtures/generate_encrypted_fixtures.py | MIT-0 | 2026-05-27 | 427a11b325f14700e3eed1763938b679fbd49cfe3d9de976b3ca25fe9fc4ef16 | AES-256 encrypted PDF (V=5, R=6), password "test" |

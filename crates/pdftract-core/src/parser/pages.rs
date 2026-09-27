@@ -643,11 +643,10 @@ fn build_page_dict(
     };
 
     // Get the page's object reference (if available as Indirect)
-    let obj_ref = if let PdfObject::Indirect(ind) = page_obj {
-        ind.id
-    } else {
-        ObjRef::new(0, 0)
-    };
+    let obj_ref = node_ref.unwrap_or_else(|| match page_obj {
+        PdfObject::Indirect(ind) => ind.id,
+        _ => ObjRef::new(0, 0),
+    });
 
     // The structured object location for this page's diagnostics: the
     // reference the walker resolved (preferred) or the Indirect wrapper's id.

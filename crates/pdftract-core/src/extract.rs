@@ -1462,7 +1462,10 @@ fn extract_attachments(
     }
 
     // Walk /EmbeddedFiles name tree (PDF 1.7)
-    if let Some(names_obj) = catalog_dict.get("/Names") {
+    if let Some(names_obj) = catalog_dict
+        .get("Names")
+        .or_else(|| catalog_dict.get("/Names"))
+    {
         if let Some(names_ref) = names_obj.as_ref() {
             if let Ok(embedded_entries) = walk_embedded_files(resolver, names_ref) {
                 for entry in embedded_entries {

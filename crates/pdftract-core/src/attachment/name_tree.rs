@@ -144,7 +144,10 @@ pub fn walk_embedded_files(
     };
 
     // Get /EmbeddedFiles from /Names (optional)
-    let embedded_files_obj = match names_dict.get("/EmbeddedFiles") {
+    let embedded_files_obj = match names_dict
+        .get("EmbeddedFiles")
+        .or_else(|| names_dict.get("/EmbeddedFiles"))
+    {
         Some(obj) => obj,
         None => {
             // /EmbeddedFiles is absent - this is normal for PDFs without attachments
@@ -226,12 +229,20 @@ fn walk_tree_node(
 ) -> Result<()> {
     let diagnostic_start = diagnostics.len();
     // Check for /Names (leaf node) - alternating [key value key value ...]
-    if let Some(names_array) = node_dict.get("/Names").and_then(|o| o.as_array()) {
+    if let Some(names_array) = node_dict
+        .get("Names")
+        .or_else(|| node_dict.get("/Names"))
+        .and_then(|o| o.as_array())
+    {
         parse_names_array(names_array, entries, diagnostics)?;
     }
 
     // Check for /Kids (intermediate node) - array of child node references
-    if let Some(kids_array) = node_dict.get("/Kids").and_then(|o| o.as_array()) {
+    if let Some(kids_array) = node_dict
+        .get("Kids")
+        .or_else(|| node_dict.get("/Kids"))
+        .and_then(|o| o.as_array())
+    {
         for (idx, kid_obj) in kids_array.iter().enumerate() {
             let kid_ref = match kid_obj.as_ref() {
                 Some(r) => r,

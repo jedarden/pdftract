@@ -101,7 +101,7 @@ pub(crate) fn extract_link(
     names_dests_ref: Option<crate::parser::object::ObjRef>,
 ) -> Option<LinkAnnotation> {
     // Try to extract /A (action) dictionary - PDF dict keys include the leading /
-    if let Some(action_obj) = dict.get("/A") {
+    if let Some(action_obj) = dict.get("A").or_else(|| dict.get("/A")) {
         // Resolve indirect reference if needed
         let action_dict = match action_obj {
             PdfObject::Dict(action_dict) => action_dict.clone(),
@@ -125,13 +125,17 @@ pub(crate) fn extract_link(
         };
 
         // Check /S (action type)
-        let action_type = action_dict.get("/S").and_then(|o| o.as_name());
+        let action_type = action_dict
+            .get("S")
+            .or_else(|| action_dict.get("/S"))
+            .and_then(|o| o.as_name());
 
         match action_type {
             Some(name) if name == "URI" => {
                 // URI action: extract /URI
                 let uri = action_dict
-                    .get("/URI")
+                    .get("URI")
+                    .or_else(|| action_dict.get("/URI"))
                     .and_then(|o| o.as_string())
                     .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 
@@ -145,7 +149,7 @@ pub(crate) fn extract_link(
             Some(name) if name == "GoTo" => {
                 // GoTo action: extract /D (destination)
                 return extract_destination(
-                    action_dict.get("/D"),
+                    action_dict.get("D").or_else(|| action_dict.get("/D")),
                     &common,
                     resolver,
                     dests_dict,
@@ -155,7 +159,8 @@ pub(crate) fn extract_link(
             Some(name) if name == "JavaScript" => {
                 // JavaScript action: emit diagnostic with truncated code
                 let js_code = action_dict
-                    .get("/JS")
+                    .get("JS")
+                    .or_else(|| action_dict.get("/JS"))
                     .and_then(|o| o.as_string())
                     .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 
@@ -182,7 +187,7 @@ pub(crate) fn extract_link(
     }
 
     // Check for direct /Dest entry (no /A)
-    if let Some(dest_obj) = dict.get("/Dest") {
+    if let Some(dest_obj) = dict.get("Dest").or_else(|| dict.get("/Dest")) {
         return extract_destination(
             Some(dest_obj),
             &common,

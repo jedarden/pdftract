@@ -1,0 +1,70 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Threads 10 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [ 3 0 R 4 0 R ] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 612 792 ] /Contents 5 0 R /Resources << /Font << /F1 20 0 R >> >> >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 612 792 ] /Contents 6 0 R /Resources << /Font << /F1 20 0 R >> >> >>
+endobj
+5 0 obj
+<< /Length 49 >>
+stream
+BT /F1 12 Tf 72 720 Td (Auxiliary fixture) Tj ET
+
+endstream
+endobj
+6 0 obj
+<< /Length 49 >>
+stream
+BT /F1 12 Tf 72 696 Td (Auxiliary fixture) Tj ET
+
+endstream
+endobj
+10 0 obj
+[ 13 0 R ]
+endobj
+11 0 obj
+<< /Type /Bead /T 13 0 R /N 12 0 R /R 3 0 R /V [ 50 600 250 720 ] >>
+endobj
+12 0 obj
+<< /Type /Bead /T 13 0 R /N 11 0 R /R 4 0 R /V [ 300 100 550 220 ] >>
+endobj
+13 0 obj
+<< /F 11 0 R /I << /Title (Fixture thread) /Author (Ada) /Subject (Reading order) /Keywords (pdf,thread) >> >>
+endobj
+20 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 21
+0000000000 65535 f
+0000000009 00000 n
+0000000074 00000 n
+0000000139 00000 n
+0000000268 00000 n
+0000000397 00000 n
+0000000496 00000 n
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000595 00000 n
+0000000622 00000 n
+0000000707 00000 n
+0000000793 00000 n
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000920 00000 n
+trailer
+<< /Size 21 /Root 1 0 R >>
+startxref
+991
+%%EOF

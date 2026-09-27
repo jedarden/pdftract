@@ -1,0 +1,57 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm 6 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 612 792 ] /Contents 4 0 R /Resources << /Font << /F1 20 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 49 >>
+stream
+BT /F1 12 Tf 72 720 Td (Auxiliary fixture) Tj ET
+
+endstream
+endobj
+6 0 obj
+<< /Fields [ 7 0 R ] >>
+endobj
+7 0 obj
+<< /FT /Sig /T (approval_signature) /V 8 0 R >>
+endobj
+8 0 obj
+<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /Name (Ada Lovelace) /M (D:20260102112233Z) /Reason (Approved) /Location (New York) /ByteRange [ 0 100 200 300 ] >>
+endobj
+20 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 21
+0000000000 65535 f
+0000000009 00000 n
+0000000074 00000 n
+0000000133 00000 n
+0000000262 00000 n
+0000000000 65535 f
+0000000361 00000 n
+0000000400 00000 n
+0000000463 00000 n
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000000 65535 f
+0000000663 00000 n
+trailer
+<< /Size 21 /Root 1 0 R >>
+startxref
+734
+%%EOF

@@ -143,7 +143,11 @@ pub fn dispatch_annotations(
             };
 
             // Extract the subtype (keys in PDF dicts include the leading /)
-            let subtype = match annot_dict.get("/Subtype").and_then(|o| o.as_name()) {
+            let subtype = match annot_dict
+                .get("Subtype")
+                .or_else(|| annot_dict.get("/Subtype"))
+                .and_then(|o| o.as_name())
+            {
                 Some(name) => name.to_string(),
                 None => {
                     // Missing subtype - skip
@@ -199,56 +203,62 @@ fn extract_common_fields(
     _resolver: &XrefResolver,
 ) -> AnnotationCommon {
     // Extract /Rect (bounding box) - PDF dict keys include the leading /
-    let rect = dict.get("/Rect").and_then(|obj| {
-        if let Some(arr) = obj.as_array() {
-            if arr.len() == 4 {
-                let coords: Vec<Option<f32>> = arr
-                    .iter()
-                    .map(|o| {
-                        o.as_real()
-                            .map(|f| f as f32)
-                            .or_else(|| o.as_int().map(|i| i as f32))
-                    })
-                    .collect();
+    let rect = dict
+        .get("Rect")
+        .or_else(|| dict.get("/Rect"))
+        .and_then(|obj| {
+            if let Some(arr) = obj.as_array() {
+                if arr.len() == 4 {
+                    let coords: Vec<Option<f32>> = arr
+                        .iter()
+                        .map(|o| {
+                            o.as_real()
+                                .map(|f| f as f32)
+                                .or_else(|| o.as_int().map(|i| i as f32))
+                        })
+                        .collect();
 
-                if coords.iter().all(|c| c.is_some()) {
-                    Some([
-                        coords[0].unwrap(),
-                        coords[1].unwrap(),
-                        coords[2].unwrap(),
-                        coords[3].unwrap(),
-                    ])
+                    if coords.iter().all(|c| c.is_some()) {
+                        Some([
+                            coords[0].unwrap(),
+                            coords[1].unwrap(),
+                            coords[2].unwrap(),
+                            coords[3].unwrap(),
+                        ])
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
             } else {
                 None
             }
-        } else {
-            None
-        }
-    });
+        });
 
     // Extract /Contents (annotation text)
     let contents = dict
-        .get("/Contents")
+        .get("Contents")
+        .or_else(|| dict.get("/Contents"))
         .and_then(|o| o.as_string())
         .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 
     // Extract /T (author)
     let author = dict
-        .get("/T")
+        .get("T")
+        .or_else(|| dict.get("/T"))
         .and_then(|o| o.as_string())
         .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 
     // Extract /M (modification date) and parse to ISO 8601
     let modified = dict
-        .get("/M")
+        .get("M")
+        .or_else(|| dict.get("/M"))
         .and_then(|o| o.as_string())
         .and_then(parse_pdf_date);
 
     // Extract /C (color array)
-    let color = dict.get("/C").and_then(|obj| {
+    let color = dict.get("C").or_else(|| dict.get("/C")).and_then(|obj| {
         if let Some(arr) = obj.as_array() {
             let colors: Vec<Option<f32>> = arr
                 .iter()
@@ -273,23 +283,35 @@ fn extract_common_fields(
 
     // Extract /CA (opacity), default 1.0
     let opacity = dict
-        .get("/CA")
+        .get("CA")
+        .or_else(|| dict.get("/CA"))
         .and_then(|o| o.as_real())
         .map(|f| f as f32)
-        .or_else(|| dict.get("/CA").and_then(|o| o.as_int()).map(|i| i as f32));
+        .or_else(|| {
+            dict.get("CA")
+                .or_else(|| dict.get("/CA"))
+                .and_then(|o| o.as_int())
+                .map(|i| i as f32)
+        });
 
     // Extract /F (flags), default 0
-    let flags = dict.get("/F").and_then(|o| o.as_int()).unwrap_or(0) as u32;
+    let flags = dict
+        .get("F")
+        .or_else(|| dict.get("/F"))
+        .and_then(|o| o.as_int())
+        .unwrap_or(0) as u32;
 
     // Extract /NM (name identifier)
     let name_id = dict
-        .get("/NM")
+        .get("NM")
+        .or_else(|| dict.get("/NM"))
         .and_then(|o| o.as_string())
         .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 
     // Extract /Subj (subject)
     let subject = dict
-        .get("/Subj")
+        .get("Subj")
+        .or_else(|| dict.get("/Subj"))
         .and_then(|o| o.as_string())
         .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
 

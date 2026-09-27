@@ -91,7 +91,7 @@ pub fn walk_af_array(
     let mut diagnostics = Vec::new();
 
     // Get /AF from catalog (optional)
-    let af_obj = match catalog_dict.get("/AF") {
+    let af_obj = match catalog_dict.get("AF").or_else(|| catalog_dict.get("/AF")) {
         Some(obj) => obj,
         None => {
             // /AF is absent in PDF 1.7 documents - this is normal
@@ -200,10 +200,13 @@ fn extract_af_relationship(
     };
 
     // Extract /AFRelationship (optional)
-    let relationship = filespec_dict.get("/AFRelationship").and_then(|obj| {
-        // /AFRelationship is typically a Name object
-        obj.as_name().map(|s| s.to_string())
-    });
+    let relationship = filespec_dict
+        .get("AFRelationship")
+        .or_else(|| filespec_dict.get("/AFRelationship"))
+        .and_then(|obj| {
+            // /AFRelationship is typically a Name object
+            obj.as_name().map(|s| s.to_string())
+        });
 
     Ok(relationship)
 }
