@@ -271,6 +271,9 @@ fn fence_marker(line: &str) -> Option<(char, usize, &str)> {
     }
     // '`' and '~' are one byte each, so the char count is a byte offset.
     let len = s.chars().take_while(|&c| c == ch).count();
+    if len < 3 {
+        return None;
+    }
     Some((ch, len, &s[len..]))
 }
 
@@ -1556,6 +1559,21 @@ Some text."#;
             r#"<!--  pdftract:  page=0  block=0  bbox=[72.0,640.5,540.0,672.0]  kind=heading  -->"#;
         let anchors = parse_anchors(md);
         assert_eq!(anchors.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_anchors_does_not_treat_short_fence_markers_as_fences() {
+        let md = concat!(
+            "``not-a-fence\n",
+            "<!-- pdftract: page=0 block=0 bbox=[1.0,2.0,3.0,4.0] kind=paragraph -->\n",
+            "~~also-not-a-fence\n",
+            "<!-- pdftract: page=0 block=1 bbox=[5.0,6.0,7.0,8.0] kind=paragraph -->\n",
+        );
+
+        let anchors = parse_anchors(md);
+        assert_eq!(anchors.len(), 2);
+        assert_eq!(anchors[0].block, 0);
+        assert_eq!(anchors[1].block, 1);
     }
 
     #[test]
