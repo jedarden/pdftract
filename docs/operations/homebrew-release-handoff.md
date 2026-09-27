@@ -48,6 +48,31 @@ Every URL and every version field in this object must resolve through the same
 `vX.Y.Z` tag. A branch, bare commit identifier, prerelease tag, mutable alias,
 or unversioned archive is not a valid handoff.
 
+## Render-gate acceptance and rejection rules
+
+The render gate accepts exactly the tuple above after the signed aggregate has
+been verified. `SOURCE_ARCHIVE_SHA256` is the unique, lowercase 64-hex digest
+from the `source/pdftract-vX.Y.Z.tar.gz` line in that published
+`SHA256SUMS`; it is not a value supplied by the renderer or recomputed by the
+Homebrew leg. The archive URL and that checksum line must describe the same
+`vX.Y.Z` release archive byte stream.
+
+The render gate must reject and stop before tap publication when any input is:
+
+- `:latest`, `latest`, `releases/latest`, a branch/ref such as `main`, a bare
+  commit SHA, a prerelease tag, or an unversioned archive URL;
+- a floating or query/fragment-modified release URL rather than the exact
+  tag-specific URLs in the tuple; or
+- a digest recomputed from a second download, a local rebuild, a platform
+  binary, a wheel, a source distribution, or any other artifact that is not
+  the signed `source/pdftract-vX.Y.Z.tar.gz` entry.
+
+The gate consumes the release producer's signed checksum handoff as data. It
+does not download or re-hash the source archive, append to or rewrite
+`SHA256SUMS`, substitute an unrelated artifact, or invent a new release URL.
+An absent, duplicated, malformed, or mismatched source-archive line is a
+failed handoff, not permission to calculate a replacement digest.
+
 ## Publication destination and output
 
 The approved tap is `jedarden/homebrew-tap`:
