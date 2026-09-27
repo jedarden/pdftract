@@ -181,12 +181,6 @@ spec:
       - name: repo
         value: jedarden/pdftract
         description: "Source mirror slug on GitHub; the release tuple, template, and renderer are fetched from it anonymously"
-      - name: tap-repo
-        value: jedarden/homebrew-tap
-        description: "Tap repo slug (Forgejo origin and GitHub mirror share it)"
-      - name: tap-url
-        value: https://git.ardenone.com/jedarden/homebrew-tap.git
-        description: "Forgejo tap repo (source of truth) -- the only thing CI pushes to"
       - name: tag
         value: ""
         description: "Versioned git tag (vX.Y.Z). Anything else is skipped by the gate."
@@ -235,7 +229,7 @@ spec:
 
           - name: push-tap
             template: push-tap
-            dependencies: [versioned-tag-gate, render-formula]
+            dependencies: [versioned-tag-gate, verify-release-metadata, render-formula]
             when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"
             arguments:
               parameters:
@@ -584,7 +578,9 @@ spec:
             apk add --no-cache git
 
             VERSION="{{workflow.parameters.version}}"
-            TAP_URL="{{workflow.parameters.tap-url}}"
+            # Keep the write destination fixed: this workflow may publish only
+            # to the approved Forgejo tap source of truth.
+            TAP_URL="https://git.ardenone.com/jedarden/homebrew-tap.git"
             FORMULA_B64="{{inputs.parameters.formula-b64}}"
 
             git clone --quiet "${TAP_URL}" /tap
@@ -595,7 +591,12 @@ spec:
             git config user.name jedarden
             git config user.email github@jedarden.com
 
-            git add Formula/pdftract.rb
+            # Stage exactly the generated formula. This guard protects the
+            # destination if the tap gains other generated or user files.
+            git add -- Formula/pdftract.rb
+            STAGED_PATHS="$(git diff --cached --name-only)"
+            [ "${STAGED_PATHS}" = "Formula/pdftract.rb" ] \
+              || { echo "ERROR: refusing to publish paths other than Formula/pdftract.rb" >&2; exit 1; }
             if git diff --cached --quiet; then
               echo "Formula unchanged since the last push -- nothing to commit (idempotent re-run)"
               echo UNCHANGED > /tmp/tap-commit
@@ -652,7 +653,6 @@ spec:
             set -eu
             apk add --no-cache git
 
-            TAP_REPO="{{workflow.parameters.tap-repo}}"
             COMMIT="{{inputs.parameters.tap-commit}}"
 
             if [ "${COMMIT}" = "UNCHANGED" ]; then
@@ -660,7 +660,7 @@ spec:
               exit 0
             fi
 
-            MIRROR="https://github.com/${TAP_REPO}.git"
+            MIRROR="https://github.com/jedarden/homebrew-tap.git"
             echo "=== Polling ${MIRROR} (main) for ${COMMIT} ==="
             i=0
             until git ls-remote --quiet "${MIRROR}" refs/heads/main | grep -q "^${COMMIT}"; do

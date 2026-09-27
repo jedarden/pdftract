@@ -20,6 +20,9 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
         cls.render = cls.homebrew.split("    - name: render-formula", 1)[1].split(
             "    # === Push to Tap ===", 1
         )[0]
+        cls.push = cls.homebrew.split("    - name: push-tap", 1)[1].split(
+            "    # === Wait for Mirror ===", 1
+        )[0]
 
     def test_release_producer_hands_off_signed_source_archive_digest(self) -> None:
         self.assertIn(
@@ -53,6 +56,29 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
             'when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"',
             self.homebrew,
         )
+
+    def test_publication_is_pinned_to_the_approved_tap_and_formula_path(self) -> None:
+        self.assertIn(
+            'TAP_URL="https://git.ardenone.com/jedarden/homebrew-tap.git"',
+            self.push,
+        )
+        self.assertNotIn("{{workflow.parameters.tap-url}}", self.push)
+        self.assertIn('MIRROR="https://github.com/jedarden/homebrew-tap.git"', self.homebrew)
+        self.assertIn("git add -- Formula/pdftract.rb", self.push)
+        self.assertIn('[ "${STAGED_PATHS}" = "Formula/pdftract.rb" ]', self.push)
+
+    def test_publication_waits_for_render_validation_and_uses_bounded_retry(self) -> None:
+        self.assertIn(
+            "dependencies: [versioned-tag-gate, verify-release-metadata, render-formula]",
+            self.homebrew,
+        )
+        self.assertIn('retryStrategy:\n        limit: "1"\n        retryPolicy: OnFailure', self.push)
+        self.assertIn("set -eu", self.push)
+        self.assertIn("git push --quiet origin main", self.push)
+        self.assertIn('echo "=== Pushed ${COMMIT}', self.push)
+        self.assertIn("homebrew-tap-push-token", self.push)
+        self.assertIn("secretKeyRef:", self.push)
+        self.assertIn("key: token", self.push)
 
     def test_workflow_images_are_not_floating(self) -> None:
         for workflow in (self.homebrew, self.release):
