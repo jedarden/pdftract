@@ -1,7 +1,7 @@
 # pdftract Makefile
 # Top-level build automation for pdftract project
 
-.PHONY: help validate-corpus download-grep-corpus agentation-smoke mcp-verify readme-audit test clean
+.PHONY: help validate-corpus download-grep-corpus agentation-smoke mcp-verify readme-audit diagnostics-validate test clean
 
 # Default target
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  agentation-smoke       - Verify Agentation mounts in a browser"
 	@echo "  mcp-verify             - Check the MCP catalog and all tool call contracts"
 	@echo "  readme-audit           - Check README capability claims against evidence"
+	@echo "  diagnostics-validate   - Validate the documented diagnostic registry and wire contracts"
 	@echo "  clean                  - Clean build artifacts"
 	@echo ""
 	@echo "Corpus management:"
@@ -42,6 +43,11 @@ mcp-verify:
 # the checkpoint state of any bead that keeps a claim in progress.
 readme-audit:
 	python3 scripts/audit_readme_capabilities.py
+
+# Keep the published diagnostic-code catalog, Rust registry, and serialized
+# diagnostic contracts synchronized in both local development and CI.
+diagnostics-validate:
+	@bash scripts/validate-diagnostic-registry.sh
 
 # Run tests, including the real-binary MCP contract check.
 test: mcp-verify

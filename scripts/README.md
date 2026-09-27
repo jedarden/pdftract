@@ -76,3 +76,14 @@ Scans for accidental secrets in committed code.
 ### `generate_test_corpus.py`
 
 Generates synthetic PDF test corpus.
+
+### `validate-diagnostic-registry.sh`
+
+Runs the focused diagnostic registry and serialization contract suites with
+default and all features. The gate compares `docs/integrations/diagnostics-codes.md`
+with the Rust diagnostic definitions and verifies serialized severities, hints,
+round trips, and omission rules:
+
+```bash
+scripts/validate-diagnostic-registry.sh
+```
