@@ -386,11 +386,7 @@ fn extract_url_host(url: &str) -> Option<&str> {
 
     // Plain host or IPv4 literal: a single separating `:port` is the only colon.
     let host = host_part.split(':').next()?;
-    if host.is_empty() {
-        None
-    } else {
-        Some(host)
-    }
+    if host.is_empty() { None } else { Some(host) }
 }
 
 /// Reason an IPv4 address is blocked, or `None` if it is publicly routable.
@@ -408,26 +404,18 @@ fn blocked_ipv4_reason(ipv4: std::net::Ipv4Addr) -> Option<String> {
     // Block RFC 1918 private networks
     let octets = ipv4.octets();
     if octets[0] == 10 {
-        return Some(
-            "RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string(),
-        );
+        return Some("RFC 1918 private network (10.0.0.0/8) is blocked (SSRF protection)".to_string());
     }
     if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
-        return Some(
-            "RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string(),
-        );
+        return Some("RFC 1918 private network (172.16.0.0/12) is blocked (SSRF protection)".to_string());
     }
     if octets[0] == 192 && octets[1] == 168 {
-        return Some(
-            "RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string(),
-        );
+        return Some("RFC 1918 private network (192.168.0.0/16) is blocked (SSRF protection)".to_string());
     }
 
     // Block link-local (169.254.0.0/16) - includes cloud metadata
     if octets[0] == 169 && octets[1] == 254 {
-        return Some(
-            "Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string(),
-        );
+        return Some("Link-local addresses (169.254.0.0/16) are blocked (SSRF protection)".to_string());
     }
 
     None
@@ -468,9 +456,7 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
 
                 // Block IPv6 unspecified
                 if ipv6.is_unspecified() {
-                    return Err(
-                        "IPv6 unspecified addresses are blocked (SSRF protection)".to_string()
-                    );
+                    return Err("IPv6 unspecified addresses are blocked (SSRF protection)".to_string());
                 }
 
                 // Block IPv4-mapped and IPv4-compatible literals such as
@@ -490,26 +476,17 @@ fn validate_url_no_ssrf(url: &str) -> Result<(), String> {
                 // Block IPv6 private ranges (fc00::/7, fd00::/8)
                 let segments = ipv6.segments();
                 if segments[0] & 0xfe00 == 0xfc00 {
-                    return Err(
-                        "IPv6 private addresses (fc00::/7) are blocked (SSRF protection)"
-                            .to_string(),
-                    );
+                    return Err("IPv6 private addresses (fc00::/7) are blocked (SSRF protection)".to_string());
                 }
 
                 // Block IPv6 unique local (fd00::/8)
                 if segments[0] & 0xff00 == 0xfd00 {
-                    return Err(
-                        "IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)"
-                            .to_string(),
-                    );
+                    return Err("IPv6 unique local addresses (fd00::/8) are blocked (SSRF protection)".to_string());
                 }
 
                 // Block IPv6 link-local (fe80::/10)
                 if segments[0] & 0xffc0 == 0xfe80 {
-                    return Err(
-                        "IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)"
-                            .to_string(),
-                    );
+                    return Err("IPv6 link-local addresses (fe80::/10) are blocked (SSRF protection)".to_string());
                 }
             }
         }
@@ -617,9 +594,8 @@ impl Tool for ExtractTool {
             if let Err(reason) = validate_url_no_ssrf(&tool_args.path) {
                 return Err(ErrorObject::server_error(
                     ERROR_SSRF_BLOCKED,
-                    format!("URL blocked: {}", reason),
-                )
-                .with_data(json!({"code": CODE_SSRF_BLOCKED})));
+                    format!("URL blocked: {}", reason)
+                ).with_data(json!({"code": CODE_SSRF_BLOCKED})));
             }
 
             // URL passed SSRF checks, but remote extraction is not yet implemented
@@ -1104,16 +1080,13 @@ impl Tool for GetTableTool {
                 "page": tool_args.page
             }))
         })?;
-        let table = page
-            .tables
-            .get(tool_args.table_index as usize)
-            .ok_or_else(|| {
-                ErrorObject::invalid_params().with_data(json!({
-                    "reason": "Table index is outside the selected page",
-                    "page": tool_args.page,
-                    "table_index": tool_args.table_index
-                }))
-            })?;
+        let table = page.tables.get(tool_args.table_index as usize).ok_or_else(|| {
+            ErrorObject::invalid_params().with_data(json!({
+                "reason": "Table index is outside the selected page",
+                "page": tool_args.page,
+                "table_index": tool_args.table_index
+            }))
+        })?;
         Ok(json!({
             "page": tool_args.page,
             "table_index": tool_args.table_index,
@@ -1190,14 +1163,13 @@ impl Tool for GetAttachmentsTool {
             .with_data(json!({"code": CODE_IO_ERROR})));
         }
         let path = resolve_path(&tool_args.path, root)?;
-        let result =
-            extract_pdf(&path, &ExtractionOptions::default()).map_err(map_extraction_error)?;
+        let result = extract_pdf(&path, &ExtractionOptions::default()).map_err(|e| {
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Extraction failed: {}", e))
+                .with_data(json!({"code": CODE_IO_ERROR}))
+        })?;
         let mut attachments = to_value(&result.attachments).map_err(|error| {
-            ErrorObject::server_error(
-                ERROR_IO_ERROR,
-                format!("Failed to serialize attachments: {error}"),
-            )
-            .with_data(json!({"code": CODE_IO_ERROR}))
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize attachments: {error}"))
+                .with_data(json!({"code": CODE_IO_ERROR}))
         })?;
         if !tool_args.include_data.unwrap_or(false) {
             if let Some(items) = attachments.as_array_mut() {
@@ -1251,11 +1223,8 @@ impl Tool for ClassifyTool {
                 .with_data(json!({"code": CODE_IO_ERROR}))
         })?;
         to_value(output).map_err(|error| {
-            ErrorObject::server_error(
-                ERROR_IO_ERROR,
-                format!("Failed to serialize classification: {error}"),
-            )
-            .with_data(json!({"code": CODE_IO_ERROR}))
+            ErrorObject::server_error(ERROR_IO_ERROR, format!("Failed to serialize classification: {error}"))
+                .with_data(json!({"code": CODE_IO_ERROR}))
         })
     }
 }
@@ -1412,12 +1381,7 @@ mod tests {
     fn test_specialized_tools_are_registered() {
         let registry = all_tools();
 
-        for name in [
-            "get_table",
-            "get_form_fields",
-            "get_attachments",
-            "classify",
-        ] {
+        for name in ["get_table", "get_form_fields", "get_attachments", "classify"] {
             assert!(registry.get(name).is_some(), "missing tool {name}");
         }
     }
@@ -1682,10 +1646,7 @@ mod ssrf_validation_tests {
         for (bracketed, literal) in [
             ("https://[::ffff:127.0.0.1]/", "https://127.0.0.1/"),
             ("https://[::ffff:10.0.0.1]/", "https://10.0.0.1/"),
-            (
-                "https://[::ffff:169.254.169.254]/",
-                "https://169.254.169.254/",
-            ),
+            ("https://[::ffff:169.254.169.254]/", "https://169.254.169.254/"),
         ] {
             assert!(
                 validate_url_no_ssrf(bracketed).is_err(),
@@ -1721,17 +1682,8 @@ mod ssrf_validation_tests {
         );
         assert_eq!(extract_url_host("https://[::1]"), Some("::1"));
         // Plain hosts and IPv4 literals still lose their port.
-        assert_eq!(
-            extract_url_host("https://example.com:443/doc.pdf"),
-            Some("example.com")
-        );
-        assert_eq!(
-            extract_url_host("https://127.0.0.1:9999/doc.pdf"),
-            Some("127.0.0.1")
-        );
-        assert_eq!(
-            extract_url_host("https://user:pass@example.com/x"),
-            Some("example.com")
-        );
+        assert_eq!(extract_url_host("https://example.com:443/doc.pdf"), Some("example.com"));
+        assert_eq!(extract_url_host("https://127.0.0.1:9999/doc.pdf"), Some("127.0.0.1"));
+        assert_eq!(extract_url_host("https://user:pass@example.com/x"), Some("example.com"));
     }
 }
