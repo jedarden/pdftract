@@ -31,6 +31,11 @@ consumers should nonetheless tolerate its absence. These field names,
 omission rules, and the severity enum are pinned by
 `crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
 
+For input compatibility, a missing optional field and an explicit JSON `null`
+both mean “unknown” and decode to the same value. Re-serializing either form
+uses the output rule above and omits the optional field again. The required
+`code`, `message`, and `severity` fields must not be `null` or omitted.
+
 ### Where structured diagnostics appear
 
 1. **`metadata.diagnostics_detailed`** — the structured array on the extraction

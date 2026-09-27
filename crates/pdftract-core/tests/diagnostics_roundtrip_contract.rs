@@ -35,8 +35,20 @@ fn documented_codes() -> BTreeMap<String, DocumentedCode> {
     let document = fs::read_to_string(DIAGNOSTICS_DOC)
         .unwrap_or_else(|error| panic!("cannot read {DIAGNOSTICS_DOC}: {error}"));
     let mut rows = BTreeMap::new();
+    let mut in_code_catalog = false;
 
     for (line_number, line) in document.lines().enumerate() {
+        if line.trim() == "## Code Categories" {
+            in_code_catalog = true;
+            continue;
+        }
+        if in_code_catalog && line.starts_with("## ") {
+            break;
+        }
+        if !in_code_catalog {
+            continue;
+        }
+
         let Some(rest) = line.strip_prefix("| `") else {
             continue;
         };
@@ -52,9 +64,12 @@ fn documented_codes() -> BTreeMap<String, DocumentedCode> {
         }
 
         let cells: Vec<&str> = after_name.split('|').collect();
+        // The code catalog has four columns. Other tables, such as the
+        // two-column Catalog Hints table, are outside the section above and
+        // must never be mistaken for severity rows.
         assert!(
             cells.len() >= 4,
-            "diagnostics-codes.md row {} for {name} has too few cells",
+            "diagnostics-codes.md row {} for {name} has too few catalog cells",
             line_number + 1
         );
         let severity = match cells[1].trim().to_ascii_lowercase().as_str() {

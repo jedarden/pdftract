@@ -147,6 +147,11 @@ omitted, not `null`. Because `severity`, `page_index`, and `location` come
 from the typed diagnostic itself, prefer the structured form whenever a
 consumer needs more than a substring search.
 
+When reading JSON, an absent optional field and an explicit `null` are both
+accepted as unknown and decode identically. When writing JSON, both forms are
+normalized to omission; `null` is never emitted for these fields. The required
+`code`, `message`, and `severity` fields must always be present and non-null.
+
 In NDJSON streaming output, a footer with no failed pages uses the same
 structured object shape:
 
