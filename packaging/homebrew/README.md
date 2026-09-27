@@ -110,13 +110,22 @@ for the same tag are idempotent (unchanged formula ⇒ no-op push).
   `homebrew/brew:<semver>` container is the end-to-end verification the cascade
   leg runs against the client-facing GitHub mirror.
 
-### Known prerequisite for the test block
+### Current publication verification
 
-The test block asserts on `pdftract --version`. At the time this template was
-authored (2026-09-14), the pdftract CLI did not yet accept that flag — the clap
-top-level command carries no `version` attribute, so `pdftract --version`
-failed with `error: unexpected argument '--version' found` (verified against a
-debug build at HEAD b891856c). This is tracked as bead pdftract-8efa24b7; until
-that fix lands, the formula's test block — and therefore the cascade's
-install-verify — will fail. The template is authored to the target behavior so
-the CLI fix needs no template change.
+The client-facing tap was checked on 2026-09-27. It is reachable, but its
+`main` branch (`c7aec641d5cf9e638285fdbc706499f19495f6a2`) contains only
+`Formula/.gitkeep`; no `Formula/pdftract.rb` is published. The source archive
+URL for the versioned `v1.2.0` tag is reachable and hashes to
+`db8390ced458a1e3d3816e43a3488a3e643bcb43a8ac7404f1de38b28f503e75`, but that
+is not evidence of a published formula or a completed Homebrew install.
+
+The CLI now accepts `--version`, and the local source smoke prints
+`pdftract 0.1.0`. The `v1.2.0` tag still declares workspace version `0.1.0`,
+so a future formula rendered as version `1.2.0` must not be treated as
+verified until release metadata and the formula agree.
+
+Verification evidence and the exact commands are recorded on bead
+`pdftract-ed8d28bf`. The remaining blocker is publication of
+`Formula/pdftract.rb`, followed by the full tap/install/version smoke test on a
+machine with Homebrew; until then the brew command below is a validation
+procedure, not a live install claim.
