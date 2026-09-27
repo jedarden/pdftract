@@ -2,7 +2,7 @@
 
 This document is the normative diagnostic contract. The canonical
 machine-readable surface is the serialized `DiagnosticJson` object (the
-in-process equivalent is `Diagnostic`): each entry has a stable
+in-process equivalent is `Diagnostic`): each catalog-backed entry has a stable
 `SCREAMING_SNAKE_CASE` identifier, a human-readable message, a severity level,
 and a catalog hint. The legacy string array remains available as a compatibility
 projection; it is not a competing diagnostic schema.
@@ -34,26 +34,37 @@ every optional field populated):
 
 The wire `severity` value is one of `info`, `warning`, `error`, or `fatal`.
 
-`code`, `message`, and `severity` are always present. `page_index`,
-`location`, and `hint` are **omitted, never serialized as `null`**, when they
-do not apply: `page_index` for document-level diagnostics, `location` when no
-object reference is known, and `hint` when the code's catalog entry carries
-no suggested action. `page_index` is zero-based. `location`, when present, is
-`{"object_number": u32, "generation_number": u16}`. Every catalog entry
-currently carries an action, so emitted diagnostics include a hint today —
-consumers should nonetheless tolerate its absence. These field names,
-omission rules, and the severity enum are pinned by
+| Field | JSON type | Serialized presence | Semantics |
+|-------|-----------|---------------------|-----------|
+| `code` | string | Always | Stable `DiagCode::name()` identifier in `SCREAMING_SNAKE_CASE`; classify on this value. |
+| `message` | string | Always | Human-readable display text; it may contain emission-site context and is not a classification key. |
+| `severity` | string | Always | Exactly `info`, `warning`, `error`, or `fatal`; derived from the typed code policy. |
+| `page_index` | integer | When the owning page is known | Zero-based page index. It is omitted for document- or operation-level diagnostics. |
+| `location` | object | When the originating indirect object is known | `{"object_number": u32, "generation_number": u16}`; this identifies a PDF object, not a byte offset. |
+| `hint` | string | When the code has a catalog hint | Catalog guidance. Every current catalog row has a non-empty hint string, including rows whose text begins `None —`; consumers must tolerate omission for future codes. |
+
+Optional fields are **omitted, never serialized as `null`**, when unavailable.
+For input compatibility, a missing optional field and an explicit JSON `null`
+both decode as unknown; re-serializing either form omits the field again. The
+required `code`, `message`, and `severity` fields must not be `null` or omitted.
+These field names, types, omission rules, and the severity enum are pinned by
 `crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
 
-`message` is display text and may contain emission-site context; it is not a
-classification key. `location` identifies an indirect PDF object and is not a
-byte offset. Byte offsets remain in-process `Diagnostic` context and are not
-part of `DiagnosticJson`.
+### In-process byte-offset formatting
 
-For input compatibility, a missing optional field and an explicit JSON `null`
-both mean “unknown” and decode to the same value. Re-serializing either form
-uses the output rule above and omits the optional field again. The required
-`code`, `message`, and `severity` fields must not be `null` or omitted.
+An in-process `Diagnostic` may retain a source `byte_offset`, but
+`DiagnosticJson` never serializes a `byte_offset` field. Its `Display`
+implementation is a separate human-readable rendering:
+
+```text
+STREAM_DECODE_ERROR: corrupt flate (byte offset 1234)
+STRUCT_INVALID_NAME: bad name (byte offset 99) [7 0 R]
+```
+
+The format is `CODE: message`, followed by ` (byte offset N)` when an offset
+is known, followed by ` [object generation R]` when an object reference is
+known (for example, `[7 0 R]`). This rendering is for logs and debugging; it
+is neither the wire object nor the legacy `metadata.diagnostics` value.
 
 ### Where structured diagnostics appear
 
@@ -140,13 +151,14 @@ page or object reference merely to populate a field.
 | `P` | REQUIRED; the owning page is known | Include when the PDF object is known | Emit a typed page diagnostic. It flows to both metadata arrays, full-output `errors`, and the NDJSON footer; it is not duplicated into a page frame unless a separate page-failure record is required. |
 | `C` | Include when the source stream/object has a known owning page; otherwise omit | Include when the originating indirect object is known | Emit a typed parser/decoder diagnostic and propagate any page/object context available at the forwarding boundary. The same code may therefore be document-level or page-level without changing its code or severity. |
 
-For every catalog code, `code`, `message`, `severity`, and the catalog's
-`hint` are required in the typed object. The only currently defined exception
-is the NDJSON-only synthetic `page_extraction_error` record, which has
-`code`, `message`, and `severity` and is not a catalog code. A catalog row
-marked `(reserved)` or gated by a feature is a contract reservation: it is
-not required to appear until that implementation/feature is enabled, but its
-wire fields and profile are already fixed.
+For every emitted catalog code, `code`, `message`, and `severity` are required
+and the current catalog hint is populated. The `hint` field remains optional on
+the wire so consumers can tolerate a future code without a suggested action.
+The only currently defined non-catalog record is the NDJSON-only synthetic
+`page_extraction_error`, which has `code`, `message`, and `severity` and no
+hint. A catalog row marked `(reserved)` or gated by a feature is a contract
+reservation: it is not required to appear until that implementation/feature is
+enabled, but its wire fields and profile are already fixed.
 
 The complete inventory below assigns every code in the catalog exactly one
 profile and names its emission owner. The severity, phase, description, and
@@ -154,11 +166,10 @@ exact hint for each name remain in the catalog tables that follow.
 
 | Profile | Emission owner | Codes |
 |---------|----------------|-------|
-| `C` | Lexer, object parser, content-stream parser, and stream decoder | `STRUCT_INVALID_NAME`, `STRUCT_INVALID_HEX`, `STRUCT_INVALID_OCTAL`, `STRUCT_INVALID_STREAM_HEADER`, `STRUCT_UNEXPECTED_BYTE`, `STRUCT_UNEXPECTED_EOF`, `STRUCT_UNTERMINATED_STRING`, `STRUCT_MISSING_KEY`, `STRUCT_CIRCULAR_REF`, `STRUCT_XOBJECT_CYCLE`, `STRUCT_DEPTH_EXCEEDED`, `STRUCT_INVALID_DICT_VALUE`, `STRUCT_INVALID_DICT_KEY`, `STRUCT_INVALID_INDIRECT_HEADER`, `STRUCT_INTEGER_OVERFLOW`, `STRUCT_REAL_INVALID`, `STRUCT_INVALID_NUMBER`, `STRUCT_INVALID_ASCII85`, `STRUCT_INVALID_OBJSTM`, `STRUCT_INVALID_TYPE`, `STRUCT_INVALID_UTF16`, `STRUCT_INVALID_PDFDOC_ENCODING`, `STREAM_DECODE_ERROR`, `STREAM_BOMB`, `STREAM_UNKNOWN_FILTER`, `STREAM_INVALID_PARAMS`, `STREAM_INVALID_JPEG`, `STREAM_INVALID_CCITT`, `STREAM_TRUNCATED`, `STREAM_INVALID_JPX` |
 | `D-PDF` | Document catalog, xref/repair, encryption, and document metadata | `STRUCT_HYBRID_CONFLICT`, `STRUCT_UNRESOLVED_DESTINATION`, `STRUCT_NON_GOTO_OUTLINE`, `STRUCT_INVALID_PREV_OFFSET`, `STRUCT_INVALID_HINT_STREAM`, `XREF_INVALID_HEADER`, `XREF_INVALID_ENTRY`, `XREF_INVALID_SUBSECTION_HEADER`, `XREF_OBJECT_ZERO_NOT_FREE`, `XREF_TRAILER_NOT_FOUND`, `XREF_TRUNCATED`, `XREF_REPAIRED`, `XREF_LINEARIZED_NO_FORWARD_SCAN`, `XREF_REMOTE_NO_FORWARD_SCAN`, `XREF_INVALID_STREAM_FORMAT`, `XREF_INVALID_STREAM_ENTRY`, `ENCRYPTION_UNSUPPORTED`, `ENCRYPTION_WRONG_PASSWORD`, `ENCRYPTION_INVALID_DICT`, `PAGE_INVALID_COUNT`, `REPAIR_RESCUED_FROM_BACKWARDS_XREF`, `JAVASCRIPT_PRESENT` |
 | `D-OP` | Page-selection, remote-source, MCP, cache, and profile operations | `REMOTE_FETCH_INTERRUPTED`, `REMOTE_NO_RANGE_SUPPORT`, `REMOTE_TLS_FAILED`, `REMOTE_DNS_FAILED`, `REMOTE_URL_PRIVATE_NETWORK`, `REMOTE_INSUFFICIENT_DISK`, `MCP_TOOL_INVALID_PARAMS`, `MCP_PATH_TRAVERSAL`, `CACHE_ENTRY_CORRUPT`, `CACHE_WRITE_FAILED`, `CACHE_INTEGRITY_FAIL`, `PROFILE_SECRETS_FORBIDDEN`, `PROFILE_INVALID` |
 | `P` | Page geometry, page selection, font/CJK, OCR/image, graphics-state, layout, marked-content, and inline-image pipelines | `STRUCT_INVALID_BDC_OPERAND`, `STRUCT_INCOMPLETE_COVERAGE`, `PAGE_OUT_OF_RANGE`, `PAGE_INVALID_ROTATE`, `FONT_GLYPH_UNMAPPED`, `FONT_NOT_FOUND`, `FONT_INVALID_CMAP`, `FONT_PARSE_FAILED`, `FONT_UNSUPPORTED`, `FONT_CIDTOGIDMAP_TRUNCATED`, `ENCODING_DIFFERENCE_OUT_OF_RANGE`, `FONT_TYPE3_WIDTHS_LENGTH_MISMATCH`, `CMAP_INVALID_CODESPACE`, `CJK_DECODE_MALFORMED`, `CJK_TOKENIZE_UNKNOWN_BYTE`, `OCR_JBIG2_UNSUPPORTED`, `OCR_JPX_UNSUPPORTED`, `OCR_CCITT_UNSUPPORTED`, `OCR_TESSERACT_FAILED`, `OCR_BROKENVECTOR_UNAVAILABLE`, `IMG_SOFTMASK_UNSUPPORTED`, `IMG_UNSUPPORTED_FORMAT`, `IMG_DESKEW_OUT_OF_RANGE`, `IMG_SOURCE_MIXED`, `GSTATE_STACK_OVERFLOW`, `GSTATE_STACK_UNDERFLOW`, `GSTATE_BT_ET_MISMATCH`, `CM_ARG_COUNT`, `CM_DEGENERATE`, `HORIZ_SCALING_ZERO`, `TEXT_RENDERING_MODE_CLAMPED`, `TSTAR_ZERO_LEADING`, `FONT_RESOURCE_NOT_FOUND`, `FONT_SIZE_ZERO_OR_NEGATIVE`, `BT_NESTED`, `ET_WITHOUT_BT`, `TEXT_SHOW_OUTSIDE_BT`, `TAGGED_PDF_STRUCT_TREE_DEFERRED`, `LAYOUT_READING_ORDER_AMBIGUOUS`, `LAYOUT_LOW_READABILITY`, `EMC_WITHOUT_BMC`, `MARKED_CONTENT_DEPTH_EXCEEDED`, `UNKNOWN_MARKED_CONTENT_PROPS`, `MCID_REDEFINED`, `INLINE_IMAGE_ID_WHITESPACE_MISSING`, `INLINE_IMAGE_NO_EI` |
-| `C` | Lexer, object parser, content-stream parser, stream decoder, page-optional geometry, and page-optional OCR setup | `STRUCT_INVALID_NAME`, `STRUCT_INVALID_HEX`, `STRUCT_INVALID_OCTAL`, `STRUCT_INVALID_STREAM_HEADER`, `STRUCT_UNEXPECTED_BYTE`, `STRUCT_UNEXPECTED_EOF`, `STRUCT_UNTERMINATED_STRING`, `STRUCT_MISSING_KEY`, `STRUCT_CIRCULAR_REF`, `STRUCT_XOBJECT_CYCLE`, `STRUCT_DEPTH_EXCEEDED`, `STRUCT_INVALID_DICT_VALUE`, `STRUCT_INVALID_DICT_KEY`, `STRUCT_INVALID_INDIRECT_HEADER`, `STRUCT_INTEGER_OVERFLOW`, `STRUCT_REAL_INVALID`, `STRUCT_INVALID_NUMBER`, `STRUCT_INVALID_ASCII85`, `STRUCT_INVALID_OBJSTM`, `STRUCT_INVALID_GEOMETRY`, `STRUCT_INVALID_TYPE`, `STRUCT_INVALID_UTF16`, `STRUCT_INVALID_PDFDOC_ENCODING`, `STREAM_DECODE_ERROR`, `STREAM_BOMB`, `STREAM_UNKNOWN_FILTER`, `STREAM_INVALID_PARAMS`, `STREAM_INVALID_JPEG`, `STREAM_INVALID_CCITT`, `STREAM_TRUNCATED`, `STREAM_INVALID_JPX`, `OCR_LANGUAGE_UNAVAILABLE` |
+| `C` | Lexer, object parser, content-stream parser, stream decoder, and page-optional geometry/OCR setup | `STRUCT_INVALID_NAME`, `STRUCT_INVALID_HEX`, `STRUCT_INVALID_OCTAL`, `STRUCT_INVALID_STREAM_HEADER`, `STRUCT_UNEXPECTED_BYTE`, `STRUCT_UNEXPECTED_EOF`, `STRUCT_UNTERMINATED_STRING`, `STRUCT_MISSING_KEY`, `STRUCT_CIRCULAR_REF`, `STRUCT_XOBJECT_CYCLE`, `STRUCT_DEPTH_EXCEEDED`, `STRUCT_INVALID_DICT_VALUE`, `STRUCT_INVALID_DICT_KEY`, `STRUCT_INVALID_INDIRECT_HEADER`, `STRUCT_INTEGER_OVERFLOW`, `STRUCT_REAL_INVALID`, `STRUCT_INVALID_NUMBER`, `STRUCT_INVALID_ASCII85`, `STRUCT_INVALID_OBJSTM`, `STRUCT_INVALID_GEOMETRY`, `STRUCT_INVALID_TYPE`, `STRUCT_INVALID_UTF16`, `STRUCT_INVALID_PDFDOC_ENCODING`, `STREAM_DECODE_ERROR`, `STREAM_BOMB`, `STREAM_UNKNOWN_FILTER`, `STREAM_INVALID_PARAMS`, `STREAM_INVALID_JPEG`, `STREAM_INVALID_CCITT`, `STREAM_TRUNCATED`, `STREAM_INVALID_JPX`, `OCR_LANGUAGE_UNAVAILABLE` |
 
 Thus a child implementation does not need to infer context from a formatted
 message: it selects the code's profile, supplies known page/object context,

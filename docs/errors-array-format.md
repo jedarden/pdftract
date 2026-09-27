@@ -48,8 +48,8 @@ pub struct ExtractionMetadata {
 
 ### Location
 
-The errors array exists in two parallel shapes, which mirror each other
-one-to-one (same length, same order, same diagnostics):
+The compact extraction metadata exposes two parallel arrays, which mirror each
+other one-to-one (same length, same order, same diagnostics):
 
 - **String form — `ExtractionResult.metadata.diagnostics`**
   - **Type**: `Vec<String>`
@@ -63,12 +63,13 @@ one-to-one (same length, same order, same diagnostics):
     `severity`, and optional `page_index` / `location` / `hint` fields.
     **Prefer this form** for machine consumption.
 
-In the full JSON output (`schema_version` 1.0 document), the structured form is
-additionally the top-level `errors` array. In NDJSON streaming output, the
-footer frame's `errors` array is a union: it contains one synthetic
+The structured metadata array is also projected to the full JSON output's
+top-level `errors` array. In NDJSON streaming output, the footer frame's
+`errors` array is a union: it contains one synthetic
 `page_extraction_error` record per failed page first, followed by the same
 structured extraction diagnostics (including page-scoped entries) in metadata
-emission order. The synthetic record is
+emission order. A failed page frame carries its own synthetic record; a
+successful page frame omits `errors`. The synthetic record is
 `{"code":"page_extraction_error","severity":"error","message":"..."}`;
 it is not a `DiagCode` and never appears in either metadata array.
 
@@ -100,12 +101,19 @@ diagnostic's `message`:
 ```
 
 There is no `CODE:` prefix and no byte-offset / object-location suffix: the
-legacy surface carries the message and nothing else. (The internal
-`Diagnostic`'s `Display` does render a richer
-`CODE: message (byte offset N)? [obj G R]?` form, but that is *not* what
+legacy surface carries the message and nothing else. The internal
+`Diagnostic`'s `Display` is a different log/debug rendering:
+
+```text
+STREAM_DECODE_ERROR: corrupt flate (byte offset 1234)
+STRUCT_INVALID_NAME: bad name (byte offset 99) [7 0 R]
+```
+
+Its exact grammar is `CODE: message`, then optional ` (byte offset N)`, then
+optional ` [object generation R]`. That rendering is *not* what
 `metadata.diagnostics` contains — the conversion is
-`pdftract_core::diagnostics_compat::to_legacy_strings`, pinned
-byte-for-byte by its golden test.)
+`pdftract_core::diagnostics_compat::to_legacy_strings`, pinned byte-for-byte
+by its golden test.
 
 **Examples** (bare messages, as emitted):
 - `zlib stream truncated mid-inflation`
@@ -134,19 +142,20 @@ output) holds one object per diagnostic, as documented in
 }
 ```
 
-| Field | Always present? | Meaning |
-|-------|-----------------|---------|
-| `code` | yes | Stable `SCREAMING_SNAKE_CASE` identifier |
-| `message` | yes | Human-readable description; the legacy string entry at the same index is exactly this text |
-| `severity` | yes | `info`, `warning`, `error`, or `fatal` — from the typed code, not a substring guess |
-| `page_index` | no | Zero-based page index when the diagnostic is page-scoped; omitted for document-level diagnostics |
-| `location` | no | `{"object_number": u32, "generation_number": u16}` when an indirect object is known |
-| `hint` | no | Suggested action, from the code's catalog entry; omitted if the entry carries none (every catalog entry currently does) |
+| Field | JSON type | Serialized presence | Meaning |
+|-------|-----------|---------------------|---------|
+| `code` | string | always | Stable `DiagCode::name()` identifier; use it for classification. |
+| `message` | string | always | Human-readable display text; the legacy string entry at the same index is exactly this text. |
+| `severity` | string | always | Exactly `info`, `warning`, `error`, or `fatal`; derived from the typed code policy. |
+| `page_index` | integer | when the owning page is known | Zero-based page index; omitted for document- or operation-level diagnostics. |
+| `location` | object | when the originating indirect object is known | `{"object_number": u32, "generation_number": u16}`; it is not a byte offset. |
+| `hint` | string | when the code has a catalog hint | Catalog guidance; every current catalog row has a non-empty hint string, including `None —` rows, but consumers must tolerate omission. |
 
-Fields that do not apply — `page_index`, `location`, and `hint` — are
-omitted, not `null`. Because `severity`, `page_index`, and `location` come
-from the typed diagnostic itself, prefer the structured form whenever a
-consumer needs more than a substring search.
+Fields that do not apply — `page_index`, `location`, and `hint` — are omitted,
+not `null`. Because `severity`, `page_index`, and `location` come from the
+typed diagnostic itself, prefer the structured form whenever a consumer needs
+more than a substring search. Byte offsets remain in-process-only context and
+are never a `DiagnosticJson` field.
 
 When reading JSON, an absent optional field and an explicit `null` are both
 accepted as unknown and decode identically. When writing JSON, both forms are
@@ -432,13 +441,13 @@ fn test_specific_diagnostic_count() {
     let result = extract_pdf(std::path::Path::new("tests/fixtures/known-issues.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
-    // If we know this PDF produces exactly 3 warnings
+    // If we know this PDF produces exactly 3 diagnostics
     assert_eq!(
-        result.metadata.diagnostics.len(),
+        result.metadata.diagnostics_detailed.len(),
         3,
         "Expected exactly 3 diagnostics, got {}: {:?}",
-        result.metadata.diagnostics.len(),
-        result.metadata.diagnostics
+        result.metadata.diagnostics_detailed.len(),
+        result.metadata.diagnostics_detailed
     );
 }
 ```
