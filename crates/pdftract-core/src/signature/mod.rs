@@ -901,9 +901,8 @@ pub fn discover_with_diagnostics(
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::object::PdfDict;
     use super::*;
-    use crate::parser::object::{intern, PdfObject};
+    use crate::parser::object::{intern, PdfDict, PdfObject};
 
     /// Helper to create a test catalog with an AcroForm.
     fn make_test_acroform(fields: Vec<PdfObject>) -> (Catalog, XrefResolver) {
@@ -1273,7 +1272,8 @@ mod tests {
         let mut resolver = XrefResolver::new();
         resolver.cache_object(v_ref, v_dict);
 
-        let sig = extract_signature_metadata(&field, &resolver, Some(3000));
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, Some(3000), &mut diagnostics);
 
         assert_eq!(sig.field_name, "employer_sig");
         assert_eq!(sig.signer_name, "John Doe");
@@ -1298,7 +1298,8 @@ mod tests {
 
         let resolver = XrefResolver::new();
 
-        let sig = extract_signature_metadata(&field, &resolver, Some(1000));
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, Some(1000), &mut diagnostics);
 
         assert_eq!(sig.field_name, "blank_sig");
         assert_eq!(sig.signer_name, "");
@@ -1331,7 +1332,8 @@ mod tests {
         let mut resolver = XrefResolver::new();
         resolver.cache_object(v_ref, PdfObject::Dict(Box::new(dict)));
 
-        let sig = extract_signature_metadata(&field, &resolver, None);
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, None, &mut diagnostics);
 
         assert_eq!(sig.field_name, "minimal_sig");
         assert_eq!(sig.signer_name, "Alice Smith");
@@ -1473,7 +1475,8 @@ mod tests {
         let mut resolver = XrefResolver::new();
         resolver.cache_object(v_ref, v_dict);
 
-        let sig = extract_signature_metadata(&field, &resolver, Some(4000));
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, Some(4000), &mut diagnostics);
 
         assert_eq!(sig.coverage_fraction, Some(1.0));
     }
@@ -1501,7 +1504,8 @@ mod tests {
         let mut resolver = XrefResolver::new();
         resolver.cache_object(v_ref, v_dict);
 
-        let sig = extract_signature_metadata(&field, &resolver, Some(3000));
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, Some(3000), &mut diagnostics);
 
         assert_eq!(sig.coverage_fraction, Some(0.5));
     }
@@ -1529,7 +1533,8 @@ mod tests {
         let mut resolver = XrefResolver::new();
         resolver.cache_object(v_ref, v_dict);
 
-        let sig = extract_signature_metadata(&field, &resolver, None);
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, None, &mut diagnostics);
 
         assert!(sig.coverage_fraction.is_none());
     }
@@ -1563,7 +1568,8 @@ mod tests {
         let mut resolver = XrefResolver::new();
         resolver.cache_object(v_ref, PdfObject::Dict(Box::new(dict)));
 
-        let sig = extract_signature_metadata(&field, &resolver, Some(3000));
+        let mut diagnostics = Vec::new();
+        let sig = extract_signature_metadata(&field, &resolver, Some(3000), &mut diagnostics);
 
         assert!(sig.byte_range.is_none());
         assert!(sig.coverage_fraction.is_none());
