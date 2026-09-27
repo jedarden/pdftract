@@ -11,6 +11,39 @@ at release time by substituting the placeholders below, then pushes the
 rendered formula to the tap. Hand edits to the tap copy are overwritten on
 every release — change this template instead.
 
+`render_formula.py` is the local, deterministic renderer and validator for the
+same contract. It has no network, git, tap, or release-orchestration behavior;
+the later publication child can invoke it after resolving and verifying the
+release artifacts:
+
+```sh
+python3 packaging/homebrew/render_formula.py \
+  --inputs release-inputs.json \
+  --output Formula/pdftract.rb
+```
+
+The JSON input is an object with exactly these required release fields:
+
+```json
+{
+  "RELEASE_TAG": "v1.2.3",
+  "VERSION": "1.2.3",
+  "SOURCE_ARCHIVE_URL": "https://github.com/jedarden/pdftract/archive/refs/tags/v1.2.3.tar.gz",
+  "SOURCE_ARCHIVE_SHA256": "<64 lowercase hex characters>",
+  "SHA256SUMS_URL": "https://github.com/jedarden/pdftract/releases/download/v1.2.3/SHA256SUMS",
+  "SHA256SUMS_SIG_URL": "https://github.com/jedarden/pdftract/releases/download/v1.2.3/SHA256SUMS.sig",
+  "SHA256SUMS_PEM_URL": "https://github.com/jedarden/pdftract/releases/download/v1.2.3/SHA256SUMS.pem"
+}
+```
+
+The caller owns downloading the exact `SOURCE_ARCHIVE_URL` bytes and verifying
+the signed `SHA256SUMS` inputs. The renderer binds the supplied archive digest
+to the formula's `sha256`; it never appends a source-archive line to, or
+rewrites, the signed aggregate checksum file. It rejects prerelease tags,
+branches, rolling refs, bare commit SHAs, mismatched version/archive URLs, and
+incomplete placeholders. If `ruby` is installed it runs `ruby -c` on both the
+template and rendered formula; otherwise it continues with an explicit warning.
+
 Strategy and rationale: `docs/notes/homebrew-tap-strategy.md` (decision record,
 bead pdftract-8f4e91aa). This directory was authored by pdftract-2ba6e643; the
 render/publish automation is pdftract-da3c85cd; end-to-end verification and the
@@ -63,6 +96,9 @@ for the same tag are idempotent (unchanged formula ⇒ no-op push).
   parseable Ruby (the placeholders live inside string literals), and the
   rendered output must pass the same check. Run by the render leg where a ruby
   binary exists; `homebrew/brew:<semver>` containers include one.
+- `python3 -m unittest discover -s packaging/homebrew -p 'test_*.py'` — exercises
+  successful deterministic rendering, checksum/archive binding, placeholder
+  completeness, and rejection of prerelease/floating inputs.
 - `brew tap jedarden/tap https://github.com/jedarden/homebrew-tap &&
   brew install jedarden/tap/pdftract && pdftract --version` from a pinned
   `homebrew/brew:<semver>` container is the end-to-end verification the cascade
