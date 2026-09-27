@@ -77,26 +77,74 @@ INITIALIZE_PARAMS: dict[str, Any] = {
 MISSING_DOCUMENT = "tests/fixtures/mcp-contract-missing.pdf"
 
 VALID_ARGUMENTS: dict[str, dict[str, Any]] = {
-    "extract": {"path": "tests/fixtures/test-minimal.pdf"},
-    "extract_text": {"path": "tests/fixtures/test-minimal.pdf"},
-    "extract_markdown": {"path": "tests/fixtures/test-minimal.pdf"},
+    "extract": {
+        "path": "tests/fixtures/test-minimal.pdf",
+        "pages": "1",
+        "ocr": False,
+        "formats": ["json"],
+        "auto_profile": False,
+        "password": "",
+        "receipts": "off",
+    },
+    "extract_text": {
+        "path": "tests/fixtures/test-minimal.pdf",
+        "pages": "1",
+        "ocr": False,
+        "password": "",
+        "receipts": "off",
+    },
+    "extract_markdown": {
+        "path": "tests/fixtures/test-minimal.pdf",
+        "pages": "1",
+        "ocr": False,
+        "anchors": True,
+        "password": "",
+        "receipts": "off",
+    },
     "search": {
         "path": "crates/pdftract-py/tests/fixtures/search_regression.pdf",
         "pattern": "PYTHON_SEARCH_REGRESSION",
+        "case_insensitive": True,
+        "max_matches": 10,
+        "password": "",
     },
-    "get_metadata": {"path": "tests/fixtures/test-minimal.pdf"},
-    "hash": {"path": "tests/fixtures/test-minimal.pdf"},
-    # The minimal fixture has no table. This is still a schema-valid call and
-    # exercises the documented in-band "no table" document failure.
+    "get_metadata": {"path": "tests/fixtures/test-minimal.pdf", "password": ""},
+    "hash": {"path": "tests/fixtures/test-minimal.pdf", "password": ""},
     "get_table": {
-        "path": "tests/fixtures/test-minimal.pdf",
+        "path": "tests/fixtures/hybrid/hybrid-002-vector-form-over-scan.pdf",
         "page": 0,
         "table_index": 0,
+        "password": "",
     },
-    "get_form_fields": {"path": "tests/fixtures/test-minimal.pdf"},
-    "get_attachments": {"path": "tests/fixtures/test-minimal.pdf"},
+    "get_form_fields": {
+        "path": "tests/fixtures/test-minimal.pdf",
+        "password": "",
+    },
+    "get_attachments": {
+        "path": "tests/fixtures/test-minimal.pdf",
+        "include_data": True,
+    },
     "classify": {"path": "tests/fixtures/test-minimal.pdf"},
 }
+
+
+def validate_argument_vectors(catalog: dict[str, dict[str, Any]]) -> None:
+    """Require each smoke vector to exercise its complete advertised schema."""
+    for name in DOCUMENTED_ADVERTISED_NAMES:
+        arguments = VALID_ARGUMENTS.get(name)
+        if arguments is None:
+            raise CheckFailure(f"missing valid argument vector for {name}")
+        entry = catalog[name]
+        expected = set(entry.get("required_arguments", [])) | set(
+            entry.get("optional_arguments", [])
+        )
+        actual = set(arguments)
+        if actual != expected:
+            raise CheckFailure(
+                f"valid argument vector for {name} does not cover its schema "
+                f"(missing={sorted(expected - actual)}, "
+                f"extra={sorted(actual - expected)})"
+            )
 
 
 class CheckFailure(RuntimeError):
@@ -486,6 +534,10 @@ def load_catalog() -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
         fail("all ten advertised tools must be callable")
 
     by_name = {entry["name"]: entry for entry in entries}
+    try:
+        validate_argument_vectors(by_name)
+    except CheckFailure as error:
+        fail(str(error))
     missing_fixtures = sorted(
         str(ROOT / args["path"])
         for args in VALID_ARGUMENTS.values()
@@ -582,70 +634,26 @@ def assert_initialize_result(result: dict[str, Any]) -> None:
         raise CheckFailure("initialize did not return serverInfo with a name")
 
 
-def smoke_client_config(
-    config: ClientConfig, catalog_by_name: dict[str, dict[str, Any]], timeout: float
-) -> str:
-    """Smoke-test one documented client configuration end to end.
-
-    Launches the snippet's exact argument vector, then walks the documented
-    connection lifecycle: initialize, tools/list discovery against the
-    catalog, invocation behavior (success, in-band document failure,
-    unknown-tool rejection), and a clean exit on stdin EOF.
-    """
-    argv = server_argv(config.args)
-    client = start_client(timeout, argv)
-    try:
-        assert_initialize_result(
-            result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
-        )
-        client.notify("notifications/initialized")
-        compare_tools_list(
-            result_of(client.send("tools/list", {}), "tools/list"), catalog_by_name
+def assert_unknown_tool(response: dict[str, Any]) -> None:
+    """Unknown tools must be JSON-RPC method-not-found errors."""
+    error = response.get("error")
+    if not isinstance(error, dict) or error.get("code") != -32601:
+        raise CheckFailure(
+            f"unknown tool must be rejected with top-level -32601, got {error!r}"
         )
 
-        good = client.send(
-            "tools/call",
-            {"name": "extract_text", "arguments": VALID_ARGUMENTS["extract_text"]},
-        )
-        assert_call_result(good, "extract_text", want_error=False)
 
-        missing = client.send(
-            "tools/call",
-            {"name": "extract_text", "arguments": {"path": MISSING_DOCUMENT}},
-        )
-        assert_call_result(missing, "extract_text", want_error=True)
-
-        unknown = client.send(
-            "tools/call",
-            {"name": "definitely_not_a_pdftract_tool", "arguments": {}},
-        )
-        error = unknown.get("error")
-        if not isinstance(error, dict) or error.get("code") != -32601:
-            raise CheckFailure(
-                f"unknown tool must be rejected with top-level -32601, got {error!r}"
-            )
-    except BaseException:
-        client.close()
-        raise
-    client.close(require_clean_exit=True)
-    return f"{Path(argv[0]).name} {' '.join(config.args)}"
-
-
-def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -> None:
-    result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
-    client.notify("notifications/initialized")
-    catalog_result = result_of(client.send("tools/list", {}), "tools/list")
-    compare_tools_list(catalog_result, catalog_by_name)
-
+def run_tool_conformance(
+    client: FrameClient,
+) -> tuple[int, int, int]:
+    """Exercise every advertised tool's success and in-band failure paths."""
     valid_calls = 0
     invalid_calls = 0
     document_failures = 0
     for name in DOCUMENTED_ADVERTISED_NAMES:
         arguments = VALID_ARGUMENTS[name]
         valid = client.send("tools/call", {"name": name, "arguments": arguments})
-        # get_table has a schema-valid call against a fixture with no table;
-        # its expected document failure is checked as an in-band result.
-        assert_call_result(valid, name, want_error=name == "get_table")
+        assert_call_result(valid, name, want_error=False)
         valid_calls += 1
 
         invalid = client.send("tools/call", {"name": name, "arguments": {}})
@@ -661,6 +669,51 @@ def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -
         # result. This catches accidental Response::error changes.
         assert_call_result(document_failure, name, want_error=True)
         document_failures += 1
+
+    unknown = client.send(
+        "tools/call",
+        {"name": "definitely_not_a_pdftract_tool", "arguments": {}},
+    )
+    assert_unknown_tool(unknown)
+    return valid_calls, invalid_calls, document_failures
+
+
+def smoke_client_config(
+    config: ClientConfig, catalog_by_name: dict[str, dict[str, Any]], timeout: float
+) -> str:
+    """Smoke-test one documented client configuration end to end.
+
+    Launches the snippet's exact argument vector, then walks the documented
+    connection lifecycle: initialize, tools/list discovery against the
+    catalog, per-tool invocation behavior (success, invalid arguments,
+    in-band document failure, unknown-tool rejection), and a clean exit on
+    stdin EOF.
+    """
+    argv = server_argv(config.args)
+    client = start_client(timeout, argv)
+    try:
+        assert_initialize_result(
+            result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
+        )
+        client.notify("notifications/initialized")
+        compare_tools_list(
+            result_of(client.send("tools/list", {}), "tools/list"), catalog_by_name
+        )
+        run_tool_conformance(client)
+    except BaseException:
+        client.close()
+        raise
+    client.close(require_clean_exit=True)
+    return f"{Path(argv[0]).name} {' '.join(config.args)}"
+
+
+def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -> None:
+    result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
+    client.notify("notifications/initialized")
+    catalog_result = result_of(client.send("tools/list", {}), "tools/list")
+    compare_tools_list(catalog_result, catalog_by_name)
+
+    valid_calls, invalid_calls, document_failures = run_tool_conformance(client)
 
     print(
         "MCP catalog/client contract OK: "
