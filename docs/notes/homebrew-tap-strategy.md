@@ -9,6 +9,13 @@ against: the formula template (pdftract-2ba6e643), the release-cascade publish l
 **Status:** DECIDED — later siblings should treat the choices below as settled and
 mechanical; deviations must reopen this note, not silently fork the strategy.
 
+**Audit update (2026-09-27):** The decision remains unchanged. Both tap refs exist,
+but the client-facing mirror currently contains only `Formula/.gitkeep` and no
+`Formula/pdftract.rb`. The versioned `v1.2.0` source archive is reachable, while
+`SHA256SUMS`, `SHA256SUMS.sig`, and `SHA256SUMS.pem` for that release are absent.
+Therefore there is no valid release handoff and no claim that Homebrew installation
+is live; the concrete publication and verification gates remain in §8.
+
 ---
 
 ## 1. Decision summary
@@ -281,19 +288,21 @@ WorkflowTemplate, in-tree at `.ci/argo-workflows/`, synced to jedarden/declarati
 
 ## 8. Prerequisites the later siblings depend on
 
-Checked 2026-09-14; owners in parentheses.
+The original setup baseline was checked 2026-09-14; the current publication audit
+was checked 2026-09-27. Owners remain in parentheses.
 
-1. **Release assets present** — the cascade has never run and no `vX.Y.Z` tag exists
-   yet (plan.md:572: workspace version `0.1.0`, no tags). The Homebrew leg is inert
-   until the first green cascade; template/leg validation uses a dry-run render with
-   a fake version string (the WARN allowance in pdftract-da3c85cd). (pdftract-da3c85cd)
-2. **`SHA256SUMS` published** on the GitHub Release by `pdftract-github-release`
-   (pdftract-2x7y; template in-tree at `.ci/argo-workflows/pdftract-github-release.yaml`
-   — confirm it is ArgoCD-synced via the credential-free kubectl endpoint before
-   relying on it: `kubectl --server=http://traefik-iad-ci:8001 get workflowtemplates
-   -n argo-workflows`). Per §5 the release producer's signed `SHA256SUMS`
-   source-archive line supplies the formula's sha256; the aggregate is not
-   modified post-signature. (pdftract-da3c85cd)
+1. **A complete versioned release handoff is still missing.** The `v1.2.0` tag and
+   its immutable source archive exist, but the release URLs for `SHA256SUMS`,
+   `SHA256SUMS.sig`, and `SHA256SUMS.pem` return not-found. The first green release
+   cascade must publish all three assets, with the unique
+   `source/pdftract-vX.Y.Z.tar.gz` line in the signed aggregate, before the
+   Homebrew leg can render anything. A dry-run fixture may validate the renderer,
+   but it is not a release handoff. (pdftract-da3c85cd)
+2. **The signed checksum handoff is authoritative.** `pdftract-github-release`
+   (pdftract-2x7y; template in-tree at `.ci/argo-workflows/pdftract-github-release.yaml`)
+   must publish `SHA256SUMS` and its signature material before the Homebrew leg
+   runs. Per §5, the release producer's signed source-archive line supplies the
+   formula's sha256; the aggregate is not modified post-signature. (pdftract-da3c85cd)
 3. **Tap push credential — OpenBao path reference, never a literal:**
    `secret/rs-manager/iad-ci/forgejo/homebrew-tap-push-token` on the
    **rs-manager** instance.
@@ -314,28 +323,26 @@ Checked 2026-09-14; owners in parentheses.
    by property (`bao kv metadata get ... | jq .data.current_version`), and sync it to
    the `argo-workflows` namespace on iad-ci via an ExternalSecret. The workflow step
    references the path / secret name only; grep the diff to prove no value appears.
-   **Current state (verified 2026-09-14): nothing pdftract-related is provisioned in
-   OpenBao yet** — the ardenone-cluster prefix holds only
-   `forgejo-iad-ci/github-mirror-token` and `argo-workflows-iad-ci/oauth`; the
-   plan's per-channel key names (`github-pat-pdftract`, `crates-io-token-pdftract`,
-   `pypi-token-pdftract`) are prospective references, not existing stores. Sibling 3
-   (or the parent umbrella) must provision the tap token before any live push; until
-   then the leg can only dry-run. (pdftract-da3c85cd)
-4. **Tap repos created** per §4 (Forgejo push-to-create + public flip; `gh repo
-   create`; server-side push mirror with `sync_on_commit: true`). Until then, the
-   README's uncommitted "tap live" claim is **false** and must not be committed —
-   sibling pdftract-f6cf828b flips the README line to the real state, and its FAIL
-   criterion ("README claiming a working install command that was never executed")
-   exists precisely to catch the stranded edit. (pdftract-da3c85cd creates; pdftract-f6cf828b
-   verifies)
+   The workflow contract records the ExternalSecret as enabled and
+   `SecretSynced=True` on 2026-09-26, but that synchronization signal is not a
+   successful tap publication. Before a live push, verify the current secret
+   property in the target cluster and verify success only through the downstream
+   push/mirror effects. No token value belongs in this repository, workflow
+   parameters, URLs, arguments, logs, or bead evidence. (pdftract-da3c85cd)
+4. **Tap repos exist, but the formula does not.** The Forgejo origin and GitHub
+   mirror both expose the tap's current `main` commit (`c7aec641d5cf9e638285fdbc706499f19495f6a2`),
+   and the mirror contains only `Formula/.gitkeep` plus its README. The publication
+   child must still render and push exactly `Formula/pdftract.rb`; until that
+   commit is mirrored, the install command is a validation procedure, not a live
+   channel claim. (pdftract-da3c85cd creates; pdftract-f6cf828b verifies)
 5. **GitHub mirror of pdftract is public** — ✅ verified 2026-09-14
    (`gh repo view jedarden/pdftract` → `PUBLIC`), so the formula `url` is
    anonymously fetchable. No action.
 6. **Mirror propagation tolerance** — because CI pushes the formula to Forgejo and
-   verification taps GitHub, the verify step must **bounded-poll** the mirror (e.g.
-   HEAD `https://raw.githubusercontent.com/jedarden/homebrew-tap/main/Formula/pdftract.rb`
-   or `git ls-remote` for the new commit, up to ~5 min) before `brew tap`; on
-   timeout, fail the verify step with a "mirror lag" message, not a generic failure.
+   verification taps GitHub, the verify step must **bounded-poll** the mirror with
+   `git ls-remote` for the expected immutable tap commit (up to ~5 min), then
+   inspect that commit's `Formula/pdftract.rb` before `brew tap`; on timeout, fail
+   the verify step with a "mirror lag" message, not a generic failure.
    `sync_on_commit: true` makes this seconds, not minutes, in the normal case.
    (pdftract-da3c85cd)
 
