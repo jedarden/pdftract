@@ -31,9 +31,11 @@ download-grep-corpus:
 	@echo "Generating grep-corpus ($(COUNT) PDFs)..."
 	@bash scripts/download-grep-corpus.sh $(COUNT)
 
-# Verify the documented MCP catalog against a real server and smoke-test every
-# advertised tool. PDFTRACT_MCP_BIN may point at a prebuilt binary.
+# Build the real MCP server before checking its wire contract. This keeps the
+# checker's per-frame timeout focused on protocol startup instead of a cold
+# Cargo compilation. PDFTRACT_MCP_BIN may point at a prebuilt binary.
 mcp-verify:
+	cargo build --locked --package pdftract-cli --bin pdftract --features mcp
 	python3 scripts/check-mcp-tool-catalog.py
 
 # Verify every README capability/release marker against tracked evidence and
