@@ -708,7 +708,7 @@ spec:
           - |
             set -euo pipefail
 
-            TAP_REPO="{{workflow.parameters.tap-repo}}"
+            TAP_REPO="jedarden/homebrew-tap"
             VERSION="{{workflow.parameters.version}}"
 
             echo "=== brew verify: tapping jedarden/tap from github.com/${TAP_REPO} ==="

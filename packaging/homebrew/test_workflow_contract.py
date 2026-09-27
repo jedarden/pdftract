@@ -63,6 +63,7 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
             self.push,
         )
         self.assertNotIn("{{workflow.parameters.tap-url}}", self.push)
+        self.assertNotIn("{{workflow.parameters.tap-repo}}", self.homebrew)
         self.assertIn('MIRROR="https://github.com/jedarden/homebrew-tap.git"', self.homebrew)
         self.assertIn("git add -- Formula/pdftract.rb", self.push)
         self.assertIn('[ "${STAGED_PATHS}" = "Formula/pdftract.rb" ]', self.push)
