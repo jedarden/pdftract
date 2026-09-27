@@ -308,7 +308,7 @@ call-sites have been context-threaded.
 | `STRUCT_HYBRID_CONFLICT` | warning | optional | optional | catalog | `parser/xref.rs` |
 | `STRUCT_INCOMPLETE_COVERAGE` | info | optional | optional | catalog | `parser/struct_tree.rs` |
 | `STRUCT_INVALID_PREV_OFFSET` | warning | optional | optional | catalog | `parser/xref.rs` |
-| `STRUCT_INVALID_HINT_STREAM` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `STRUCT_INVALID_HINT_STREAM` | warning | optional | optional | catalog | `parser/hint_stream.rs` (`parse_hint_stream`, `parse_hint_stream_from_linearized`) |
 | `STRUCT_INVALID_BDC_OPERAND` | info | optional | optional | catalog | `content_stream.rs`, `parser/marked_content_operators.rs` |
 | `XREF_INVALID_HEADER` | warning | optional | optional | catalog | `parser/xref.rs` |
 | `XREF_INVALID_ENTRY` | warning | optional | optional | catalog | `parser/xref.rs` |
@@ -329,9 +329,9 @@ call-sites have been context-threaded.
 | `STREAM_INVALID_CCITT` | warning | optional | optional | catalog | `parser/stream.rs` |
 | `STREAM_TRUNCATED` | warning | optional | optional | catalog | `render/image_compositing.rs` |
 | `STREAM_INVALID_JPX` | warning | optional | optional | catalog | `decoder/jpx.rs` |
-| `ENCRYPTION_UNSUPPORTED` | fatal | optional | optional | catalog | `encryption/mod.rs`, `encryption/decryptor.rs`, `parser/stream.rs` |
+| `ENCRYPTION_UNSUPPORTED` | fatal | optional | optional | catalog | `encryption/detection.rs` (`detect_encryption`), `encryption/mod.rs`, `encryption/decryptor.rs`, `parser/stream.rs` |
 | `ENCRYPTION_WRONG_PASSWORD` | fatal | optional | optional | catalog | `encryption/mod.rs`, `encryption/decryptor.rs`, `parser/stream.rs` |
-| `ENCRYPTION_INVALID_DICT` | fatal | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `ENCRYPTION_INVALID_DICT` | fatal | optional | optional | catalog | `encryption/detection.rs` (`parse_hash_with_diagnostics`) |
 | `PAGE_OUT_OF_RANGE` | error | optional | optional | catalog | `pages.rs` |
 | `PAGE_INVALID_COUNT` | warning | optional | optional | catalog | `parser/pages.rs` |
 | `PAGE_INVALID_ROTATE` | warning | optional | optional | catalog | `content_stream.rs`, `parser/pages.rs` |
@@ -345,7 +345,7 @@ call-sites have been context-threaded.
 | `FONT_TYPE3_WIDTHS_LENGTH_MISMATCH` | warning | optional | optional | catalog | `font/type3.rs` |
 | `CMAP_INVALID_CODESPACE` | warning | optional | optional | catalog | `cmap/codespace.rs` |
 | `CJK_DECODE_MALFORMED` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
-| `CJK_TOKENIZE_UNKNOWN_BYTE` | warning | — | — | catalog | none in HEAD (reserved/planned or not yet wired) |
+| `CJK_TOKENIZE_UNKNOWN_BYTE` | warning | optional | — | catalog | `cmap/tokenize.rs` (`tokenize_cjk_bytes`, `cjk` feature) |
 | `OCR_JBIG2_UNSUPPORTED` | warning | optional | optional | catalog | `decoder/jbig2.rs`, `parser/stream.rs` |
 | `OCR_JPX_UNSUPPORTED` | warning | optional | optional | catalog | `decoder/jpx.rs` |
 | `OCR_CCITT_UNSUPPORTED` | warning | optional | optional | catalog | `parser/stream.rs` |
@@ -396,12 +396,140 @@ call-sites have been context-threaded.
 
 Rows shown as `none in HEAD` are intentionally not silently assigned a fake
 emitter. Some are explicitly marked `(reserved)` in the published catalog;
-the remaining gaps (for example `STRUCT_INVALID_HINT_STREAM` and
-`ENCRYPTION_INVALID_DICT`) are recorded as contract/inventory findings for
-future implementation beads, outside this task. The dead
+the remaining gaps are recorded as contract/inventory findings for future
+implementation beads, outside this task. The dead
 `crates/pdftract-core/src/parser/diagnostic.rs` type is excluded: production
 code re-exports the canonical `crate::diagnostics` model and must not bind to
 the legacy duplicate.
+
+## Implementation handoff audit (HEAD `3aa3ef15`)
+
+The table above is the complete code-to-module inventory. The following
+function-level anchors make the next implementation sweep reproducible:
+
+- Lexer/object syntax: `parser/lexer/mod.rs` (`lex_name`, `lex_hex_string`,
+  `lex_literal_string`, `lex_s_keyword`, `lex_next`, `lex_right_angle`,
+  `lex_unknown`, `lex_numeric`) and `parser/object/parser.rs`
+  (`parse_array`, `parse_dict`, `parse_indirect_object`,
+  `parse_integer_or_ref`, `parse_direct_object`, `skip_stream_body`).
+- Xref/object graph/page tree: `parser/xref.rs` (`merge_hybrid`,
+  `parse_traditional_xref`, `parse_xref_entry`, `parse_trailer_dict`,
+  `forward_scan_xref`, `forward_scan_memory`, `parse_xref_stream`,
+  `walk_chain`), `parser/objstm.rs` (`load_object_stream_impl`), and
+  `parser/pages.rs` (`build_page_dict`, `merge_inherited_attrs`,
+  `flatten_page_tree`, `count_pages_walk`, `walk_page_tree`, `next`).
+- Structure/navigation: `parser/struct_tree.rs` (`parse`, `parse_struct_tree`,
+  `parse_kid_entry`, `resolve`, `process_nums_array`, `walk_number_tree`,
+  `check_coverage_for_pages`), `parser/outline.rs`
+  (`parse_outline_recursive`, `parse_outlines`, `resolve_destination`,
+  `decode_utf16be_bom`), `parser/catalog.rs` (`parse_catalog`), and
+  `parser/ocg.rs` (`parse_oc_properties`).
+- Content/marked content/inline images: `content_stream.rs` (`can_enter`,
+  `process_with_mode_and_diagnostics`, `execute_with_do`,
+  `handle_do_operator`, `resolve_xobject_stream`,
+  `extract_content_stream_bytes`, `process_tj_array`,
+  `parse_inline_dict_from_buffer`, `normalize_glyph_bboxes_by_rotation`),
+  `parser/marked_content_stack.rs` (`pop_emc`, `push_bmc`, `push_bdc`),
+  `parser/marked_content_operators.rs` (`emit_invalid_bdc_operand`,
+  `resolve_property_object`, `emit_unknown_property_name`), and
+  `parser/inline_image.rs` (`validate_id_whitespace`,
+  `scan_inline_image_data`, `parse_inline_image_header`,
+  `parse_color_space_value`, `parse_decode_array`,
+  `parse_decode_parms_value`, `parse_filter_value`, `set_header_field`).
+- Fonts/CMaps: `font/cmap.rs` (`parse`, `handle_usecmap`, `decode_utf16be`,
+  `emit_error`), `font/codespace.rs` (`parse_codespace_block`, `emit_error`),
+  `font/encoding.rs` (`parse`), `font/embedded.rs` (`load`),
+  `font/type0.rs` (`load`, `load_font_program`, `load_cid_to_gid_map`),
+  `font/type3.rs` (`load_char_procs`, `load_font_bbox`, `load_widths`,
+  `type3_font_with_cache`), `font/type3_rasterizer.rs` (`op_concat`,
+  `op_save`, `op_restore`, `op_do`), `font/resolver.rs`
+  (`emit_miss_diagnostic`, `resolve_stream_bytes`, `resolve_type3`,
+  `resolve_type3_level4`), `cmap/codespace.rs` (`parse`,
+  `parse_codespace_block`, `parse_hex_string`, `emit_error`), and the
+  feature-gated `cmap/tokenize.rs` (`tokenize_cjk_bytes`).
+- Stream/decoder/image/OCR: `parser/stream.rs` (`decode_stream_impl`,
+  `validate_markers`), `decoder/jbig2.rs` (`emit_unsupported_diagnostic`),
+  `decoder/jpx.rs` (`emit_unsupported_diagnostic`,
+  `emit_invalid_magic_diagnostic`), `render/image_compositing.rs`
+  (`collect_image_placements`, `collect_image_xobjects`,
+  `parse_inline_image`, `decode_image_xobject`), `render/pdfium_path.rs`
+  (`render_page_via_pdfium`), `preprocess.rs` (`deskew`, `grayimage_to_pix`,
+  `pix_to_grayimage`), `classify.rs`
+  (`apply_broken_vector_escalation_with_diagnostics`), and `ocr.rs`
+  (`validate_ocr_languages`).
+- Encryption/remote/other document features: `encryption/detection.rs`
+  (`detect_encryption`, `parse_hash_with_diagnostics`),
+  `encryption/mod.rs` and `encryption/decryptor.rs` (`to_diagnostic`,
+  `decrypt_with_password`), `pages.rs` (`parse_pages`), `javascript.rs`
+  (`detect_javascript`), `source/mod.rs` (`open_remote`),
+  `source/http_range.rs` (`download_to_temp_and_mmap_with_hook`),
+  `url_validation.rs` (`validate_url_with_diagnostic`),
+  `attachment/associated_files.rs` (`walk_af_array`,
+  `extract_af_relationship`), `attachment/filespec.rs` (`extract_one`,
+  `extract_filename`, `extract_ef_stream_ref`), `attachment/name_tree.rs`
+  (`walk_embedded_files`, `walk_tree_node`, `parse_names_array`),
+  `forms/mod.rs` (`walk_acroform_fields`, `walk_field_recursive`),
+  `forms/xfa.rs` (`decode_stream_bytes`, `extract_xfa_bytes`,
+  `extract_xfa_bytes_from_array`, `parse_xfa_xml`), `forms/combiner.rs`
+  (`combine`, `merge_xfa_value_with_acro_type`), `signature/mod.rs`
+  (`decode_utf16be_bom`, `walk_acroform_fields`, `walk_field_recursive`),
+  `threads/mod.rs` (`discover`, `walk_beads`, `check_and_handle_termination`,
+  `get_next_bead_ref`), `conformance.rs` (`detect_conformance_impl`), and
+  `fingerprint/canonicalize.rs` (`canonicalize_f64`).
+
+The three rows corrected in this audit are concrete production paths, not
+test-only references: hint-stream parsing emits `STRUCT_INVALID_HINT_STREAM`,
+encryption detection emits `ENCRYPTION_UNSUPPORTED` and
+`ENCRYPTION_INVALID_DICT`, and `tokenize_cjk_bytes` emits
+`CJK_TOKENIZE_UNKNOWN_BYTE` when the `cjk` feature is enabled. The last path
+passes `offset = cursor as u64`; the other two currently pass no offset,
+object, or page context. All three still receive their severity and hint from
+the catalog policy (`warning`, `fatal`, and `warning`, respectively).
+
+### Context and fallback matrix
+
+This is the handoff rule for every row and every function above:
+
+| Field | Available at an emitter when | Explicit fallback when absent |
+|---|---|---|
+| Severity | Always; `DiagCode::severity()` / `DiagnosticPolicy` is authoritative | Never infer or invent one at the call site |
+| Byte offset | The parser/decoder has a source cursor or known range; examples include lexer positions, `cmap/codespace.rs` `self.position`, CJK `cursor`, stream marker offsets, and JPX offset `0` | `None` in `Diagnostic`; it is not serialized today and must not be folded into the legacy message |
+| Page index | The page extraction/classification/content layer has the zero-based page number; `extract.rs::attach_page_context` fills it only when the diagnostic lacks one | `None`; omit `page_index` in JSON/NDJSON, never use a sentinel |
+| Object location | The site has an indirect `ObjRef`; attachment/content/parser/render paths may attach it with `with_object_ref*` | `None`; omit `location` in JSON/NDJSON, never use `0 0` or `null` |
+| Hint | Always obtained from `DIAGNOSTIC_CATALOG.suggested_action` for current rows | `None` is the forward-compatible structured fallback; never add a site-specific hint or alter the legacy message |
+
+The source scanner in `tests/diagnostics_catalog_drift.rs` is the coverage
+gate for the code-to-catalog/doc-row relation. It scans production source plus
+`#[cfg(test)]` text, masks comments/strings, and deliberately excludes only
+the canonical registry and the dead `parser/diagnostic.rs`; it does not
+recover enclosing function names or distinguish test-only references. The
+function index above is therefore the reviewed handoff for call-site names,
+while the scanner remains the authoritative “no undocumented code token”
+check. A future tooling bead should add function/span and cfg provenance if
+machine-generated per-call-site reporting is required.
+
+### Boundaries and unresolved decisions
+
+- The legacy boundary is `diagnostics_compat::to_legacy_string(s)` in
+  `crates/pdftract-core/src/diagnostics_compat.rs`: it projects only
+  `Diagnostic.message`, in order, retaining duplicates and exact bytes. The
+  `Diagnostic` `Display` form is human/debug output and must not become the
+  compatibility format.
+- The machine-readable boundary is `DiagnosticJson` in
+  `schema/mod.rs`, populated into compact metadata by `extract.rs`, copied to
+  full JSON `Output.errors` by `output/json.rs::result_to_output`, and merged
+  with synthetic lowercase `page_extraction_error` records by
+  `output/ndjson/pipeline.rs::footer_errors`. Synthetic page errors are not
+  catalog rows and do not enter either metadata array.
+- No model or public-output change is part of this handoff. If consumers later
+  require byte offsets, the unresolved compatibility decision is whether to
+  add a new optional `DiagnosticJson.byte_offset`; until that decision, keep
+  offsets in-process only.
+- The next child must decide whether to thread missing page/object context at
+  individual sites and whether reserved catalog rows should remain reserved;
+  absent context must continue to use the omission fallbacks above. It must
+  also decide whether to upgrade the scanner's production-vs-test and
+  function-span reporting before relying on it as a call-site inventory.
 
 ## What pins this contract
 
