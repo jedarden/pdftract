@@ -49,6 +49,11 @@ bead pdftract-8f4e91aa). This directory was authored by pdftract-2ba6e643; the
 render/publish automation is pdftract-da3c85cd; end-to-end verification and the
 main-README install-line flip are pdftract-f6cf828b.
 
+The release-to-publication handoff is defined in
+`docs/operations/homebrew-release-handoff.md`; it is the authoritative record
+of the immutable release inputs, tap destination, ordering, dry-run boundary,
+and retry behavior.
+
 ## Placeholders
 
 | Placeholder | Meaning | Filled from |
