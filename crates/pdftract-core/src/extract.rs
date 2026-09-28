@@ -103,6 +103,71 @@ struct DecodedPageContent {
     diagnostics: Vec<Diagnostic>,
 }
 
+/// Forward every diagnostic produced while parsing the catalog.
+///
+/// Optional-content parsing keeps its diagnostics on the nested
+/// [`OcProperties`] value because those diagnostics retain the `/OCProperties`
+/// or OCG object that caused them. The extraction boundary owns the final
+/// diagnostic stream, so it must merge both catalog-level and nested values
+/// without replacing their already-known context or manufacturing a page.
+fn extend_catalog_diagnostics(
+    catalog: &crate::parser::catalog::Catalog,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    diagnostics.extend(catalog.diagnostics.iter().cloned());
+    if let Some(oc_properties) = catalog.oc_properties.as_ref() {
+        diagnostics.extend(oc_properties.diagnostics.iter().cloned());
+    }
+}
+
+#[cfg(test)]
+mod catalog_diagnostic_tests {
+    use super::extend_catalog_diagnostics;
+    use crate::diagnostics::{DiagCode, Diagnostic, ObjRef};
+    use crate::diagnostics_compat::to_legacy_strings;
+    use crate::parser::catalog::Catalog;
+    use crate::parser::object::{ObjRef as ParserObjRef, PdfObject};
+    use crate::parser::ocg::{BaseState, OcProperties};
+    use std::collections::HashMap;
+
+    #[test]
+    fn nested_catalog_diagnostics_retain_typed_context_and_legacy_messages() {
+        let mut catalog = Catalog::new(ParserObjRef::new(2, 0), PdfObject::Null);
+        catalog.diagnostics.push(Diagnostic::with_static_no_offset(
+            DiagCode::StructMissingKey,
+            "catalog diagnostic",
+        ));
+
+        let nested = Diagnostic::with_static_no_offset(
+            DiagCode::StructMissingKey,
+            "optional-content diagnostic",
+        )
+        .with_object_ref(ObjRef::new(5, 0));
+        catalog.oc_properties = Some(OcProperties {
+            present: true,
+            groups: HashMap::new(),
+            default_visibility: HashMap::new(),
+            base_state: BaseState::On,
+            ocmds: HashMap::new(),
+            diagnostics: vec![nested],
+        });
+
+        let mut diagnostics = Vec::new();
+        extend_catalog_diagnostics(&catalog, &mut diagnostics);
+
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(diagnostics[1].object_ref, Some(ObjRef::new(5, 0)));
+        assert_eq!(diagnostics[1].page_index, None);
+        assert_eq!(
+            to_legacy_strings(&diagnostics),
+            vec![
+                "catalog diagnostic".to_string(),
+                "optional-content diagnostic".to_string()
+            ]
+        );
+    }
+}
+
 fn decode_page_content_streams(
     page: &crate::parser::pages::PageDict,
     resolver: &crate::parser::xref::XrefResolver,
@@ -1048,7 +1113,7 @@ fn extract_pdf_from_source(
     let mut all_diagnostics = extraction_diagnostics;
     all_diagnostics.extend(page_iter.into_diagnostics());
     all_diagnostics.extend(prefetch_diagnostics);
-    all_diagnostics.extend(catalog.diagnostics.clone());
+    extend_catalog_diagnostics(&catalog, &mut all_diagnostics);
     all_diagnostics.extend(page_diagnostics);
     all_diagnostics.extend(page_range_diagnostics);
     all_diagnostics.extend(coverage_diagnostics);
@@ -2154,7 +2219,7 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     let mut all_diagnostics = extraction_diagnostics;
     all_diagnostics.extend(page_iter.into_diagnostics());
     all_diagnostics.extend(prefetch_diagnostics);
-    all_diagnostics.extend(catalog.diagnostics.clone());
+    extend_catalog_diagnostics(&catalog, &mut all_diagnostics);
     all_diagnostics.extend(page_diagnostics);
     all_diagnostics.extend(page_range_diagnostics);
     all_diagnostics.extend(coverage_diagnostics);
@@ -2495,7 +2560,7 @@ where
     // Add page decoder diagnostics before document-level diagnostics.
     let mut all_diagnostics = extraction_diagnostics;
     all_diagnostics.extend(page_iter.into_diagnostics());
-    all_diagnostics.extend(catalog.diagnostics.clone());
+    extend_catalog_diagnostics(&catalog, &mut all_diagnostics);
     all_diagnostics.extend(coverage_diagnostics);
     if let Some(ref deferred) = deferred_diagnostic {
         all_diagnostics.push(deferred.clone());

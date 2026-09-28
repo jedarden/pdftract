@@ -35,6 +35,10 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
+fn diagnostic_object_ref(object_ref: ObjRef) -> crate::diagnostics::ObjRef {
+    crate::diagnostics::ObjRef::new(object_ref.object, object_ref.generation)
+}
+
 /// Result type for structure tree parsing.
 pub type Result<T> = std::result::Result<T, Vec<Diagnostic>>;
 
@@ -466,7 +470,7 @@ impl ParentTreeResolver {
                         .push(Diagnostic::with_dynamic_no_offset(
                             DiagCode::StructUnexpectedEof,
                             format!("Failed to resolve ParentTree reference {}: {}", ref_obj, e),
-                        ));
+                        ).with_object_ref(diagnostic_object_ref(ref_obj)));
                     return resolver_impl;
                 }
             },
@@ -474,7 +478,12 @@ impl ParentTreeResolver {
         };
 
         // Walk the number tree
-        walk_number_tree(resolver, &tree_obj, &mut resolver_impl);
+        walk_number_tree(
+            resolver,
+            &tree_obj,
+            parent_tree_obj.as_ref(),
+            &mut resolver_impl,
+        );
 
         resolver_impl
     }
@@ -766,6 +775,7 @@ pub fn check_coverage_for_pages(
 fn walk_number_tree(
     resolver: &XrefResolver,
     node_obj: &PdfObject,
+    node_ref: Option<ObjRef>,
     parent_resolver: &mut ParentTreeResolver,
 ) {
     let dict = match node_obj.as_dict() {
@@ -779,6 +789,9 @@ fn walk_number_tree(
                         "Number tree node is not a dictionary (type: {})",
                         node_obj.type_name()
                     ),
+                )
+                .with_object_ref_parts_opt(
+                    node_ref.map(|reference| (reference.object, reference.generation)),
                 ));
             return;
         }
@@ -790,25 +803,28 @@ fn walk_number_tree(
 
     if let Some(nums_array) = nums {
         // Leaf node - process /Nums array
-        process_nums_array(nums_array, parent_resolver);
+        process_nums_array(nums_array, node_ref, parent_resolver);
     } else if let Some(kids_array) = kids {
         // Intermediate node - recurse into /Kids
         if let Some(arr) = kids_array.as_array() {
             for kid_obj in arr.as_ref() {
                 if let Some(kid_ref) = kid_obj.as_ref() {
                     match resolver.resolve(kid_ref) {
-                        Ok(kid_node) => walk_number_tree(resolver, &kid_node, parent_resolver),
+                        Ok(kid_node) => {
+                            walk_number_tree(resolver, &kid_node, Some(kid_ref), parent_resolver)
+                        }
                         Err(e) => {
                             parent_resolver
                                 .diagnostics
                                 .push(Diagnostic::with_dynamic_no_offset(
                                     DiagCode::StructUnexpectedEof,
                                     format!("Failed to resolve number tree kid {}: {}", kid_ref, e),
-                                ));
+                                )
+                                .with_object_ref(diagnostic_object_ref(kid_ref)));
                         }
                     }
                 } else {
-                    walk_number_tree(resolver, kid_obj, parent_resolver);
+                    walk_number_tree(resolver, kid_obj, None, parent_resolver);
                 }
             }
         }
@@ -819,6 +835,9 @@ fn walk_number_tree(
             .push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructMissingKey,
                 "Number tree node has neither /Nums nor /Kids".to_string(),
+            )
+            .with_object_ref_parts_opt(
+                node_ref.map(|reference| (reference.object, reference.generation)),
             ));
     }
 }
@@ -827,7 +846,11 @@ fn walk_number_tree(
 ///
 /// The /Nums array contains alternating key-value pairs: [key1, value1, key2, value2, ...]
 /// where keys are integers and values are either arrays (for pages) or single refs (for annotations).
-fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeResolver) {
+fn process_nums_array(
+    nums_obj: &PdfObject,
+    node_ref: Option<ObjRef>,
+    parent_resolver: &mut ParentTreeResolver,
+) {
     let nums = match nums_obj.as_array() {
         Some(arr) => arr.as_ref(),
         None => {
@@ -836,6 +859,9 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
                 .push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructInvalidType,
                     format!("/Nums is not an array (type: {})", nums_obj.type_name()),
+                )
+                .with_object_ref_parts_opt(
+                    node_ref.map(|reference| (reference.object, reference.generation)),
                 ));
             return;
         }
@@ -859,6 +885,9 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
                             "Number tree key is not an integer (type: {})",
                             key_obj.type_name()
                         ),
+                    )
+                    .with_object_ref_parts_opt(
+                        node_ref.map(|reference| (reference.object, reference.generation)),
                     ));
                 continue;
             }
@@ -903,6 +932,9 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
                             "Number tree value has unsupported type: {}",
                             value_obj.type_name()
                         ),
+                    )
+                    .with_object_ref_parts_opt(
+                        node_ref.map(|reference| (reference.object, reference.generation)),
                     ));
                 continue;
             }
@@ -919,6 +951,9 @@ fn process_nums_array(nums_obj: &PdfObject, parent_resolver: &mut ParentTreeReso
                 DiagCode::StructInvalidType,
                 "Number tree /Nums array has odd length (trailing element without value)"
                     .to_string(),
+            )
+            .with_object_ref_parts_opt(
+                node_ref.map(|reference| (reference.object, reference.generation)),
             ));
     }
 }
@@ -1072,6 +1107,7 @@ pub fn parse_struct_tree(
 ) -> Result<StructTreeRoot> {
     let mut diagnostics = Vec::new();
     let mut root = StructTreeRoot::new();
+    let diagnostic_root_ref = diagnostic_object_ref(struct_tree_root_ref);
 
     // Resolve the StructTreeRoot object
     let root_obj = match resolver.resolve(struct_tree_root_ref) {
@@ -1080,7 +1116,7 @@ pub fn parse_struct_tree(
             diagnostics.push(Diagnostic::with_dynamic_no_offset(
                 DiagCode::StructUnexpectedEof,
                 format!("Failed to resolve StructTreeRoot: {}", e),
-            ));
+            ).with_object_ref(diagnostic_root_ref));
             return Err(diagnostics);
         }
     };
@@ -1095,7 +1131,7 @@ pub fn parse_struct_tree(
                     "StructTreeRoot is not a dictionary (type: {})",
                     root_obj.type_name()
                 ),
-            ));
+            ).with_object_ref(diagnostic_root_ref));
             return Err(diagnostics);
         }
     };
@@ -1115,7 +1151,7 @@ pub fn parse_struct_tree(
                             "Failed to resolve RoleMap reference {}: {}",
                             role_map_ref, e
                         ),
-                    ));
+                    ).with_object_ref(diagnostic_object_ref(role_map_ref)));
                     // Use empty RoleMap (already initialized in new())
                 }
             }
@@ -1126,7 +1162,13 @@ pub fn parse_struct_tree(
 
     // Parse the ParentTree
     root.parent_tree = ParentTreeResolver::parse(resolver, &root_obj);
-    diagnostics.extend(root.parent_tree.diagnostics().iter().cloned());
+    diagnostics.extend(
+        root.parent_tree
+            .diagnostics()
+            .iter()
+            .cloned()
+            .map(|diagnostic| diagnostic.with_available_context(Some(diagnostic_root_ref), None)),
+    );
 
     // Get the /K array (kids)
     let kids_array = match root_dict.get("K") {
@@ -1232,7 +1274,7 @@ fn parse_kid_entry(
                 diagnostics.push(Diagnostic::with_dynamic_no_offset(
                     DiagCode::StructCircularRef,
                     format!("Cycle detected in structure tree at {}", obj_ref),
-                ));
+                ).with_object_ref(diagnostic_object_ref(*obj_ref)));
                 return None;
             }
 
@@ -1243,7 +1285,10 @@ fn parse_kid_entry(
                     diagnostics.push(Diagnostic::with_dynamic_no_offset(
                         DiagCode::StructUnexpectedEof,
                         format!("Failed to resolve StructElem reference {}: {}", obj_ref, e),
-                    ));
+                    ).with_object_ref(crate::diagnostics::ObjRef::new(
+                        obj_ref.object,
+                        obj_ref.generation,
+                    )));
                     return None;
                 }
             };
@@ -1275,6 +1320,7 @@ fn parse_kid_entry(
             }
 
             // Parse as StructElem
+            let diagnostic_start = diagnostics.len();
             let elem_node = parse_struct_elem(
                 resolver,
                 &elem_obj,
@@ -1285,7 +1331,13 @@ fn parse_kid_entry(
                 parent_lang,
                 parent_actual_text,
                 Some(*obj_ref),
-            )?;
+            );
+            for diagnostic in diagnostics.iter_mut().skip(diagnostic_start) {
+                *diagnostic = diagnostic
+                    .clone()
+                    .with_available_context(Some(diagnostic_object_ref(*obj_ref)), None);
+            }
+            let elem_node = elem_node?;
 
             Some(Kid::Element(Box::new(elem_node)))
         }
@@ -1933,6 +1985,26 @@ mod tests {
 
         assert!(root.kids.is_empty());
         assert!(root.role_map.map.is_empty());
+    }
+
+    #[test]
+    fn struct_tree_root_diagnostic_retains_object_context() {
+        let resolver = XrefResolver::new();
+        let root_ref = ObjRef::new(7, 3);
+        resolver.cache_object(root_ref, PdfObject::Integer(42));
+
+        let diagnostics = parse_struct_tree(&resolver, root_ref).expect_err("root must be a dict");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].object_ref,
+            Some(crate::diagnostics::ObjRef::new(7, 3))
+        );
+        assert_eq!(diagnostics[0].page_index, None);
+        assert_eq!(diagnostics[0].severity(), crate::diagnostics::Severity::Warning);
+        assert_eq!(
+            crate::diagnostics_compat::to_legacy_strings(&diagnostics),
+            vec!["StructTreeRoot is not a dictionary (type: integer)".to_string()]
+        );
     }
 
     #[test]

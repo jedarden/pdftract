@@ -75,8 +75,8 @@ is neither the wire object nor the legacy `metadata.diagnostics` value.
 3. **NDJSON footer frame `errors`** — a union array containing one synthetic
    page-failure record per failed page, followed by all structured extraction
    diagnostics in metadata emission order. A page-failure record has the shape
-   `{"code":"page_extraction_error","severity":"error","message":"..."}`;
-   this lowercase code is a streaming-only label, not a catalog code.
+   `{"code":"page_extraction_error","severity":"error","message":"...","page_index":N}`;
+   `page_index` is the zero-based failed-page index. This lowercase code is a streaming-only label, not a catalog code.
 
 Empty-array behavior differs by surface: `metadata.diagnostics` and
 `metadata.diagnostics_detailed` are omitted entirely when there are no
@@ -155,8 +155,9 @@ For every emitted catalog code, `code`, `message`, and `severity` are required
 and the current catalog hint is populated. The `hint` field remains optional on
 the wire so consumers can tolerate a future code without a suggested action.
 The only currently defined non-catalog record is the NDJSON-only synthetic
-`page_extraction_error`, which has `code`, `message`, and `severity` and no
-hint. A catalog row marked `(reserved)` or gated by a feature is a contract
+`page_extraction_error`, which has `code`, `message`, `severity`, and the
+known `page_index`, but no hint. A catalog row marked `(reserved)` or gated by
+a feature is a contract
 reservation: it is not required to appear until that implementation/feature is
 enabled, but its wire fields and profile are already fixed.
 

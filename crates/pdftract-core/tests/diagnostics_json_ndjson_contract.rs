@@ -165,14 +165,15 @@ fn populated_diagnostics_keep_legacy_and_structured_order_across_outputs() {
     // unchanged document-level structured diagnostics in emission order.
     let footer_values = footer_errors(&result).expect("footer errors assemble");
     assert_eq!(footer_values.len(), 2 + expected_detailed.len());
-    for (entry, message) in footer_values[..2]
+    for (index, (entry, message)) in footer_values[..2]
         .iter()
         .zip(["first page failed", "second page failed"])
+        .enumerate()
     {
         assert_eq!(entry["code"], "page_extraction_error");
         assert_eq!(entry["severity"], "error");
         assert_eq!(entry["message"], message);
-        assert!(entry.get("page_index").is_none());
+        assert_eq!(entry["page_index"], result.pages[index + 1].index);
         assert!(entry.get("location").is_none());
         assert!(entry.get("hint").is_none());
     }

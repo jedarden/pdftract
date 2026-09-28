@@ -126,8 +126,9 @@ Omission rules:
 NDJSON footer `errors` is a **union**, in this order:
 
 1. One synthetic record per failed page:
-   `{"code":"page_extraction_error","severity":"error","message":"<page error text>"}`
-   — `page_extraction_error` is a lowercase synthetic wire label; it is
+   `{"code":"page_extraction_error","severity":"error","message":"<page error text>","page_index":N}`
+   — `page_index` is the zero-based index already known by the page frame.
+   `page_extraction_error` is a lowercase synthetic wire label; it is
    deliberately **not** a `DiagCode` variant and never appears in
    `metadata.diagnostics_detailed` or the catalog.
 2. Then the document's canonical diagnostics (`diagnostics_detailed`) in
@@ -276,7 +277,10 @@ The context columns use this vocabulary:
 When an active emitter has no page or object context, it uses the same fallback
 as a document-level event: the field is omitted from JSON/NDJSON. A source
 path below is an emitter map, not a list of tests or a claim that all
-call-sites have been context-threaded.
+call-sites have been context-threaded. The emission-site sweep threads
+context at the parser and extraction boundaries that know an indirect object
+or page; lower-level standalone lexer/marked-content helpers retain the
+documented omission fallback when their APIs have no such input.
 
 | Code | Severity | page_index | location | hint | Emitter module(s) in HEAD |
 |---|---|---|---|---|---|
@@ -525,11 +529,14 @@ machine-generated per-call-site reporting is required.
   require byte offsets, the unresolved compatibility decision is whether to
   add a new optional `DiagnosticJson.byte_offset`; until that decision, keep
   offsets in-process only.
-- The next child must decide whether to thread missing page/object context at
-  individual sites and whether reserved catalog rows should remain reserved;
-  absent context must continue to use the omission fallbacks above. It must
-  also decide whether to upgrade the scanner's production-vs-test and
-  function-span reporting before relying on it as a call-site inventory.
+- Context threading is complete at the current parser/extractor forwarding
+  boundaries: struct-tree root, RoleMap, ParentTree, and StructElem
+  resolution preserve known object references; page extraction supplies the
+  known page index; and catalog aggregation forwards nested optional-content
+  diagnostics. Standalone lexer and marked-content helpers that receive no
+  page/object input remain explicitly context-unavailable and omit those
+  fields. Reserved catalog rows remain contract reservations until their
+  production emitters are enabled.
 
 ## What pins this contract
 

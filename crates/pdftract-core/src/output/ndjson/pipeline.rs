@@ -98,6 +98,7 @@ pub fn extract_streaming<W: Write>(
                 "code": "page_extraction_error",
                 "severity": "error",
                 "message": error,
+                "page_index": page.index,
             })]);
             writer
                 .write_all(frame.to_json_line()?.as_bytes())
@@ -141,12 +142,13 @@ pub fn footer_errors(result: &crate::extract::ExtractionResult) -> Result<Vec<se
     let mut errors: Vec<serde_json::Value> = result
         .pages
         .iter()
-        .filter_map(|p| p.error.as_ref())
-        .map(|e| {
+        .filter_map(|p| p.error.as_ref().map(|error| (p.index, error)))
+        .map(|(page_index, e)| {
             json!({
                 "code": "page_extraction_error",
                 "severity": "error",
                 "message": e,
+                "page_index": page_index,
             })
         })
         .collect();

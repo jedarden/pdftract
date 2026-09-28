@@ -84,6 +84,7 @@ fn page_frame(page: &PageResult) -> PageFrame {
             "code": "page_extraction_error",
             "severity": "error",
             "message": error,
+            "page_index": page.index,
         })]),
         None => frame,
     }
@@ -284,15 +285,19 @@ fn page_failures_emit_synthetic_ndjson_records_before_document_diagnostics() {
             "code": "page_extraction_error",
             "severity": "error",
             "message": "page one failed",
+            "page_index": 1,
         })
     );
     assert_eq!(lines[3]["errors"][0]["message"], "page two failed");
+    assert_eq!(lines[3]["errors"][0]["page_index"], 2);
 
     let footer_errors = lines.last().unwrap()["errors"].as_array().unwrap();
     assert_eq!(footer_errors.len(), 3);
     assert_eq!(footer_errors[0]["code"], "page_extraction_error");
     assert_eq!(footer_errors[0]["message"], "page one failed");
+    assert_eq!(footer_errors[0]["page_index"], 1);
     assert_eq!(footer_errors[1]["code"], "page_extraction_error");
     assert_eq!(footer_errors[1]["message"], "page two failed");
+    assert_eq!(footer_errors[1]["page_index"], 2);
     assert_eq!(footer_errors[2], full["errors"][0]);
 }
