@@ -196,6 +196,19 @@ it is not the legacy array and must not be used as a serialization format.
 - Feature-gated codes (e.g. `CJK_*` requires the `cjk` feature) are exempt
   from drift enforcement when compiled out; the doc rows annotate the gate.
 
+### Audit cardinality clarification
+
+The committed registry and published catalog contain **113 rows total**,
+including the two `#[cfg(feature = "cjk")]` codes. The default build therefore
+has 111 active catalog entries; a `cjk`/all-features build has 113 active
+entries. The two CJK rows remain part of the published inventory even when
+compiled out, and their feature gate is the source of the active-count
+difference. This is the count to use for downstream inventory and round-trip
+work. The two integration guides contain stale prose describing the same
+inventory as 113 default rows plus two CJK rows (115 active); that wording does
+not change the row list or the contract and is intentionally left to a future
+documentation-maintenance task outside this handoff.
+
 ## Emission paths downstream work must cover
 
 Mechanism: emission sites build a `DiagnosticContext` (or use the
