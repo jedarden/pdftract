@@ -197,37 +197,41 @@ spec:
             template: setup
             dependencies: [post-pending-forgejo]
 
+          - name: workflow-source-drift
+            template: workflow-source-drift
+            dependencies: [setup]
+
           - name: sdk-conformance
             template: sdk-conformance
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: mcp-client-smoke
             template: mcp-client-smoke
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: diagnostics-conformance
             template: diagnostics-conformance
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: build-matrix
             template: build-matrix
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: test-matrix
             template: test-matrix
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: quality-matrix
             template: quality-matrix
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: wasm32-check
             template: wasm32-check
-            dependencies: [setup]
+            dependencies: [workflow-source-drift]
 
           - name: wer-gate
             template: wer-gate
-            dependencies: [setup, build-matrix]
+            dependencies: [workflow-source-drift, build-matrix]
             arguments:
               artifacts:
                 - name: pdftract-binary
@@ -235,7 +239,7 @@ spec:
 
           - name: bench-matrix
             template: bench-matrix
-            dependencies: [setup, build-matrix]
+            dependencies: [workflow-source-drift, build-matrix]
             arguments:
               artifacts:
                 - name: pdftract-binary
@@ -261,7 +265,7 @@ spec:
 
           - name: regression-corpus
             template: regression-corpus
-            dependencies: [build-matrix]
+            dependencies: [workflow-source-drift, build-matrix]
             arguments:
               artifacts:
                 - name: pdftract-binary
@@ -269,7 +273,7 @@ spec:
 
           - name: generate-provenance
             template: generate-provenance
-            dependencies: [build-matrix]
+            dependencies: [workflow-source-drift, build-matrix]
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
@@ -295,7 +299,7 @@ spec:
 
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, diagnostics-conformance, verify-provenance]
+            dependencies: [workflow-source-drift, build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, diagnostics-conformance, verify-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
@@ -513,6 +517,30 @@ spec:
         artifacts:
           - name: workflow-metadata
             path: /workspace/workflow-metadata.json
+
+    # === Source-to-deployed workflow drift gate ===
+    # The deployed copy is in declarative-config. Only cluster-specific
+    # resources maps may differ; schema and quality-gate drift fails here.
+    - name: workflow-source-drift
+      activeDeadlineSeconds: 300
+      container:
+        image: alpine/git:v2.54.0
+        command: [sh, -c]
+        args:
+          - |
+            set -eu
+            cd /workspace
+            .ci/scripts/check-argo-workflow-drift.sh
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
 
     # === SDK Conformance Matrix ===
     # Run the report-producing runner for every SDK. Individual runners are
