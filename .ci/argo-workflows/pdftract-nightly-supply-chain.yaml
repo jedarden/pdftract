@@ -19,7 +19,7 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedules:
-    - "0 3 * * *" # Daily at 03:00 UTC.
+    - "*/1 * * * *" # Temporary one-minute trigger for cluster verification.
   timezone: UTC
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
