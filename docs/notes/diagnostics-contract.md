@@ -249,7 +249,7 @@ Known gaps and hazards for the remaining parent scope (beads
    currently defines one, so structured diagnostics carry `hint` today, but
    consumers and tests must tolerate its absence per the omission rule.
 
-+## Code inventory and emitter map
+## Code inventory and emitter map
 
 The published catalog in
 [`docs/integrations/diagnostics-codes.md`](../integrations/diagnostics-codes.md)
