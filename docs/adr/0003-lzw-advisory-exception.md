@@ -71,12 +71,18 @@ sequential DAG with `podGC: OnWorkflowCompletion` and
 `ttlStrategy.secondsAfterCompletion: 259200` (three days), rather than the
 current in-tree manifest's retention fields.
 
-The companion `pdftract-nightly-supply-chain` CronWorkflow was not present in
-`iad-ci` at that check. Therefore nightly execution of the compensating
-control is **not yet verified**; the local run remains useful coverage
-evidence, but must not be described as a successful in-cluster nightly cycle
-until the missing deployment is reconciled and terminal run evidence is
-retained or exported.
+The companion `pdftract-nightly-supply-chain` CronWorkflow is now present in
+the in-tree manifest and the `iad-ci` declarative-config manifest. A GitOps
+verification created Workflow `pdftract-nightly-supply-chain-1790623980`; the
+cluster reported its `setup` node as `Succeeded`, and the setup pod remained
+available for log inspection. This is cluster deployment and partial execution
+evidence, not a passing nightly result: the namespace quota kept `cargo-audit`
+pending while stale one-minute verification attempts drained, and the
+application-wide Argo sync also encountered unrelated API-discovery failures.
+Until the Workflow reaches a terminal phase with recorded exit statuses and
+task logs, nightly execution of the compensating control remains
+**unverified**. The local 2026-09-15 coverage measurements must continue to be
+described as local evidence only.
 
 ## Future Work
 - Monitor the weezl crate for PDF-compatible LZW support
@@ -91,6 +97,9 @@ retained or exported.
 - Nightly fuzz job: `.ci/argo-workflows/pdftract-nightly-fuzz.yaml` (in-tree
   source), `pdftract-nightly-fuzz` CronWorkflow in `declarative-config`
   (`k8s/iad-ci/argo-workflows/`) for the deployed manifest
+- Nightly supply-chain job: `.ci/argo-workflows/pdftract-nightly-supply-chain.yaml`
+  (in-tree source), `pdftract-nightly-supply-chain` CronWorkflow in
+  `declarative-config` (`k8s/iad-ci/argo-workflows/`) for the deployed manifest
 - LZW fuzz seeds: `fuzz/seeds/lzw_decode/`, regenerated with
   `scripts/gen_lzw_fuzz_seeds.py`
 - Coverage evidence: `docs/notes/lzw-fuzz-coverage.md` (measured 2026-09-15,
