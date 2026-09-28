@@ -205,6 +205,10 @@ spec:
             template: mcp-client-smoke
             dependencies: [setup]
 
+          - name: diagnostics-conformance
+            template: diagnostics-conformance
+            dependencies: [setup]
+
           - name: build-matrix
             template: build-matrix
             dependencies: [setup]
@@ -291,7 +295,7 @@ spec:
 
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, verify-provenance]
+            dependencies: [build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, diagnostics-conformance, verify-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
@@ -592,6 +596,43 @@ spec:
             echo "=== Validating documented client configurations and tool contract ==="
             PDFTRACT_MCP_BIN="$CARGO_TARGET_DIR/debug/pdftract" \
               python3 scripts/check-mcp-tool-catalog.py
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+
+    # === Diagnostics Projection Conformance ===
+    # Exercise the documented diagnostics contract through the public full JSON
+    # and NDJSON extraction paths. This is separate from the broad unit-test
+    # matrix so a projection regression is visible as its own release gate.
+    - name: diagnostics-conformance
+      activeDeadlineSeconds: 900
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+            cd /workspace
+            export CARGO_HOME="/cache/cargo/registry"
+            export CARGO_TARGET_DIR="/cache/cargo/target-diagnostics-conformance"
+
+            echo "=== Running diagnostics projection conformance tests ==="
+            cargo test --locked --package pdftract-core \
+              --test diagnostics_json_ndjson_contract \
+              --test diagnostics_serialization_format \
+              --test ndjson_footer_errors_union \
+              -- --nocapture
+
+            echo "=== Diagnostics projection conformance passed ==="
         volumeMounts:
           - name: workspace
             mountPath: /workspace

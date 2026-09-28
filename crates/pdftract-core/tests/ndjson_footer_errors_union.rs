@@ -6,8 +6,10 @@
 
 use std::collections::BTreeSet;
 
+use pdftract_core::diagnostics::{DiagCode, Diagnostic, ObjRef};
 use pdftract_core::extract::{extract_pdf, result_to_json};
 use pdftract_core::options::ExtractionOptions;
+use pdftract_core::output::json::result_to_output;
 use pdftract_core::output::ndjson::extract_streaming;
 use serde_json::Value;
 
@@ -83,19 +85,20 @@ fn ndjson_frames(output: &[u8]) -> Vec<Value> {
         .collect()
 }
 
-fn assert_synthetic_page_error(value: &Value, message: &str) {
+fn assert_synthetic_page_error(value: &Value, message: &str, page_index: usize) {
     let object = value
         .as_object()
         .expect("synthetic error must be an object");
     let keys: BTreeSet<&str> = object.keys().map(String::as_str).collect();
     assert_eq!(
         keys,
-        BTreeSet::from(["code", "severity", "message"]),
+        BTreeSet::from(["code", "severity", "message", "page_index"]),
         "synthetic page errors have exactly the documented fields"
     );
     assert_eq!(value["code"], "page_extraction_error");
     assert_eq!(value["severity"], "error");
     assert_eq!(value["message"], message);
+    assert_eq!(value["page_index"], page_index);
 }
 
 #[test]
@@ -121,9 +124,32 @@ fn streaming_footer_puts_page_failures_before_document_diagnostics() {
         .iter()
         .any(|diagnostic| diagnostic.code == "TAGGED_PDF_STRUCT_TREE_DEFERRED"));
 
+    // The legacy and structured metadata arrays are a one-to-one projection.
+    // Use the real extraction result here so this catches ordering changes in
+    // the pipeline, not just serializer behavior for a hand-built result.
+    let metadata = serde_json::to_value(&result.metadata).expect("metadata serializes");
+    let legacy = metadata["diagnostics"]
+        .as_array()
+        .expect("diagnostics array is present for this fixture");
+    let structured = metadata["diagnostics_detailed"]
+        .as_array()
+        .expect("structured diagnostics array is present for this fixture");
+    assert_eq!(legacy.len(), structured.len());
+    for (index, (legacy, structured)) in legacy.iter().zip(structured).enumerate() {
+        assert_eq!(
+            legacy, &structured["message"],
+            "legacy and structured diagnostic {index} must retain message order"
+        );
+    }
+
+    // Full JSON exposes the structured metadata sequence unchanged at the
+    // top-level errors projection. Synthetic page failures do not leak into
+    // this non-streaming surface.
+    let full = serde_json::to_value(result_to_output(&result)).expect("full JSON serializes");
+    assert_eq!(full["errors"], Value::Array(structured.to_vec()));
+
     // Synthetic page failures belong only to the NDJSON page/footer surfaces,
     // never to either metadata diagnostics array.
-    let metadata = serde_json::to_value(&result.metadata).expect("metadata serializes");
     for diagnostic in metadata["diagnostics"].as_array().into_iter().flatten() {
         assert!(!diagnostic
             .as_str()
@@ -171,7 +197,7 @@ fn streaming_footer_puts_page_failures_before_document_diagnostics() {
             .as_array()
             .expect("failed page errors array");
         assert_eq!(errors.len(), 1);
-        assert_synthetic_page_error(&errors[0], page.error.as_deref().unwrap());
+        assert_synthetic_page_error(&errors[0], page.error.as_deref().unwrap(), page.index);
     }
 
     let footer = frames.last().expect("footer frame");
@@ -189,7 +215,7 @@ fn streaming_footer_puts_page_failures_before_document_diagnostics() {
         .take(result.metadata.error_count)
         .zip(result.pages.iter().filter(|page| page.error.is_some()))
     {
-        assert_synthetic_page_error(error, page.error.as_deref().unwrap());
+        assert_synthetic_page_error(error, page.error.as_deref().unwrap(), page.index);
     }
 
     let document_errors: Vec<Value> = result
@@ -200,8 +226,13 @@ fn streaming_footer_puts_page_failures_before_document_diagnostics() {
         .collect();
     assert_eq!(
         &footer_errors[result.metadata.error_count..],
-        document_errors.as_slice(),
+        full["errors"].as_array().expect("full errors array"),
         "document diagnostics follow all synthetic page failures in emission order"
+    );
+    assert_eq!(
+        &footer_errors[result.metadata.error_count..],
+        document_errors.as_slice(),
+        "footer diagnostics retain metadata emission order"
     );
 }
 
@@ -219,4 +250,21 @@ fn streaming_footer_always_emits_an_empty_errors_array_when_clean() {
     assert!(footer.get("extraction_quality").is_some());
     assert!(footer.get("errors").is_some(), "footer errors is required");
     assert_eq!(footer["errors"], serde_json::json!([]));
+}
+
+#[test]
+fn diagnostic_display_keeps_location_context_out_of_wire_messages() {
+    let diagnostic = Diagnostic::with_static(DiagCode::StreamDecodeError, 1234, "corrupt flate")
+        .with_object_ref(ObjRef::new(7, 0));
+
+    assert_eq!(
+        diagnostic.to_string(),
+        "STREAM_DECODE_ERROR: corrupt flate (byte offset 1234) [7 0 R]"
+    );
+    let wire = serde_json::to_value(pdftract_core::schema::DiagnosticJson::from(&diagnostic))
+        .expect("diagnostic wire form serializes");
+    assert_eq!(wire["message"], "corrupt flate");
+    assert!(wire.get("byte_offset").is_none());
+    assert_eq!(wire["location"]["object_number"], 7);
+    assert_eq!(wire["location"]["generation_number"], 0);
 }
