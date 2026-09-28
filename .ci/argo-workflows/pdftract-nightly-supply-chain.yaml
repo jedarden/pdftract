@@ -108,8 +108,7 @@ spec:
               rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* 2>/dev/null || true
               git clone --depth 1 --branch main \
                 https://git.ardenone.com/jedarden/pdftract.git /workspace
-              git -C /workspace config --global --add safe.directory /workspace
-              source_revision="$(git -C /workspace rev-parse HEAD)"
+              source_revision="$(git -c safe.directory=/workspace -C /workspace rev-parse HEAD)"
               printf 'source revision: %s\n' "$source_revision"
           env:
             - name: GIT_CONFIG_COUNT
