@@ -6,7 +6,12 @@ This document is the constitutional specification for all pdftract SDK implement
 
 ## Method surface
 
-All SDKs expose nine methods mirroring CLI subcommands and MCP tools.
+All SDKs expose nine methods. Seven methods map directly to an advertised MCP
+tool; `extract_stream` and `verify_receipt` are SDK-only
+capabilities. The MCP catalog intentionally exposes three additional specialized
+tools that are not part of this shared SDK contract. Therefore the surfaces have
+seven shared capabilities, not identical counts: `7 shared + 2 SDK-only = 9` SDK
+methods, and `7 shared + 3 MCP-only = 10` MCP tools.
 
 | Method | Maps to CLI | Maps to MCP tool |
 |---|---|---|
@@ -19,6 +24,39 @@ All SDKs expose nine methods mirroring CLI subcommands and MCP tools.
 | `hash(source, options) -> Fingerprint` | `pdftract hash` | `hash` |
 | `classify(source) -> Classification` | `pdftract classify` | `classify` |
 | `verify_receipt(path, receipt) -> bool` | `pdftract verify-receipt` | (n/a) |
+
+### MCP-to-SDK mapping
+
+The [authoritative MCP catalog](../integrations/mcp-tool-catalog.json) records
+the same mapping in each entry's `sdk_method` and
+`mapping_status` fields. A `shared` entry names the SDK
+method that provides the same capability. An `mcp_only` entry has no
+shared SDK method and must include a rationale in `mapping_note`.
+
+| MCP tool | SDK capability | Relationship |
+|---|---|---|
+| `extract` | `extract` | Shared |
+| `extract_text` | `extract_text` | Shared |
+| `extract_markdown` | `extract_markdown` | Shared |
+| `search` | `search` | Shared |
+| `get_metadata` | `get_metadata` | Shared |
+| `hash` | `hash` | Shared |
+| `classify` | `classify` | Shared |
+| `get_table` | — | Deliberate MCP-only specialized table extraction |
+| `get_form_fields` | — | Deliberate MCP-only specialized AcroForm/XFA access |
+| `get_attachments` | — | Deliberate MCP-only specialized embedded-file access |
+
+The inverse exceptions are also deliberate: `extract_stream` has no MCP
+tool because MCP tools return one call result rather than an SDK-style lazy
+iterator, and `verify_receipt` has no MCP tool because receipt
+verification is an SDK/CLI validation operation rather than a document
+extraction capability. The catalog consistency check parses the contract method
+table and catalog mapping fields, and fails when either surface changes without
+the other being updated:
+
+```bash
+python3 scripts/check-mcp-tool-catalog.py
+```
 
 ### Method signatures
 

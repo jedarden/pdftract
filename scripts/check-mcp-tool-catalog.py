@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Verify the MCP catalog and exercise the stdio client contract.
+"""Verify the MCP catalog, SDK mapping, and stdio client contract.
 
 The check deliberately talks to a real ``pdftract mcp --stdio`` process. It
-compares the wire-level ``tools/list`` response with both the JSON catalog and
-the documented ten advertised names, then calls every tool with valid
+compares the wire-level tools/list response with both the JSON catalog and
+the documented ten advertised names. It also parses the nine-method SDK
+contract and checks the catalog's MCP-to-SDK mapping in both directions, so a
+surface change cannot silently drift. It then calls every tool with valid
 arguments, missing arguments, and a document-specific failure. Tool failures
 must remain successful JSON-RPC responses whose result has ``isError: true``;
 turning one into a top-level JSON-RPC error would break MCP clients that expect
@@ -46,6 +48,7 @@ from typing import Any, NoReturn
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "docs/integrations/mcp-tool-catalog.json"
 CLIENT_GUIDE = ROOT / "docs/integrations/mcp-clients.md"
+SDK_CONTRACT = ROOT / "docs/notes/sdk-contract.md"
 DEFAULT_TIMEOUT = 30.0
 
 # Keep this explicit list next to the checker so a documentation-only rename
@@ -145,6 +148,95 @@ def validate_argument_vectors(catalog: dict[str, dict[str, Any]]) -> None:
                 f"(missing={sorted(expected - actual)}, "
                 f"extra={sorted(actual - expected)})"
             )
+
+
+def parse_sdk_surface() -> tuple[dict[str, str | None], int]:
+    """Read the SDK method table's MCP column without a Markdown dependency."""
+    try:
+        markdown = SDK_CONTRACT.read_text(encoding="utf-8")
+    except OSError as error:
+        raise CheckFailure(f"cannot read SDK contract {SDK_CONTRACT}: {error}") from error
+
+    in_method_surface = False
+    methods: dict[str, str | None] = {}
+    for line in markdown.splitlines():
+        if line == "## Method surface":
+            in_method_surface = True
+            continue
+        if in_method_surface and line.startswith("#"):
+            break
+        if not in_method_surface or not line.startswith("|"):
+            continue
+
+        columns = [column.strip() for column in line.strip().strip("|").split("|")]
+        if len(columns) != 3 or columns[0] == "Method" or set(columns[0]) <= {"-"}:
+            continue
+        method_match = re.match(r"`([^`]+)`", columns[0])
+        if method_match is None:
+            raise CheckFailure(f"SDK method table has an invalid method row: {line}")
+        method = method_match.group(1).split("(", 1)[0]
+        if method in methods:
+            raise CheckFailure(f"SDK method table repeats {method}")
+        mcp_tool = None if columns[2] == "(n/a)" else columns[2].strip("`")
+        if mcp_tool is not None and not re.fullmatch(r"[a-z][a-z0-9_]*", mcp_tool):
+            raise CheckFailure(
+                f"SDK method table has an invalid MCP tool for {method}: {mcp_tool!r}"
+            )
+        if mcp_tool is not None and mcp_tool in methods.values():
+            raise CheckFailure(f"SDK method table repeats MCP tool {mcp_tool}")
+        methods[method] = mcp_tool
+
+    if len(methods) != 9:
+        raise CheckFailure(
+            f"SDK contract must define exactly nine methods; found {len(methods)}"
+        )
+    return methods, sum(mcp_tool is not None for mcp_tool in methods.values())
+
+
+def validate_sdk_mapping(catalog: dict[str, dict[str, Any]]) -> None:
+    """Require catalog mappings and the SDK contract's MCP column to agree."""
+    sdk_methods, shared_count = parse_sdk_surface()
+    catalog_mapping: dict[str, str] = {}
+
+    for name in DOCUMENTED_ADVERTISED_NAMES:
+        entry = catalog[name]
+        if "sdk_method" not in entry or "mapping_status" not in entry:
+            raise CheckFailure(f"catalog entry {name} lacks SDK mapping fields")
+        sdk_method = entry["sdk_method"]
+        status = entry["mapping_status"]
+        if sdk_method is None:
+            if status != "mcp_only" or not isinstance(entry.get("mapping_note"), str):
+                raise CheckFailure(
+                    f"MCP-only catalog entry {name} must have mapping_status "
+                    "mcp_only and a mapping_note"
+                )
+            if not entry["mapping_note"].strip():
+                raise CheckFailure(f"MCP-only catalog entry {name} has an empty mapping_note")
+            continue
+
+        if not isinstance(sdk_method, str) or sdk_method not in sdk_methods:
+            raise CheckFailure(
+                f"catalog entry {name} references unknown SDK method {sdk_method!r}"
+            )
+        if status != "shared":
+            raise CheckFailure(f"shared catalog entry {name} must have mapping_status shared")
+        catalog_mapping[name] = sdk_method
+
+    contract_mapping = {
+        mcp_tool: method
+        for method, mcp_tool in sdk_methods.items()
+        if mcp_tool is not None
+    }
+    if catalog_mapping != contract_mapping:
+        raise CheckFailure(
+            "MCP-to-SDK mapping drift: "
+            f"catalog={catalog_mapping!r}, contract={contract_mapping!r}"
+        )
+    if shared_count != len(catalog_mapping):
+        raise CheckFailure(
+            f"shared MCP/SDK count drift: contract={shared_count}, "
+            f"catalog={len(catalog_mapping)}"
+        )
 
 
 class CheckFailure(RuntimeError):
@@ -535,6 +627,7 @@ def load_catalog() -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
 
     by_name = {entry["name"]: entry for entry in entries}
     try:
+        validate_sdk_mapping(by_name)
         validate_argument_vectors(by_name)
     except CheckFailure as error:
         fail(str(error))

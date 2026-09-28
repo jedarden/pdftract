@@ -4,6 +4,8 @@
   "tools": [
     {
       "name": "extract",
+      "sdk_method": "extract",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -13,6 +15,8 @@
     },
     {
       "name": "extract_text",
+      "sdk_method": "extract_text",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -22,6 +26,8 @@
     },
     {
       "name": "extract_markdown",
+      "sdk_method": "extract_markdown",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -31,6 +37,8 @@
     },
     {
       "name": "search",
+      "sdk_method": "search",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -40,6 +48,8 @@
     },
     {
       "name": "get_metadata",
+      "sdk_method": "get_metadata",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -49,6 +59,8 @@
     },
     {
       "name": "hash",
+      "sdk_method": "hash",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -58,6 +70,9 @@
     },
     {
       "name": "get_table",
+      "sdk_method": null,
+      "mapping_status": "mcp_only",
+      "mapping_note": "Deliberate MCP-only specialized table extraction; the shared SDK contract has no table-result type or method.",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -67,6 +82,9 @@
     },
     {
       "name": "get_form_fields",
+      "sdk_method": null,
+      "mapping_status": "mcp_only",
+      "mapping_note": "Deliberate MCP-only specialized AcroForm/XFA access; the shared SDK contract has no form-field method.",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -76,6 +94,9 @@
     },
     {
       "name": "get_attachments",
+      "sdk_method": null,
+      "mapping_status": "mcp_only",
+      "mapping_note": "Deliberate MCP-only specialized embedded-file access; the shared SDK contract has no attachment method.",
       "advertised": true,
       "callable": true,
       "status": "implemented",
@@ -85,6 +106,8 @@
     },
     {
       "name": "classify",
+      "sdk_method": "classify",
+      "mapping_status": "shared",
       "advertised": true,
       "callable": true,
       "status": "implemented",
