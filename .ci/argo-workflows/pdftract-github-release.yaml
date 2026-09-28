@@ -33,11 +33,12 @@ spec:
   entrypoint: release-pipeline
   serviceAccountName: argo-workflow
 
-  podGC: OnPodCompletion
+  podGC:
+    strategy: OnPodCompletion
 
-  ttlSecondsAfterFinished:
-    success: 1800
-    failure: 7200
+  ttlStrategy:
+    secondsAfterSuccess: 1800
+    secondsAfterFailure: 7200
 
   arguments:
     parameters:
