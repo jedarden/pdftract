@@ -59,6 +59,8 @@ for anchor in anchors {
 
 The anchor format is a **stable public API**. The regex schema will not change in a breaking way across minor versions. New fields may be added, but existing fields will remain compatible.
 
+This contract — the published regex (kept byte-identical to the `ANCHOR_REGEX_PATTERN` constant and the Python/JavaScript examples above), per-page block indexing, 1-decimal bbox components admitting negative coordinates, fence-skipping in `parse_anchors`, empty-block anchors, and the round-trip property — is pinned by the regression tests in `crates/pdftract-core/tests/markdown_anchor_contract.rs` and `crates/pdftract-core/tests/markdown_anchor_edge_cases.rs`. The CLI `--md-anchors` emission path is pinned by `crates/pdftract-cli/tests/markdown_anchors.rs`.
+
 ### Passthrough
 
 HTML comments are passthrough in every major Markdown renderer:
