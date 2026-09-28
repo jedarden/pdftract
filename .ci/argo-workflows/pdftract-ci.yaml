@@ -35,7 +35,7 @@
 # - setup: Clone repo, fetch dependencies, warm cargo cache
 # - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
 # - test-matrix: Run unit tests across feature combinations (default, full, with OCR)
-# - quality-matrix: Seven Tier 1 quality gates (clippy-fmt, msrv-check, cargo-audit, cargo-deny, cargo-bloat, memory-ceiling, schema-gen)
+# - quality-matrix: Eleven Tier 1 quality gates (clippy-fmt, msrv-check, cargo-audit, cargo-deny, cargo-bloat, memory-ceiling, log-policy-check, schema-gen, cli-ref-gen, schema-validation, mcp-catalog)
 # - wasm32-check: wasm32-unknown-unknown compilation gate for pdftract-core's no-native-deps feature set + pdftract-wasm (ADR-011)
 # - bench-matrix: Performance benchmarks (cargo bench) against fixture corpus
 # - publish-if-tag: On tags only, upload binaries to GitHub Releases
@@ -1774,7 +1774,7 @@ spec:
     # license/ban/advisory checks (cargo-deny), MSRV check, binary size budget,
     # memory ceiling enforcement, schema generation consistency, and log policy enforcement.
     #
-    # Eight parallel Tier 1 quality gates — any failure blocks PR merge:
+    # Eleven parallel Tier 1 quality gates — any failure blocks PR merge:
     # 1. clippy-fmt: General linting and formatting check with INV-8 unwrap/expect ban
     # 2. msrv-check: Verify no newer Rust features are used (MSRV 1.78)
     # 3. cargo-audit: Security advisory check on dependencies
@@ -1783,6 +1783,9 @@ spec:
     # 6. memory-ceiling: Memory budget enforcement (analogous to cargo-bloat for RSS)
     # 7. log-policy-check: NEVER-log secrets enforcement (grep-based scan)
     # 8. schema-gen: Schema generation consistency check
+    # 9. cli-ref-gen: CLI reference generation consistency check
+    # 10. schema-validation: Extraction output schema validation
+    # 11. mcp-catalog: Release MCP stdio server and client/catalog lifecycle check
     #
     # CRITICAL: All cargo commands MUST use --locked (or --locked --frozen)
     - name: quality-matrix
@@ -1808,6 +1811,8 @@ spec:
             template: cli-ref-gen
           - name: schema-validation
             template: schema-validation
+          - name: mcp-catalog
+            template: mcp-catalog
 
     # === Clippy and Fmt Check ===
     # Runs clippy with warnings denied and INV-8 unwrap/expect enforcement.
@@ -2904,6 +2909,39 @@ spec:
             echo ""
             echo "=== Schema validation check passed ==="
             echo "All extraction outputs conform to the JSON schema"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+    # === MCP Catalog Check ===
+    # Builds the release MCP stdio server and runs the documented client and
+    # tool-catalog lifecycle check as a Tier 1 quality-matrix gate.
+    - name: mcp-catalog
+      activeDeadlineSeconds: 1200
+      container:
+        image: rust:1.83-bookworm
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+            cd /workspace
+            export CARGO_HOME=/cache/cargo/registry
+            export CARGO_TARGET_DIR=/cache/cargo/target-mcp-catalog
+
+            echo "=== Building the release MCP stdio server ==="
+            cargo build --locked --release --package pdftract-cli --bin pdftract --features mcp
+
+            echo "=== Validating documented client configurations and tool contract ==="
+            PDFTRACT_MCP_BIN="$CARGO_TARGET_DIR/release/pdftract" \
+              python3 scripts/check-mcp-tool-catalog.py
         volumeMounts:
           - name: workspace
             mountPath: /workspace

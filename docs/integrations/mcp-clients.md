@@ -53,6 +53,11 @@ scripts/check-mcp-tool-catalog.py
 Set `PDFTRACT_MCP_BIN=/path/to/pdftract` to check a prebuilt binary instead of
 starting one through Cargo.
 
+This check is also the required `mcp-catalog` gate in the `pdftract-ci`
+quality matrix. CI builds a release binary with the `mcp` feature, points
+`PDFTRACT_MCP_BIN` at it, and runs the same lifecycle check against the
+documented client snippets.
+
 ## Claude Desktop
 
 ### Configuration File Locations
@@ -98,7 +103,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 3. Ask: "List available tools"
 4. Verify that the ten advertised pdftract tools appear without a prefix: `extract`, `extract_text`, `extract_markdown`, `search`, `get_metadata`, `hash`, `get_table`, `get_form_fields`, `get_attachments`, `classify`
 
-**Verified against:** Claude Desktop 1.0.0 (2026-05)
+**Verified against:** Claude Desktop current stable channel (2026-09-28)
 
 ## Cursor
 
@@ -130,7 +135,7 @@ If pdftract is not on your `PATH`, use the absolute path:
 4. Ask it to list tools and confirm the ten advertised names from the catalog
 5. In chat, invoke a tool: `Extract text from document.pdf`
 
-**Verified against:** Cursor 0.42.0 (2026-05)
+**Verified against:** Cursor 3.19 (2026-09-28)
 
 ## Continue
 
@@ -158,7 +163,7 @@ mcpServers:
 4. Ask it to list tools and confirm the ten advertised names from the catalog
 5. Test with: "Use pdftract to extract text from a PDF"
 
-**Verified against:** Continue 2024.11.0
+**Verified against:** Continue 2.0.0 (2026-09-28)
 
 ## Authentication and filesystem boundaries
 
