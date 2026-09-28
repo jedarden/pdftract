@@ -21,7 +21,7 @@ spec:
   schedules:
     - "*/1 * * * *" # Temporary one-minute trigger for cluster verification.
   timezone: UTC
-  concurrencyPolicy: Forbid
+  concurrencyPolicy: Allow # Temporary overlap permits a fresh scratch-space run while an earlier PVC-backed attempt drains.
   startingDeadlineSeconds: 900
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 7
@@ -44,29 +44,16 @@ spec:
     ttlStrategy:
       secondsAfterSuccess: 259200
       secondsAfterFailure: 604800
-    volumeClaimGC:
-      strategy: OnWorkflowCompletion
-
     # The audit and deny tasks are deliberately sequential because the shared
-    # workspace and cargo cache use RWO PVCs.
+    # workspace and cargo cache are per-run scratch volumes.
     parallelism: 1
-    volumeClaimTemplates:
-      - metadata:
-          name: workspace
-        spec:
-          accessModes: [ReadWriteOnce]
-          storageClassName: sata
-          resources:
-            requests:
-              storage: 5Gi
-      - metadata:
-          name: cargo-cache
-        spec:
-          accessModes: [ReadWriteOnce]
-          storageClassName: sata
-          resources:
-            requests:
-              storage: 20Gi
+    volumes:
+      - name: workspace
+        emptyDir:
+          sizeLimit: 5Gi
+      - name: cargo-cache
+        emptyDir:
+          sizeLimit: 20Gi
 
     podMetadata:
       labels:
@@ -121,7 +108,9 @@ spec:
               rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* 2>/dev/null || true
               git clone --depth 1 --branch main \
                 https://git.ardenone.com/jedarden/pdftract.git /workspace
-              printf 'source revision: %s\n' "$(git -C /workspace rev-parse HEAD)"
+              git -C /workspace config --global --add safe.directory /workspace
+              source_revision="$(git -C /workspace rev-parse HEAD)"
+              printf 'source revision: %s\n' "$source_revision"
           env:
             - name: GIT_CONFIG_COUNT
               value: "1"
@@ -167,8 +156,8 @@ spec:
               mountPath: /cache/cargo
           resources:
             requests:
-              cpu: 1000m
-              memory: 2Gi
+              cpu: 500m
+              memory: 1Gi
             limits:
               cpu: 2500m
               memory: 4Gi
@@ -195,8 +184,8 @@ spec:
               mountPath: /cache/cargo
           resources:
             requests:
-              cpu: 1000m
-              memory: 2Gi
+              cpu: 500m
+              memory: 1Gi
             limits:
               cpu: 2500m
               memory: 4Gi
