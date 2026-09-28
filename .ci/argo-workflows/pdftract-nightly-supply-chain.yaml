@@ -21,7 +21,7 @@ spec:
   schedules:
     - "*/1 * * * *" # Temporary verification trigger while capturing one run.
   timezone: UTC
-  concurrencyPolicy: Forbid
+  concurrencyPolicy: Allow # Temporary overlap permits one corrected verification run while stale attempts drain.
   startingDeadlineSeconds: 900
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 7
