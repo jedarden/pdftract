@@ -19,7 +19,7 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedules:
-    - "*/1 * * * *" # Temporary trigger for one in-cluster verification run.
+    - "*/1 * * * *" # Temporary verification trigger while capturing one run.
   timezone: UTC
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
