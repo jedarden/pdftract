@@ -12,6 +12,7 @@ use pdftract_core::fingerprint::{
     compute_fingerprint, ContentStreamData, FingerprintInput, PageFingerprintData,
 };
 use pdftract_core::parser::catalog::parse_catalog;
+use pdftract_core::parser::lexer::find_last_keyword;
 use pdftract_core::parser::pages::flatten_page_tree;
 use pdftract_core::parser::stream::{FileSource, PdfSource};
 use pdftract_core::parser::xref::{load_xref_with_prev_chain, XrefResolver};
@@ -35,9 +36,7 @@ fn main() -> Result<()> {
     let tail_start = source_len - tail_len;
     let tail_data = source.read_at(tail_start, tail_len as usize)?;
 
-    let startxref_pos = tail_data
-        .windows(9)
-        .rposition(|w| w == b"startxref")
+    let startxref_pos = find_last_keyword(&tail_data, b"startxref")
         .ok_or_else(|| anyhow::anyhow!("startxref not found"))?;
 
     let offset_str = std::str::from_utf8(&tail_data[startxref_pos + 9..])

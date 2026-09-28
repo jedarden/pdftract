@@ -50,6 +50,41 @@ pub enum Token {
     Eof,
 }
 
+/// Find the last occurrence of a keyword token in a PDF byte slice.
+///
+/// A byte substring is not necessarily a PDF keyword: `startxref` can occur
+/// inside a name (`/prefixstartxref`), another keyword (`prefixstartxref`), a
+/// literal string, or a comment. Tokenizing the input keeps callers that
+/// recover trailer offsets from mistaking those occurrences for structural
+/// markers.
+///
+/// The returned offset is relative to `bytes` and points at the first byte of
+/// the matching token. Comments and strings are skipped by the lexer, while
+/// names remain `Token::Name` values rather than keyword tokens.
+pub fn find_last_keyword(bytes: &[u8], keyword: &[u8]) -> Option<usize> {
+    if keyword.is_empty() {
+        return None;
+    }
+
+    let mut lexer = Lexer::new(bytes);
+    let mut found = None;
+
+    loop {
+        match lexer.next_token() {
+            Some(Token::Keyword(value)) => {
+                let end = lexer.position() as usize;
+                if value == keyword && end >= keyword.len() {
+                    found = Some(end - keyword.len());
+                }
+            }
+            Some(Token::Eof) | None => break,
+            Some(_) => {}
+        }
+    }
+
+    found
+}
+
 /// PDF lexical analyzer.
 ///
 /// The lexer processes PDF byte sequences and produces tokens.
@@ -1219,6 +1254,45 @@ mod tests {
         assert_eq!(lexer.next_token(), Some(Token::Stream));
         assert_eq!(lexer.next_token(), Some(Token::EndStream));
         assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn startxref_inside_names_and_keywords_is_not_a_marker() {
+        let mut lexer = Lexer::new(
+            b"/prefixstartxref prefixstartxref (startxref) % startxref\nstartxref",
+        );
+
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Name(b"prefixstartxref".to_vec()))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Keyword(b"prefixstartxref".to_vec()))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::String(b"startxref".to_vec()))
+        );
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Keyword(b"startxref".to_vec()))
+        );
+        assert_eq!(lexer.next_token(), Some(Token::Eof));
+    }
+
+    #[test]
+    fn find_last_keyword_ignores_embedded_startxref_text() {
+        let input = b"/prefixstartxref prefixstartxref (startxref) % startxref\nstartxref\n123";
+        let marker = find_last_keyword(input, b"startxref").expect("marker should be found");
+        assert_eq!(&input[marker..marker + b"startxref".len()], b"startxref");
+        assert_eq!(marker, input.len() - 13);
+    }
+
+    #[test]
+    fn find_last_keyword_returns_none_for_embedded_only_text() {
+        let input = b"/prefixstartxref prefixstartxref (startxref) % startxref\n";
+        assert_eq!(find_last_keyword(input, b"startxref"), None);
     }
 
     #[test]

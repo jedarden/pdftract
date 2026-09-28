@@ -28,6 +28,7 @@ use crate::forms::{
 use crate::options::{ExtractionOptions, ReceiptsMode};
 use crate::page_extraction_error::PageExtractionError;
 use crate::parser::catalog::ReadingOrderAlgorithm;
+use crate::parser::lexer::find_last_keyword;
 use crate::parser::marked_content::{track_mcids_from_content_stream, McidTracker};
 use crate::parser::stream::DEFAULT_MAX_DECOMPRESS_BYTES;
 use crate::source::PdfSource as SourcePdfSource;
@@ -2599,9 +2600,7 @@ fn find_startxref(source: &dyn ParserPdfSource) -> anyhow::Result<u64> {
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
-    let startxref_pos = tail_data
-        .windows(9)
-        .rposition(|w| w == b"startxref")
+    let startxref_pos = find_last_keyword(&tail_data, b"startxref")
         .ok_or_else(|| anyhow::anyhow!("startxref not found in PDF"))?;
 
     // Parse the offset after "startxref"

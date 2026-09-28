@@ -15,6 +15,7 @@ use crate::fingerprint::{
 };
 use crate::page_extraction_error::{PageExtractionError, PageResult};
 use crate::parser::catalog::{catalog_dict_missing_essential_keys, is_catalog_dict_empty, is_catalog_dict_none, parse_catalog, Catalog};
+use crate::parser::lexer::find_last_keyword;
 use crate::parser::object::{ObjRef, PdfDict};
 use crate::parser::pages::{flatten_page_tree, LazyPageIter, PageDict};
 use crate::parser::stream::{FileSource as ParserFileSource, PdfSource as ParserPdfSource};
@@ -592,9 +593,7 @@ fn find_startxref(source: &dyn ParserPdfSource) -> Result<u64> {
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
-    let startxref_pos = tail_data
-        .windows(9)
-        .rposition(|w| w == b"startxref")
+    let startxref_pos = find_last_keyword(&tail_data, b"startxref")
         .ok_or_else(|| anyhow!("startxref not found in PDF"))?;
 
     // Parse the offset after "startxref"

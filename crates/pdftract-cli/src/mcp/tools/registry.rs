@@ -18,6 +18,7 @@ use pdftract_core::{
     options::{ExtractionOptions, ReceiptsMode},
     parser::{
         self, catalog,
+        lexer::find_last_keyword,
         object::PdfObject,
         pages,
         stream::{MemorySource, PdfSource},
@@ -147,7 +148,7 @@ fn find_startxref_offset(data: &[u8]) -> Result<u64, ErrorObject> {
 
     // Look for "startxref" keyword
     let search_bytes = &data[start..];
-    if let Some(pos) = search_bytes.windows(9).rposition(|w| w == b"startxref") {
+    if let Some(pos) = find_last_keyword(search_bytes, b"startxref") {
         // Find the newline after startxref, then parse the offset
         let after_startxref = start + pos + 9;
         let mut offset_start = after_startxref;

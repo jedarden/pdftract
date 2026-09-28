@@ -28,6 +28,7 @@ use pdftract_core::fingerprint::{
     compute_fingerprint, CatalogFlags, ContentStreamData, PageFingerprintData,
 };
 use pdftract_core::parser::catalog::Catalog;
+use pdftract_core::parser::lexer::find_last_keyword;
 use pdftract_core::parser::object::PdfObject;
 use pdftract_core::parser::pages::{flatten_page_tree, PageDict};
 use pdftract_core::parser::resources::ResourceDict;
@@ -670,9 +671,7 @@ fn find_startxref(source: &dyn SourcePdfSource) -> Result<u64> {
         .context("Failed to read PDF tail")?;
 
     // Find "startxref" in the tail data
-    let startxref_pos = tail_data
-        .windows(9)
-        .rposition(|w| w == b"startxref")
+    let startxref_pos = find_last_keyword(&tail_data, b"startxref")
         .ok_or_else(|| anyhow!("startxref not found in PDF"))?;
 
     // Parse the offset after "startxref"
