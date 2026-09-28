@@ -60,7 +60,10 @@ pub enum Token {
 ///
 /// The returned offset is relative to `bytes` and points at the first byte of
 /// the matching token. Comments and strings are skipped by the lexer, while
-/// names remain `Token::Name` values rather than keyword tokens.
+/// names remain `Token::Name` values rather than keyword tokens. If `bytes`
+/// starts in the middle of a binary stream, the lexer may see an unterminated
+/// string; in that case the boundary check below preserves structural markers
+/// without accepting embedded name or keyword text.
 pub fn find_last_keyword(bytes: &[u8], keyword: &[u8]) -> Option<usize> {
     if keyword.is_empty() {
         return None;
@@ -82,7 +85,84 @@ pub fn find_last_keyword(bytes: &[u8], keyword: &[u8]) -> Option<usize> {
         }
     }
 
-    found
+    found.or_else(|| find_last_boundary_keyword(bytes, keyword))
+}
+
+fn find_last_boundary_keyword(bytes: &[u8], keyword: &[u8]) -> Option<usize> {
+    bytes
+        .windows(keyword.len())
+        .enumerate()
+        .rev()
+        .find_map(|(start, candidate)| {
+            if candidate != keyword || !has_keyword_boundaries(bytes, start, keyword.len()) {
+                return None;
+            }
+
+            if is_inside_ignored_region(bytes, start) {
+                None
+            } else {
+                Some(start)
+            }
+        })
+}
+
+fn has_keyword_boundaries(bytes: &[u8], start: usize, len: usize) -> bool {
+    let before_is_boundary = start == 0
+        || (Lexer::is_pdf_delimiter(bytes[start - 1])
+            || Lexer::is_pdf_whitespace(bytes[start - 1]))
+            && bytes[start - 1] != b'/';
+    let end = start + len;
+    let after_is_boundary = end == bytes.len()
+        || Lexer::is_pdf_delimiter(bytes[end])
+        || Lexer::is_pdf_whitespace(bytes[end]);
+    before_is_boundary && after_is_boundary
+}
+
+fn is_inside_ignored_region(bytes: &[u8], target: usize) -> bool {
+    let mut string_depth = 0usize;
+    let mut escaped = false;
+    let mut in_comment = false;
+    let mut target_was_in_string = false;
+
+    for (index, &byte) in bytes.iter().enumerate() {
+        if index == target {
+            if in_comment {
+                return true;
+            }
+            target_was_in_string = string_depth > 0;
+        }
+
+        if in_comment {
+            if byte == b'\n' || byte == b'\r' {
+                in_comment = false;
+            }
+            continue;
+        }
+
+        if string_depth > 0 {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'(' {
+                string_depth += 1;
+            } else if byte == b')' {
+                string_depth -= 1;
+                if target_was_in_string && string_depth == 0 {
+                    return true;
+                }
+            }
+            continue;
+        }
+
+        if byte == b'%' {
+            in_comment = true;
+        } else if byte == b'(' {
+            string_depth = 1;
+        }
+    }
+
+    false
 }
 
 /// PDF lexical analyzer.
@@ -1066,11 +1146,11 @@ impl<'a> Lexer<'a> {
         }
         // Check for "startxref"
         if self.bytes.starts_with(b"startxref") {
-            let next_after = self.bytes.get(10);
+            let next_after = self.bytes.get(9);
             if next_after.map_or(true, |&b| {
                 Self::is_pdf_whitespace(b) || Self::is_pdf_delimiter(b)
             }) {
-                self.advance(10);
+                self.advance(9);
                 return Some(Token::Keyword(b"startxref".to_vec()));
             }
         }
@@ -1293,6 +1373,18 @@ mod tests {
     fn find_last_keyword_returns_none_for_embedded_only_text() {
         let input = b"/prefixstartxref prefixstartxref (startxref) % startxref\n";
         assert_eq!(find_last_keyword(input, b"startxref"), None);
+    }
+
+    #[test]
+    fn find_last_keyword_handles_a_slice_started_inside_a_string() {
+        let input = b"binary (unterminated\nstartxref\n123";
+        let marker = find_last_keyword(input, b"startxref").expect("marker should be found");
+        assert_eq!(marker, 21);
+    }
+
+    #[test]
+    fn find_last_keyword_tracks_a_marker_at_end_of_input() {
+        assert_eq!(find_last_keyword(b"startxref", b"startxref"), Some(0));
     }
 
     #[test]
