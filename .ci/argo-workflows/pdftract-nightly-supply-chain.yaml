@@ -1,22 +1,13 @@
 # pdftract-nightly-supply-chain CronWorkflow
 #
-# Nightly supply-chain security scan for pdftract.
-# Runs cargo audit and cargo deny against main branch to detect
-# new security advisories and dependency issues.
+# Nightly dependency-policy scan for the Forgejo source of truth. The scan is
+# intentionally independent of push CI: it refreshes RustSec and cargo-deny
+# policy data daily so newly published advisories are visible even when the
+# repository is quiet.
 #
-# === Schedule ===
-# Runs daily at 0300 UTC (11pm EST, 8pm PST) via cron: "0 3 * * *"
-#
-# === Purpose ===
-# TH-06 supply-chain gate (plan line 906): Daily cron re-runs cargo audit
-# and cargo deny against main, opens an issue on any new advisory.
-#
-# === Frequency ===
-# Daily at 0300 UTC (runs after the nightly fuzz job at 0400 UTC completes)
-#
-# === Issue Reporting ===
-# New advisories are filed as GitHub issues via argo-workflows-issue-reporter
-# sidecar. Issue title format: "Supply-chain: <advisory-id> in <crate-name>"
+# Logs are retained in completed pods for 24 hours because iad-ci has no Argo
+# artifact repository. Workflow status is retained longer by ttlStrategy, so
+# the terminal phase and node exit codes remain queryable after pod cleanup.
 apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
 metadata:
@@ -27,39 +18,55 @@ metadata:
     app.kubernetes.io/component: ci
     app.kubernetes.io/part-of: pdftract
 spec:
-  schedule: "0 3 * * *"  # Daily at 0300 UTC
+  schedules:
+    - "0 3 * * *" # Daily at 03:00 UTC.
+  timezone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
   workflowSpec:
+    entrypoint: pipeline
     serviceAccountName: argo-workflow
-    podGC: OnPodCompletion
-    ttlSecondsAfterFinished:
-      success: 43200   # 12 hours for success
-      failure: 604800  # 7 days for failure (security issues need investigation)
 
+    # Setup (300s) + audit (1800s) + deny (1800s), with scheduling and image
+    # pull headroom. This also bounds a run whose PVC never becomes usable.
+    activeDeadlineSeconds: 5400
+
+    # iad-ci does not expose an artifact repository. Keep pods until the
+    # workflow is terminal, then delay pod GC so kubectl logs remains available
+    # for one day. PVCs are deleted at workflow completion and are independently
+    # bounded below; workflow status survives for 3 days (success) or 7 days
+    # (failure) for terminal-phase and exit-code evidence.
+    podGC:
+      strategy: OnWorkflowCompletion
+      deleteDelayDuration: 24h
+    ttlStrategy:
+      secondsAfterSuccess: 259200
+      secondsAfterFailure: 604800
+    volumeClaimGC:
+      strategy: OnWorkflowCompletion
+
+    # The audit and deny tasks are deliberately sequential because the shared
+    # workspace and cargo cache use RWO PVCs.
+    parallelism: 1
     volumeClaimTemplates:
-      - metadata:
-          name: cargo-cache
-        spec:
-          accessModes: [ReadWriteOnce]
-          storageClassName: sata-large
-          resources:
-            requests:
-              storage: 50Gi
       - metadata:
           name: workspace
         spec:
           accessModes: [ReadWriteOnce]
-          storageClassName: sata-large
+          storageClassName: sata
           resources:
             requests:
               storage: 5Gi
-
-    volumes:
-      - name: docker-config
-        secret:
-          secretName: docker-hub-registry
-          items:
-            - key: .dockerconfigjson
-              path: config.json
+      - metadata:
+          name: cargo-cache
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: sata
+          resources:
+            requests:
+              storage: 20Gi
 
     podMetadata:
       labels:
@@ -75,257 +82,149 @@ spec:
         fsGroup: 1000
 
     templates:
-      # === Top-level DAG ===
-      # Clone workspace, run cargo audit and cargo deny
       - name: pipeline
         dag:
+          failFast: false
           tasks:
             - name: setup
               template: setup
-
             - name: cargo-audit
               template: cargo-audit
               dependencies: [setup]
-
+              continueOn:
+                failed: true
+                error: true
             - name: cargo-deny
               template: cargo-deny
-              dependencies: [setup]
-
-            - name: report-issues
-              template: report-issues
+              dependencies: [cargo-audit]
+              continueOn:
+                failed: true
+                error: true
+            - name: policy-gate
+              template: policy-gate
               dependencies: [cargo-audit, cargo-deny]
-              when: "{{tasks.cargo-audit.outputs.parameters.advisory-count}} > 0 || {{tasks.cargo-deny.outputs.parameters.deny-count}} > 0"
+              arguments:
+                parameters:
+                  - name: audit-status
+                    value: "{{tasks.cargo-audit.status}}"
+                  - name: deny-status
+                    value: "{{tasks.cargo-deny.status}}"
 
-      # === Setup Step ===
-      # Clone repo and fetch latest advisories
       - name: setup
-        activeDeadlineSeconds: 600
-        container:
-          image: rust:1.83-bookworm
-          command: [bash, -c]
-          args:
-            - |
-              set -eo pipefail
-
-              echo "=== Nightly Supply-Chain Setup ==="
-
-              cd /workspace
-              export CARGO_HOME="/cache/cargo/registry"
-
-              # Clone the repository (use main branch)
-              git clone --depth=1 --branch=main https://github.com/jedarden/pdftract.git .
-
-              echo "=== Setup complete ==="
-              echo "Commit: $(git rev-parse HEAD)"
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-            - name: cargo-cache
-              mountPath: /cache/cargo
-          resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-
-      # === Cargo Audit ===
-      # Run cargo audit with severity gating
-      - name: cargo-audit
-        activeDeadlineSeconds: 600
-        container:
-          image: rust:1.83-bookworm
-          command: [bash, -c]
-          args:
-            - |
-              set -eo pipefail
-
-              echo "=========================================="
-              echo "Running cargo audit (nightly against main)"
-              echo "=========================================="
-
-              cd /workspace
-              export CARGO_HOME="/cache/cargo/registry"
-
-              # Install cargo-audit if not present
-              if ! command -v cargo-audit &> /dev/null; then
-                echo "Installing cargo-audit..."
-                cargo install cargo-audit --locked
-              fi
-
-              # Update advisory database
-              echo "Updating advisory database..."
-              cargo audit --fetch
-
-              # Run audit with severity gating
-              # --deny warnings: fail on any warning
-              # --ignore unmaintained: ignore unmaintained crate warnings
-              # --severity: report only >= medium severity (low is informational)
-              echo "Running cargo audit..."
-              cargo audit --locked --deny warnings --ignore unmaintained \
-                --severity medium \
-                --json > /tmp/audit-report.json \
-                || {
-                  EXIT_CODE=$?
-
-                  # Parse and display vulnerabilities from JSON
-                  if command -v jq &> /dev/null; then
-                    VULN_COUNT=$(jq -r '.vulnerabilities.count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
-                    WARNING_COUNT=$(jq -r '.warnings | length // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
-
-                    echo "Vulnerabilities: $VULN_COUNT"
-                    echo "Warnings: $WARNING_COUNT"
-
-                    if [ "$VULN_COUNT" -gt 0 ]; then
-                      echo ""
-                      echo "Affected dependencies:"
-                      jq -r '.vulnerabilities.list[]? | "\(.advisory.id) - \(.package.name)@\(.package.version): \(.advisory.title)"' \
-                        /tmp/audit-report.json 2>/dev/null || true
-                    fi
-                  fi
-
-                  # Copy report for issue reporting
-                  cp /tmp/audit-report.json /workspace/audit-report.json
-
-                  exit $EXIT_CODE
-                }
-
-              # Parse and display summary
-              if command -v jq &> /dev/null; then
-                VULN_COUNT=$(jq -r '.vulnerabilities.count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
-                DEP_COUNT=$(jq -r '.lockfile.dependency-count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
-
-                echo "=== Security audit passed ==="
-                echo "Dependencies scanned: $DEP_COUNT"
-                echo "Vulnerabilities found: $VULN_COUNT"
-              else
-                echo "=== Security audit passed ==="
-              fi
-
-              # Set output parameter
-              ADVISORY_COUNT=$(jq -r '.vulnerabilities.count // 0' /tmp/audit-report.json 2>/dev/null || echo "0")
-              echo "advisory-count=$ADVISORY_COUNT" > /tmp/output.txt
-
-              # Copy report to workspace
-              cp /tmp/audit-report.json /workspace/audit-report.json
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-            - name: cargo-cache
-              mountPath: /cache/cargo
-          resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-        outputs:
-          parameters:
-            - name: advisory-count
-              valueFrom:
-                path: /tmp/output.txt
-          artifacts:
-            - name: audit-report
-              path: /workspace/audit-report.json
-
-      # === Cargo Deny ===
-      # Run cargo-deny to check licenses, bans, sources, and advisories
-      - name: cargo-deny
-        activeDeadlineSeconds: 600
-        container:
-          image: rust:1.83-bookworm
-          command: [bash, -c]
-          args:
-            - |
-              set -eo pipefail
-
-              echo "=========================================="
-              echo "Running cargo deny (nightly against main)"
-              echo "=========================================="
-
-              cd /workspace
-              export CARGO_HOME="/cache/cargo/registry"
-
-              # Install cargo-deny if not present
-              if ! command -v cargo-deny &> /dev/null; then
-                echo "Installing cargo-deny..."
-                cargo install cargo-deny --locked
-              fi
-
-              # Fetch latest advisories
-              echo "Fetching latest advisories..."
-              cargo deny fetch
-
-              # Run all checks
-              echo "Running cargo deny check..."
-              OUTPUT=$(cargo deny check \
-                licenses bans sources advisories \
-                2>&1) || EXIT_CODE=$?
-
-              echo "$OUTPUT"
-
-              # Parse output to determine if there are actual denials
-              if echo "$OUTPUT" | grep -q "error\["; then
-                echo "=========================================="
-                echo "CARGO DENY CHECKS FAILED"
-                echo "=========================================="
-
-                # Set output parameter
-                echo "deny-count=1" > /tmp/output.txt
-
-                exit 1
-              fi
-
-              echo "=== All cargo-deny checks passed ==="
-
-              # Set output parameter
-              echo "deny-count=0" > /tmp/output.txt
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-            - name: cargo-cache
-              mountPath: /cache/cargo
-          resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: 1000m
-              memory: 2Gi
-        outputs:
-          parameters:
-            - name: deny-count
-              valueFrom:
-                path: /tmp/output.txt
-
-      # === Report Issues ===
-      # File GitHub issues for new advisories
-      - name: report-issues
         activeDeadlineSeconds: 300
         container:
-          image: alpine:3.19
-          command: [sh]
-          source: |
-            #!/bin/sh
-            set -e
+          image: alpine/git:2.43.0
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* 2>/dev/null || true
+              git clone --depth 1 --branch main \
+                https://git.ardenone.com/jedarden/pdftract.git /workspace
+              printf 'source revision: %s\n' "$(git -C /workspace rev-parse HEAD)"
+          env:
+            - name: GIT_CONFIG_COUNT
+              value: "1"
+            - name: GIT_CONFIG_KEY_0
+              value: credential.helper
+            - name: GIT_CONFIG_VALUE_0
+              value: '!f() { test "$1" = get && echo "username=x-token" && echo "password=$FORGEJO_TOKEN"; }; f'
+            - name: FORGEJO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-webhook-token
+                  key: token
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
 
-            echo "=== Supply-Chain Issues Report ==="
-            echo "Advisory count: {{tasks.cargo-audit.outputs.parameters.advisory-count}}"
-            echo "Deny count: {{tasks.cargo-deny.outputs.parameters.deny-count}}"
+      - name: cargo-audit
+        activeDeadlineSeconds: 1800
+        container:
+          image: rust:1.97-bookworm
+          command: [bash, -c]
+          args:
+            - |
+              set -euo pipefail
+              cd /workspace
+              export CARGO_HOME=/cache/cargo
+              export PATH="$CARGO_HOME/bin:$PATH"
+              mkdir -p "$CARGO_HOME/bin"
+              cargo install cargo-audit --locked --version 0.22.2
+              echo '=== cargo audit (RustSec database refresh) ==='
+              cargo audit --format terminal
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: cargo-cache
+              mountPath: /cache/cargo
+          resources:
+            requests:
+              cpu: 1000m
+              memory: 2Gi
+            limits:
+              cpu: 2500m
+              memory: 4Gi
 
-            if [ "{{tasks.cargo-audit.outputs.parameters.advisory-count}}" -gt 0 ]; then
-              echo ""
-              echo "New security advisories detected:"
-              echo "See audit-report.json artifact for details"
-            fi
+      - name: cargo-deny
+        activeDeadlineSeconds: 1800
+        container:
+          image: rust:1.97-bookworm
+          command: [bash, -c]
+          args:
+            - |
+              set -euo pipefail
+              cd /workspace
+              export CARGO_HOME=/cache/cargo
+              export PATH="$CARGO_HOME/bin:$PATH"
+              mkdir -p "$CARGO_HOME/bin"
+              cargo install cargo-deny --locked --version 0.20.2
+              echo '=== cargo deny (licenses, bans, sources, advisories) ==='
+              cargo deny check licenses bans sources advisories
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: cargo-cache
+              mountPath: /cache/cargo
+          resources:
+            requests:
+              cpu: 1000m
+              memory: 2Gi
+            limits:
+              cpu: 2500m
+              memory: 4Gi
 
-            if [ "{{tasks.cargo-deny.outputs.parameters.deny-count}}" -gt 0 ]; then
-              echo ""
-              echo "Cargo-deny checks failed:"
-              echo "Review the cargo-deny task logs for specific violations"
-            fi
-
-            echo ""
-            echo "Issues will be filed via argo-workflows-issue-reporter sidecar"
+      - name: policy-gate
+        activeDeadlineSeconds: 120
+        inputs:
+          parameters:
+            - name: audit-status
+            - name: deny-status
+        container:
+          image: alpine:3.21
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              printf 'cargo-audit status: %s\n' '{{inputs.parameters.audit-status}}'
+              printf 'cargo-deny status: %s\n' '{{inputs.parameters.deny-status}}'
+              if [ '{{inputs.parameters.audit-status}}' != Succeeded ] || \
+                 [ '{{inputs.parameters.deny-status}}' != Succeeded ]; then
+                echo 'supply-chain policy gate failed' >&2
+                exit 1
+              fi
+              echo 'supply-chain policy gate passed'
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
