@@ -1519,6 +1519,8 @@ pub struct LazyPageIter<'a> {
     visited: HashSet<ObjRef>,
     /// Diagnostics collected during traversal
     diagnostics: Vec<Diagnostic>,
+    /// Zero-based index assigned to the next yielded page.
+    page_index: usize,
 }
 
 impl<'a> LazyPageIter<'a> {
@@ -1562,6 +1564,7 @@ impl<'a> LazyPageIter<'a> {
             stack,
             visited,
             diagnostics,
+            page_index: 0,
         })
     }
 
@@ -1610,6 +1613,7 @@ impl<'a> Iterator for LazyPageIter<'a> {
 
             // Save the inherited state before merging this node's attributes
             let parent_inherited = inherited.clone();
+            let diagnostic_start = self.diagnostics.len();
 
             // Merge inheritable attributes from this node
             merge_inherited_attrs(
@@ -1623,14 +1627,24 @@ impl<'a> Iterator for LazyPageIter<'a> {
             match node_type {
                 "Page" => {
                     // Leaf node: emit a PageDict
-                    let page_dict =
-                        build_page_dict(
-                            &node,
-                            self.resolver,
-                            node_ref,
-                            &inherited,
-                            &mut self.diagnostics,
-                        );
+                    let page_dict = build_page_dict(
+                        &node,
+                        self.resolver,
+                        node_ref,
+                        &inherited,
+                        &mut self.diagnostics,
+                    );
+                    // Diagnostics emitted while resolving this leaf belong to
+                    // its owning page. Preserve that context at the parser
+                    // boundary; document/tree diagnostics emitted before this
+                    // node remain document-scoped.
+                    let page_index = self.page_index as u32;
+                    for diagnostic in self.diagnostics.iter_mut().skip(diagnostic_start) {
+                        if diagnostic.page_index.is_none() {
+                            diagnostic.page_index = Some(page_index);
+                        }
+                    }
+                    self.page_index += 1;
                     return Some(Ok(page_dict));
                 }
                 "Pages" => {

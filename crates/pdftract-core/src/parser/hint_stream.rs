@@ -37,6 +37,7 @@
 
 use std::ops::Range;
 
+use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::emit;
 
 /// Maximum number of pages to process in hint stream.
@@ -304,6 +305,20 @@ fn parse_page_hints(reader: &mut BitReader, header: &HintHeader) -> Option<Vec<P
     Some(page_hints)
 }
 
+fn emit_invalid_hint_stream(
+    diagnostics: &mut Vec<Diagnostic>,
+    byte_offset: Option<u64>,
+    message: impl Into<String>,
+) {
+    let message = message.into();
+    diagnostics.push(match byte_offset {
+        Some(offset) => {
+            Diagnostic::with_dynamic(DiagCode::StructInvalidHintStream, offset, message)
+        }
+        None => Diagnostic::with_dynamic_no_offset(DiagCode::StructInvalidHintStream, message),
+    });
+}
+
 /// Parse the hint stream and return a hint table.
 ///
 /// # Parameters
@@ -328,19 +343,25 @@ pub fn parse_hint_stream(
 
     let mut reader = BitReader::new(data.to_vec());
 
-    // Parse header
-    let header = parse_hint_header(&mut reader)?;
-    if header.page_count == 0 {
-        emit!(
-            diagnostics,
-            StructInvalidHintStream,
-            message = "hint stream reports zero pages".to_string()
-        );
-        return None;
-    }
+    // Parse header. The low-level parser deliberately returns `None` for all
+    // malformed headers; keep that detail at the typed-diagnostic boundary so
+    // every documented hint-stream failure is observable by callers.
+    let header = match parse_hint_header(&mut reader) {
+        Some(header) => header,
+        None => {
+            emit_invalid_hint_stream(diagnostics, None, "hint stream header is malformed");
+            return None;
+        }
+    };
 
     // Parse page hints
-    let page_hints = parse_page_hints(&mut reader, &header)?;
+    let page_hints = match parse_page_hints(&mut reader, &header) {
+        Some(page_hints) => page_hints,
+        None => {
+            emit_invalid_hint_stream(diagnostics, None, "hint stream page hints are truncated");
+            return None;
+        }
+    };
     if page_hints.len() != header.page_count as usize {
         emit!(
             diagnostics,
@@ -382,10 +403,26 @@ pub fn parse_hint_stream_from_linearized(
     use crate::parser::stream::{get_decoder, DEFAULT_MAX_DECOMPRESS_BYTES};
 
     // Fetch the hint stream data
-    let hint_stream_data = source
-        .read_range(hint_stream_offset, hint_stream_length as usize)
-        .ok()
-        .filter(|data| !data.is_empty())?;
+    let hint_stream_data = match source.read_range(hint_stream_offset, hint_stream_length as usize)
+    {
+        Ok(data) if !data.is_empty() => data,
+        Ok(_) => {
+            emit_invalid_hint_stream(
+                diagnostics,
+                Some(hint_stream_offset),
+                "hint stream is empty",
+            );
+            return None;
+        }
+        Err(error) => {
+            emit_invalid_hint_stream(
+                diagnostics,
+                Some(hint_stream_offset),
+                format!("hint stream could not be fetched: {error}"),
+            );
+            return None;
+        }
+    };
 
     // The hint stream is flate-encoded (per PDF spec Annex F.1)
     let mut counter = 0u64;
@@ -393,34 +430,54 @@ pub fn parse_hint_stream_from_linearized(
         Some(decoder) => {
             // Check if it's a FlateDecoder and decode
             if decoder.name() == "FlateDecode" {
-                decoder
-                    .decode(
-                        &hint_stream_data,
-                        None,
-                        &mut counter,
-                        DEFAULT_MAX_DECOMPRESS_BYTES,
-                    )
-                    .ok()?
+                match decoder.decode(
+                    &hint_stream_data,
+                    None,
+                    &mut counter,
+                    DEFAULT_MAX_DECOMPRESS_BYTES,
+                ) {
+                    Ok(decoded) => decoded,
+                    Err(error) => {
+                        emit_invalid_hint_stream(
+                            diagnostics,
+                            Some(hint_stream_offset),
+                            format!("hint stream could not be decoded: {error}"),
+                        );
+                        return None;
+                    }
+                }
             } else {
-                emit!(
+                emit_invalid_hint_stream(
                     diagnostics,
-                    StructInvalidHintStream,
-                    message = "hint stream is not FlateDecode".to_string()
+                    Some(hint_stream_offset),
+                    "hint stream is not FlateDecode",
                 );
                 return None;
             }
         }
         _ => {
-            emit!(
+            emit_invalid_hint_stream(
                 diagnostics,
-                StructInvalidHintStream,
-                message = "hint stream is not FlateDecode".to_string()
+                Some(hint_stream_offset),
+                "hint stream is not FlateDecode",
             );
             return None;
         }
     };
 
-    parse_hint_stream(&decoded, diagnostics)
+    let diagnostic_start = diagnostics.len();
+    let table = parse_hint_stream(&decoded, diagnostics);
+    if table.is_none() {
+        // The decoded parser knows the structural failure but not the source
+        // range. Carry the hint-stream start offset across this boundary while
+        // leaving the object and page fields explicitly unavailable.
+        for diagnostic in diagnostics.iter_mut().skip(diagnostic_start) {
+            if diagnostic.byte_offset.is_none() {
+                diagnostic.byte_offset = Some(hint_stream_offset);
+            }
+        }
+    }
+    table
 }
 
 /// Prefetch pages from a linearized PDF using hint stream predictions.

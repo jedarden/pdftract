@@ -99,3 +99,53 @@ fn extraction_mirrors_page_diagnostics_to_legacy_and_structured_surfaces() {
         vec![diagnostic.message.clone()]
     );
 }
+
+#[test]
+fn extraction_publishes_page_tree_diagnostics_from_valid_page_yields() {
+    let objects = [
+        "<</Type/Catalog/Pages 2 0 R>>",
+        "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        "<</Type/Page/Parent 2 0 R/Contents 4 0 R>>",
+        "<</Length 3>>stream\nq Q\nendstream",
+    ];
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj{object}endobj\n", index + 1).as_bytes());
+    }
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(b"xref\n0 5\n0000000000 65535 f \n");
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!("trailer<</Size 5/Root 1 0 R>>\nstartxref\n{xref_offset}\n%%EOF\n")
+            .as_bytes(),
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temporary directory");
+    let fixture = temp_dir.path().join("missing-mediabox.pdf");
+    std::fs::write(&fixture, pdf).expect("write PDF fixture");
+    let result = extract_pdf(&fixture, &ExtractionOptions::default())
+        .expect("missing MediaBox should recover with the default page size");
+
+    let diagnostics: Vec<_> = result
+        .metadata
+        .diagnostics_detailed
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "STRUCT_MISSING_KEY")
+        .collect();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics.iter().map(|d| d.page_index).collect::<Vec<_>>(),
+        vec![Some(0)]
+    );
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.location.is_some()));
+    assert_eq!(
+        result.metadata.diagnostics.len(),
+        result.metadata.diagnostics_detailed.len()
+    );
+}

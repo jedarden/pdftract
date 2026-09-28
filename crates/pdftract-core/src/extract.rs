@@ -783,7 +783,11 @@ fn extract_pdf_from_source(
         let diagnostic = Diagnostic::with_static_no_offset(
             DiagCode::LayoutTaggedPdfDeferred,
             "Tagged PDF detected; StructTree traversal deferred to Phase 7.1, using XY-cut for now",
-        );
+        )
+        // The layout decision is applied to every page. Keep the single
+        // document emission page-scoped using the first page as its stable
+        // representative, as required by the P diagnostic profile.
+        .with_page_index(0);
         (ReadingOrderAlgorithm::XyCut, None, Some(diagnostic))
     } else {
         // Untagged PDF: use XY-cut
@@ -844,11 +848,11 @@ fn extract_pdf_from_source(
     // Phase 1.8: Hint stream prefetch for linearized PDFs
     // If the PDF is linearized and has a hint stream, prefetch the pages
     // that will be extracted. This reduces latency by pipelining HTTP requests.
+    let mut prefetch_diagnostics = Vec::new();
     if let (Some(prefetch_source), Some(ref page_filter)) = (prefetch_source, &page_filter) {
         use crate::parser::hint_stream::prefetch_from_hint_stream;
         use crate::parser::xref::detect_linearization;
 
-        let mut prefetch_diagnostics = Vec::new();
         if let Some(lin_info) = detect_linearization(source.as_ref()) {
             if let (Some(hint_offset), Some(hint_length)) =
                 (lin_info.hint_stream_offset, lin_info.hint_stream_length)
@@ -1042,6 +1046,8 @@ fn extract_pdf_from_source(
 
     // Add the tagged PDF deferred diagnostic if present
     let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(page_iter.into_diagnostics());
+    all_diagnostics.extend(prefetch_diagnostics);
     all_diagnostics.extend(catalog.diagnostics.clone());
     all_diagnostics.extend(page_diagnostics);
     all_diagnostics.extend(page_range_diagnostics);
@@ -1904,7 +1910,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
         let diagnostic = Diagnostic::with_static_no_offset(
             DiagCode::LayoutTaggedPdfDeferred,
             "Tagged PDF detected; StructTree traversal deferred to Phase 7.1, using XY-cut for now",
-        );
+        )
+        .with_page_index(0);
         (ReadingOrderAlgorithm::XyCut, None, Some(diagnostic))
     } else {
         // Untagged PDF: use XY-cut
@@ -1995,11 +2002,11 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
     // Phase 1.8: Hint stream prefetch for linearized PDFs
     // If the PDF is linearized and has a hint stream, prefetch the pages
     // that will be extracted. This reduces latency by pipelining HTTP requests.
+    let mut prefetch_diagnostics = Vec::new();
     if let Some(ref page_filter) = page_filter {
         use crate::parser::hint_stream::prefetch_from_hint_stream;
         use crate::parser::xref::detect_linearization;
 
-        let mut prefetch_diagnostics = Vec::new();
         if let Some(lin_info) = detect_linearization(source.as_ref()) {
             if let (Some(hint_offset), Some(hint_length)) =
                 (lin_info.hint_stream_offset, lin_info.hint_stream_length)
@@ -2145,6 +2152,8 @@ pub fn extract_pdf_ndjson<W: std::io::Write>(
 
     // Add the page-tree and page-range diagnostics before document-level diagnostics.
     let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(page_iter.into_diagnostics());
+    all_diagnostics.extend(prefetch_diagnostics);
     all_diagnostics.extend(catalog.diagnostics.clone());
     all_diagnostics.extend(page_diagnostics);
     all_diagnostics.extend(page_range_diagnostics);
@@ -2298,7 +2307,8 @@ where
         let diagnostic = Diagnostic::with_static_no_offset(
             DiagCode::LayoutTaggedPdfDeferred,
             "Tagged PDF detected; StructTree traversal deferred to Phase 7.1, using XY-cut for now",
-        );
+        )
+        .with_page_index(0);
         (ReadingOrderAlgorithm::XyCut, None, Some(diagnostic))
     } else {
         // Untagged PDF: use XY-cut
@@ -2484,6 +2494,7 @@ where
 
     // Add page decoder diagnostics before document-level diagnostics.
     let mut all_diagnostics = extraction_diagnostics;
+    all_diagnostics.extend(page_iter.into_diagnostics());
     all_diagnostics.extend(catalog.diagnostics.clone());
     all_diagnostics.extend(coverage_diagnostics);
     if let Some(ref deferred) = deferred_diagnostic {

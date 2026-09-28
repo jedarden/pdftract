@@ -5,9 +5,23 @@
 //! - Prefetch optimization using hint table predictions
 //! - Performance benefits of hint-based prefetch
 
+use pdftract_core::diagnostics::{DiagCode, Severity};
 use pdftract_core::parser::hint_stream::parse_hint_stream;
 use pdftract_core::source::{MemorySource, PdfSource};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
+
+fn push_bits(data: &mut Vec<u8>, bit_pos: &mut usize, value: u32, width: u8) {
+    for shift in (0..width).rev() {
+        let byte_pos = *bit_pos / 8;
+        if byte_pos == data.len() {
+            data.push(0);
+        }
+        if value & (1 << shift) != 0 {
+            data[byte_pos] |= 1 << (7 - (*bit_pos % 8));
+        }
+        *bit_pos += 1;
+    }
+}
 
 /// Create a minimal valid hint stream for testing.
 ///
@@ -15,46 +29,57 @@ use std::io::{Read, Seek, SeekFrom};
 /// where expected_page_ranges is a vec of (start, end) for each page.
 fn create_test_hint_stream(num_pages: u32) -> (Vec<u8>, Vec<(u64, u64)>) {
     let mut data = Vec::new();
+    let mut bit_pos = 0;
 
     // Header
     // Version: 1 (32-bit big-endian)
-    data.extend_from_slice(&1u32.to_be_bytes());
+    push_bits(&mut data, &mut bit_pos, 1, 32);
 
     // Bit widths: Use 8 bits for all fields for simplicity
     // Format: [object_number (4) | page_offset (4) | page_length (4) |
     //          shared_object (4) | shared_length (4)]
     // 8 bits = 0x8, so packed as 0x88888 = 0b1000_1000_1000_1000_1000 (20 bits)
     let bit_widths = 0x88888u32;
-    data.extend_from_slice(&bit_widths.to_be_bytes()[..3]); // First 3 bytes contain 20 bits
+    push_bits(&mut data, &mut bit_pos, bit_widths, 20);
 
     // Page count: num_pages (8 bits) - object_number_bits width
-    data.extend_from_slice(&(num_pages as u8).to_be_bytes());
+    push_bits(&mut data, &mut bit_pos, num_pages, 8);
 
     // Shared groups: 0 (8 bits) - object_number_bits width
-    data.push(0);
+    push_bits(&mut data, &mut bit_pos, 0, 8);
 
     // Page hint records
-    // For simplicity, we create pages at offsets 1000, 2000, 3000, ...
-    // each with length 500 (capped at u8 max for 8-bit width testing)
+    // Keep offsets and lengths within the 8-bit fields used by this fixture.
     let mut expected_ranges = Vec::new();
     for i in 0..num_pages {
         // Use smaller values to fit in 8-bit fields for testing
-        let offset = 100u64 + (i as u64) * 50u64;
-        let length = 50u64;
+        let offset = 20u64 + (i as u64) * 20u64;
+        let length = 10u64;
 
         // Object number: skip (write 0)
-        data.push(0);
+        push_bits(&mut data, &mut bit_pos, 0, 8);
 
         // Offset (8 bits)
-        data.push(offset as u8);
+        push_bits(&mut data, &mut bit_pos, offset as u32, 8);
 
         // Length (8 bits)
-        data.push(length as u8);
+        push_bits(&mut data, &mut bit_pos, length as u32, 8);
 
         expected_ranges.push((offset, offset + length));
     }
 
     (data, expected_ranges)
+}
+
+fn encode_hint_stream(data: &[u8]) -> Vec<u8> {
+    use flate2::write::DeflateEncoder;
+
+    let mut encoded = Vec::new();
+    {
+        let mut encoder = DeflateEncoder::new(&mut encoded, flate2::Compression::default());
+        encoder.write_all(data).unwrap();
+    }
+    encoded
 }
 
 #[test]
@@ -193,12 +218,13 @@ fn create_linearized_pdf_with_hint_stream() -> Vec<u8> {
     // PDF header
     pdf.extend_from_slice(b"%PDF-1.4\n");
 
-    // Linearization dictionary (object 1)
+    // Linearization dictionary (object 1). Fixed-width placeholders let us
+    // fill in offsets and the final file length without shifting the bytes.
     let lin_dict_offset = pdf.len();
     pdf.extend_from_slice(b"1 0 obj\n");
     pdf.extend_from_slice(b"<< /Linearized 1.0\n");
-    pdf.extend_from_slice(b"   /L 99999\n"); // Will be updated later
-    pdf.extend_from_slice(b"   /H [1010 100]\n"); // Hint stream at offset 1010, length 100
+    pdf.extend_from_slice(b"   /L 0000000000\n");
+    pdf.extend_from_slice(b"   /H [0000000000 0000000000]\n");
     pdf.extend_from_slice(b"   /O 4\n"); // First page object number
     pdf.extend_from_slice(b"   /E 1500\n"); // End of first page
     pdf.extend_from_slice(b"   /N 5\n"); // Number of pages
@@ -231,7 +257,7 @@ fn create_linearized_pdf_with_hint_stream() -> Vec<u8> {
         0, 0, // generation: 0
         // Object 4: in-use at offset ~456
         1, // type: in-use
-        0, 0, 1, 200, // offset: 456 (256 + 200)
+        0, 0, 1, 100, // offset: 356 (256 + 100)
         0, 0, // generation: 0
         // Object 5: in-use at offset ~556
         1, // type: in-use
@@ -241,24 +267,24 @@ fn create_linearized_pdf_with_hint_stream() -> Vec<u8> {
     pdf.extend_from_slice(b"\nendstream\n");
     pdf.extend_from_slice(b"endobj\n");
 
-    // Hint stream (object 3) - flate-encoded hint stream data
-    let _hint_stream_offset = pdf.len();
-    pdf.extend_from_slice(b"3 0 obj\n");
-    pdf.extend_from_slice(b"<< /Filter /FlateDecode /Length 50 >>\n");
-    pdf.extend_from_slice(b"stream\n");
-
-    // Create a minimal valid hint stream (5 pages)
-    let (hint_data, _) = create_test_hint_stream(5);
-
-    // Flate-encode the hint data
-    use flate2::write::DeflateEncoder;
-    use std::io::Write;
-
-    let mut encoded = Vec::new();
-    {
-        let mut encoder = DeflateEncoder::new(&mut encoded, flate2::Compression::default());
-        encoder.write_all(&hint_data).unwrap();
+    // Keep binary hint bytes outside the detector's initial UTF-8 probe.
+    while pdf.len() < 2048 {
+        pdf.push(b'\n');
     }
+
+    // Hint stream (object 3) - flate-encoded hint stream data
+    pdf.extend_from_slice(b"3 0 obj\n");
+    let (hint_data, _) = create_test_hint_stream(5);
+    let encoded = encode_hint_stream(&hint_data);
+    pdf.extend_from_slice(
+        format!(
+            "<< /Filter /FlateDecode /Length {:010} >>\n",
+            encoded.len()
+        )
+        .as_bytes(),
+    );
+    pdf.extend_from_slice(b"stream\n");
+    let hint_stream_offset = pdf.len() as u64;
 
     pdf.extend_from_slice(&encoded);
     pdf.extend_from_slice(b"\nendstream\n");
@@ -296,29 +322,27 @@ fn create_linearized_pdf_with_hint_stream() -> Vec<u8> {
     pdf.extend_from_slice(&format!("{}\n", xref_offset).as_bytes());
     pdf.extend_from_slice(b"%%EOF\n");
 
-    // Update /L in linearization dict to actual file size
     let file_length = pdf.len() as u64;
-    let lin_dict_str = format!("/L {}\n", file_length);
-    let _lin_dict_bytes = lin_dict_str.as_bytes();
+    let lin_pos = lin_dict_offset;
+    let l_pos = pdf[lin_pos..]
+        .windows(b"/L 0000000000".len())
+        .position(|window| window == b"/L 0000000000")
+        .unwrap()
+        + lin_pos
+        + b"/L ".len();
+    pdf[l_pos..l_pos + 10].copy_from_slice(format!("{file_length:010}").as_bytes());
 
-    // Find and replace the /L value
-    let lin_pos = lin_dict_offset + b"%PDF-1.4\n".len();
-    let l_search = &pdf[lin_pos..lin_pos + 100];
-    if let Some(l_pos) = l_search.windows(2).position(|w| w == b"/L") {
-        let l_abs_pos = lin_pos + l_pos;
-        let after_l = l_abs_pos + 2;
-        // Find the number after /L
-        let num_start = after_l + 1; // skip space
-        let num_end = pdf[num_start..]
-            .windows(1)
-            .position(|w| w[0] == b'\n')
-            .unwrap()
-            + num_start;
-        // Replace with actual file length
-        let new_l_str = file_length.to_string();
-        let new_l_bytes = new_l_str.as_bytes();
-        pdf.splice(num_start..num_end, new_l_bytes.iter().cloned());
-    }
+    let h_pos = pdf[lin_pos..]
+        .windows(b"/H [0000000000 0000000000]".len())
+        .position(|window| window == b"/H [0000000000 0000000000]")
+        .unwrap()
+        + lin_pos;
+    let h_offset_pos = h_pos + b"/H [".len();
+    pdf[h_offset_pos..h_offset_pos + 10]
+        .copy_from_slice(format!("{hint_stream_offset:010}").as_bytes());
+    let h_length_pos = h_offset_pos + 11;
+    pdf[h_length_pos..h_length_pos + 10]
+        .copy_from_slice(format!("{:010}", encoded.len()).as_bytes());
 
     pdf
 }
@@ -442,13 +466,14 @@ impl pdftract_core::source::PdfSource for MockPrefetchSource {
 #[test]
 fn test_prefetch_from_hint_stream_basic() {
     // Create a hint stream for 5 pages
-    let (hint_data, expected_ranges) = create_test_hint_stream(5);
+    let (hint_data, _expected_ranges) = create_test_hint_stream(5);
+    let encoded_hint_data = encode_hint_stream(&hint_data);
 
     // Create a mock source with the hint stream data
-    let source = MemorySource::new(hint_data);
+    let source = MemorySource::new(encoded_hint_data);
 
     // Get the hint stream offset and length (simulate linearized PDF)
-    // For this test, we'll use the raw hint data directly
+    // The parser expects the Flate-encoded stream bytes from a PDF source.
     let hint_stream_offset = 0;
     let hint_stream_length = source.len();
 
@@ -475,7 +500,7 @@ fn test_prefetch_from_hint_stream_out_of_bounds() {
     // Create a hint stream for 3 pages
     let (hint_data, _) = create_test_hint_stream(3);
 
-    let source = MemorySource::new(hint_data);
+    let source = MemorySource::new(encode_hint_stream(&hint_data));
     let hint_stream_offset = 0;
     let hint_stream_length = source.len();
 
@@ -501,7 +526,7 @@ fn test_prefetch_from_hint_stream_empty_page_list() {
     // Create a hint stream
     let (hint_data, _) = create_test_hint_stream(5);
 
-    let source = MemorySource::new(hint_data);
+    let source = MemorySource::new(encode_hint_stream(&hint_data));
     let hint_stream_offset = 0;
     let hint_stream_length = source.len();
 
@@ -542,6 +567,17 @@ fn test_prefetch_from_hint_stream_malformed_hint_stream() {
         &mut diagnostics,
     );
 
-    // Should emit diagnostic for malformed hint stream
-    assert!(!diagnostics.is_empty());
+    // Every malformed hint stream failure is a typed document diagnostic.
+    let diagnostic = diagnostics
+        .first()
+        .expect("malformed hint stream should emit a diagnostic");
+    assert_eq!(diagnostic.code, DiagCode::StructInvalidHintStream);
+    assert_eq!(diagnostic.severity(), Severity::Warning);
+    assert_eq!(diagnostic.page_index, None);
+    assert_eq!(diagnostic.object_ref, None);
+    assert_eq!(diagnostic.byte_offset, Some(hint_stream_offset));
+    assert_eq!(
+        diagnostic.hint(),
+        DiagCode::StructInvalidHintStream.policy().hint
+    );
 }

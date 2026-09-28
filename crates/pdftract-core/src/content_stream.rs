@@ -999,7 +999,19 @@ fn decode_text_string(
     } else {
         None
     };
+    let encoding_diagnostic_start = diagnostics.len();
     let encoding = load_font_encoding(&font, diagnostics);
+    // Font parsing is a lower-level helper, but this boundary knows which
+    // indirect font resource owns any diagnostics it just emitted. Preserve
+    // that object location without inventing one for direct font dictionaries.
+    let font_location = font_ref.map(|reference| (reference.object, reference.generation));
+    for diagnostic in diagnostics.iter_mut().skip(encoding_diagnostic_start) {
+        *diagnostic = diagnostic.clone().with_available_context(
+            font_location
+                .map(|(object, generation)| crate::diagnostics::ObjRef::new(object, generation)),
+            None,
+        );
+    }
 
     let mut text = Vec::new();
     let mut mapped = false;
@@ -1649,13 +1661,25 @@ pub fn execute_with_do(
 
                                     // Clamp font_size <= 0 to 1.0 with diagnostic
                                     if size <= 0.0 {
-                                        diagnostics.push(Diagnostic::with_dynamic_no_offset(
-                                            DiagCode::FontSizeZeroOrNegative,
-                                            format!(
-                                                "Tf operator received font_size {}; clamped to 1.0",
-                                                size
-                                            ),
-                                        ));
+                                        let font_location = resource_stack
+                                            .lookup_font(font_key)
+                                            .map(|reference| {
+                                                crate::diagnostics::ObjRef::new(
+                                                    reference.object,
+                                                    reference.generation,
+                                                )
+                                            });
+                                        let message = format!(
+                                            "Tf operator received font_size {}; clamped to 1.0",
+                                            size
+                                        );
+                                        diagnostics.push(
+                                            Diagnostic::with_dynamic_no_offset(
+                                                DiagCode::FontSizeZeroOrNegative,
+                                                message,
+                                            )
+                                            .with_object_ref_opt(font_location),
+                                        );
                                         size = 1.0;
                                     }
 
