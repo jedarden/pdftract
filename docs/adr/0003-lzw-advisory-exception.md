@@ -40,8 +40,9 @@ becomes available.
     and PNG predictors 10-15 via `apply_predictor`, and `/Columns`, `/Colors`,
     `/BitsPerComponent` including the `MAX_ROW_BYTES` clamping path; every
     input runs under both the 512 MiB document budget and a 100-byte bomb
-    budget. Both targets run nightly in the `pdftract-nightly-fuzz`
-    CronWorkflow under the memory ceiling (1.5 GiB cgroup cap with libFuzzer
+    budget. Both targets are configured to run nightly in the
+    `pdftract-nightly-fuzz` CronWorkflow under the memory ceiling (1.5 GiB
+    cgroup cap with libFuzzer
     `-rss_limit_mb`/`-malloc_limit_mb` at 1024 MB in the in-tree manifest;
     bounded `-rss_limit_mb` and pod memory limits in the deployed
     declarative-config manifest), seeded with real LZW streams from
@@ -56,6 +57,26 @@ becomes available.
   - A security vulnerability is discovered in lzw
   - A compatible Rust LZW library becomes available
   - PDF spec changes remove the LZW requirement
+
+## Operational verification status
+
+The 2026-09-15 measurements in `docs/notes/lzw-fuzz-coverage.md` are local
+coverage evidence, not evidence from an in-cluster nightly run. A read-only
+check of `iad-ci` on 2026-09-28 found the deployed `pdftract-nightly-fuzz`
+CronWorkflow and its controller annotation `last-used-schedule: 0 4 * * *`,
+with `lastScheduledTime: 2026-09-28T04:00:00Z`, but its status was
+`failed: 11`, `succeeded: 0`; no retained Workflow with terminal phase, exit
+code, or logs was available to export. The live object also used the older
+sequential DAG with `podGC: OnWorkflowCompletion` and
+`ttlStrategy.secondsAfterCompletion: 259200` (three days), rather than the
+current in-tree manifest's retention fields.
+
+The companion `pdftract-nightly-supply-chain` CronWorkflow was not present in
+`iad-ci` at that check. Therefore nightly execution of the compensating
+control is **not yet verified**; the local run remains useful coverage
+evidence, but must not be described as a successful in-cluster nightly cycle
+until the missing deployment is reconciled and terminal run evidence is
+retained or exported.
 
 ## Future Work
 - Monitor the weezl crate for PDF-compatible LZW support
