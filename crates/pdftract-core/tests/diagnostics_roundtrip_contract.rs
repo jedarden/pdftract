@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use pdftract_core::diagnostics::{
-    DiagCode, Diagnostic, DiagnosticContext, ObjRef, DIAGNOSTIC_CATALOG,
+    DiagCode, Diagnostic, DiagnosticContext, DiagnosticsCollector, ObjRef, DIAGNOSTIC_CATALOG,
 };
 use pdftract_core::diagnostics_compat::to_legacy_strings;
 use pdftract_core::extract::{result_to_json, ExtractionResult};
@@ -24,10 +24,42 @@ const DIAGNOSTICS_DOC: &str = concat!(
     "/../../docs/integrations/diagnostics-codes.md"
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContextProfile {
+    DocumentPdf,
+    DocumentOperation,
+    Page,
+    Contextual,
+}
+
+impl ContextProfile {
+    fn from_document(value: &str) -> Self {
+        match value {
+            "D-PDF" => Self::DocumentPdf,
+            "D-OP" => Self::DocumentOperation,
+            "P" => Self::Page,
+            "C" => Self::Contextual,
+            other => panic!("unknown diagnostic context profile {other:?}"),
+        }
+    }
+
+    fn known_context(self) -> (Option<usize>, Option<ObjRef>) {
+        match self {
+            // The fixture represents a known originating object, but not a
+            // page, for document-level events.
+            Self::DocumentPdf => (None, Some(ObjRef::new(12, 3))),
+            Self::DocumentOperation => (None, None),
+            Self::Page | Self::Contextual => (Some(7), Some(ObjRef::new(12, 3))),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 struct DocumentedCode {
     name: String,
     severity: String,
+    hint: String,
+    profile: ContextProfile,
     required_feature: Option<String>,
 }
 
@@ -35,68 +67,136 @@ fn documented_codes() -> BTreeMap<String, DocumentedCode> {
     let document = fs::read_to_string(DIAGNOSTICS_DOC)
         .unwrap_or_else(|error| panic!("cannot read {DIAGNOSTICS_DOC}: {error}"));
     let mut rows = BTreeMap::new();
+    let mut hints = BTreeMap::new();
+    let mut profiles = BTreeMap::new();
     let mut in_code_catalog = false;
+    let mut in_catalog_hints = false;
+    let mut in_inventory = false;
 
     for (line_number, line) in document.lines().enumerate() {
         if line.trim() == "## Code Categories" {
             in_code_catalog = true;
+            in_catalog_hints = false;
+            continue;
+        }
+        if line.trim() == "## Catalog Hints" {
+            in_code_catalog = false;
+            in_catalog_hints = true;
+            continue;
+        }
+        if line.contains("The complete inventory below assigns every code") {
+            in_inventory = true;
+            continue;
+        }
+        if line.starts_with("Thus a child implementation") {
+            in_inventory = false;
+        }
+        if line.starts_with("## ") && line.trim() != "## Code Categories" {
+            in_code_catalog = false;
+            in_catalog_hints = false;
+        }
+        if in_inventory && line.starts_with("| `") {
+            let names: Vec<&str> = line
+                .split('`')
+                .enumerate()
+                .filter_map(|(index, value)| (index % 2 == 1).then_some(value))
+                .collect();
+            let profile = names
+                .first()
+                .map(|name| ContextProfile::from_document(name))
+                .unwrap_or_else(|| panic!("diagnostic inventory row has no profile: {line}"));
+            for name in names.into_iter().skip(1) {
+                assert!(
+                    name.chars().all(|character| {
+                        character.is_ascii_uppercase()
+                            || character.is_ascii_digit()
+                            || character == '_'
+                    }),
+                    "diagnostic inventory has invalid code {name:?}"
+                );
+                assert!(
+                    profiles.insert(name.to_owned(), profile).is_none(),
+                    "diagnostic inventory assigns {name} more than one profile"
+                );
+            }
             continue;
         }
         if in_code_catalog && line.starts_with("## ") {
             break;
         }
-        if !in_code_catalog {
-            continue;
-        }
 
-        let Some(rest) = line.strip_prefix("| `") else {
-            continue;
-        };
-        let Some((name, after_name)) = rest.split_once('`') else {
-            continue;
-        };
-        if name.is_empty()
-            || !name.chars().all(|character| {
-                character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
-            })
-        {
-            continue;
-        }
+        if in_code_catalog || in_catalog_hints {
+            let Some(rest) = line.strip_prefix("| `") else {
+                continue;
+            };
+            let Some((name, after_name)) = rest.split_once('`') else {
+                continue;
+            };
+            if name.is_empty()
+                || !name.chars().all(|character| {
+                    character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+                })
+            {
+                continue;
+            }
 
-        let cells: Vec<&str> = after_name.split('|').collect();
-        // The code catalog has four columns. Other tables, such as the
-        // two-column Catalog Hints table, are outside the section above and
-        // must never be mistaken for severity rows.
-        assert!(
-            cells.len() >= 4,
-            "diagnostics-codes.md row {} for {name} has too few catalog cells",
-            line_number + 1
-        );
-        let severity = match cells[1].trim().to_ascii_lowercase().as_str() {
-            "info" => "info",
-            "warning" | "warn" => "warning",
-            "error" => "error",
-            "fatal" => "fatal",
-            value => panic!(
-                "diagnostics-codes.md row {} for {name} has unknown severity {value:?}",
+            let cells: Vec<&str> = after_name.split('|').collect();
+            if in_catalog_hints {
+                assert_eq!(
+                    cells.len(),
+                    3,
+                    "diagnostics-codes.md hint row {} for {name} must have two cells",
+                    line_number + 1
+                );
+                let hint = cells[1].trim();
+                assert!(
+                    !hint.is_empty(),
+                    "diagnostics-codes.md hint row {} for {name} is empty",
+                    line_number + 1
+                );
+                assert!(
+                    hints.insert(name.to_owned(), hint.to_owned()).is_none(),
+                    "diagnostics-codes.md documents hint {name} more than once"
+                );
+                continue;
+            }
+
+            // The code catalog has four columns. Other tables, such as the
+            // two-column Catalog Hints table, are outside this section and
+            // must never be mistaken for severity rows.
+            assert!(
+                cells.len() >= 4,
+                "diagnostics-codes.md row {} for {name} has too few catalog cells",
                 line_number + 1
-            ),
-        };
-        let description = cells[2].trim();
-        let required_feature = description
-            .split_once("requires `")
-            .and_then(|(_, rest)| rest.split('`').next())
-            .map(str::to_owned);
+            );
+            let severity = match cells[1].trim().to_ascii_lowercase().as_str() {
+                "info" => "info",
+                "warning" | "warn" => "warning",
+                "error" => "error",
+                "fatal" => "fatal",
+                value => panic!(
+                    "diagnostics-codes.md row {} for {name} has unknown severity {value:?}",
+                    line_number + 1
+                ),
+            };
+            let description = cells[2].trim();
+            let required_feature = description
+                .split_once("requires `")
+                .and_then(|(_, rest)| rest.split('`').next())
+                .map(str::to_owned);
 
-        let row = DocumentedCode {
-            name: name.to_owned(),
-            severity: severity.to_owned(),
-            required_feature,
-        };
-        assert!(
-            rows.insert(name.to_owned(), row).is_none(),
-            "diagnostics-codes.md documents {name} more than once"
-        );
+            let row = DocumentedCode {
+                name: name.to_owned(),
+                severity: severity.to_owned(),
+                hint: String::new(),
+                profile: ContextProfile::Contextual,
+                required_feature,
+            };
+            assert!(
+                rows.insert(name.to_owned(), row).is_none(),
+                "diagnostics-codes.md documents {name} more than once"
+            );
+        }
     }
 
     assert_eq!(
@@ -104,10 +204,27 @@ fn documented_codes() -> BTreeMap<String, DocumentedCode> {
         113,
         "the documented diagnostics matrix changed; update this acceptance test deliberately"
     );
+
+    for (name, row) in &mut rows {
+        row.hint = hints.remove(name).unwrap_or_else(|| {
+            panic!("diagnostics-codes.md is missing a Catalog Hints row for {name}")
+        });
+        row.profile = profiles.remove(name).unwrap_or_else(|| {
+            panic!("diagnostics-codes.md is missing an emission profile for {name}")
+        });
+    }
+    assert!(
+        hints.is_empty(),
+        "diagnostics-codes.md has hints for undocumented codes: {hints:?}"
+    );
+    assert!(
+        profiles.is_empty(),
+        "diagnostics-codes.md has profiles for undocumented codes: {profiles:?}"
+    );
     rows
 }
 
-fn active_documented_codes() -> Vec<(DiagCode, String)> {
+fn active_documented_codes() -> Vec<(DiagCode, DocumentedCode)> {
     let documented = documented_codes();
     let mut active = Vec::new();
 
@@ -124,7 +241,7 @@ fn active_documented_codes() -> Vec<(DiagCode, String)> {
                     row.name,
                     "DiagCode::from_name must round-trip the documented wire name"
                 );
-                active.push((code, row.severity.clone()));
+                active.push((code, row.clone()));
             }
             None => assert_eq!(
                 row.required_feature.as_deref(),
@@ -168,10 +285,19 @@ fn catalog_entry(code: DiagCode) -> &'static pdftract_core::diagnostics::DiagInf
         .unwrap_or_else(|| panic!("{} is missing from DIAGNOSTIC_CATALOG", code.name()))
 }
 
-fn diagnostic_with_context(code: DiagCode) -> Diagnostic {
-    Diagnostic::with_dynamic(code, 4096, "contract message".to_owned())
-        .with_object_ref(ObjRef::new(12, 3))
-        .with_page_index(7)
+fn emitted_diagnostic(code: DiagCode, profile: ContextProfile) -> Diagnostic {
+    let (page_index, object_ref) = profile.known_context();
+    let context = DiagnosticContext::new(code)
+        .with_message("contract message")
+        .with_byte_offset(4096)
+        .with_object_ref_opt(object_ref)
+        .with_page_index_opt(page_index);
+    let collector = DiagnosticsCollector::new();
+    collector.emit_diagnostic(Diagnostic::from_context(code, context));
+    collector
+        .into_vec()
+        .pop()
+        .expect("the collector emitted one diagnostic")
 }
 
 fn assert_no_nulls(value: &serde_json::Value, context: &str) {
@@ -222,12 +348,12 @@ fn empty_result() -> ExtractionResult {
 
 #[test]
 fn every_documented_code_round_trips_all_structured_fields() {
-    for (code, documented_severity) in active_documented_codes() {
+    for (code, documented) in active_documented_codes() {
         let catalog = catalog_entry(code);
         assert_eq!(
             catalog.severity.to_string(),
-            documented_severity,
-            "{}",
+            documented.severity,
+            "{}: severity differs from documentation",
             code.name()
         );
         assert_eq!(catalog.severity, code.severity(), "{}", code.name());
@@ -236,28 +362,59 @@ fn every_documented_code_round_trips_all_structured_fields() {
             "{} must have a non-empty catalog hint",
             code.name()
         );
+        assert_eq!(
+            catalog.suggested_action,
+            documented.hint,
+            "{}: hint differs from documentation",
+            code.name()
+        );
 
-        let typed = diagnostic_with_context(code);
+        let typed = emitted_diagnostic(code, documented.profile);
         let encoded = DiagnosticJson::from(&typed);
-        assert_eq!(encoded.code, code.name());
-        assert_eq!(encoded.message, "contract message");
-        assert_eq!(encoded.severity, documented_severity);
-        assert_eq!(encoded.page_index, Some(7));
+        assert_eq!(encoded.code, code.name(), "{}: code changed", code.name());
+        assert_eq!(
+            encoded.message,
+            "contract message",
+            "{}: message changed",
+            code.name()
+        );
+        assert_eq!(
+            encoded.severity,
+            documented.severity,
+            "{}: severity changed",
+            code.name()
+        );
+        let (expected_page_index, expected_object_ref) = documented.profile.known_context();
+        assert_eq!(
+            encoded.page_index,
+            expected_page_index,
+            "{}: page_index was not preserved",
+            code.name()
+        );
         assert_eq!(
             encoded.location,
-            Some(ObjectLocationJson {
-                object_number: 12,
-                generation_number: 3,
-            })
+            expected_object_ref.map(|object_ref| ObjectLocationJson {
+                object_number: object_ref.object,
+                generation_number: object_ref.generation,
+            }),
+            "{}: location was not preserved",
+            code.name()
         );
-        assert_eq!(encoded.hint.as_deref(), Some(catalog.suggested_action));
+        assert_eq!(
+            encoded.hint.as_deref(),
+            Some(documented.hint.as_str()),
+            "{}: hint was not preserved",
+            code.name()
+        );
 
         let wire = serde_json::to_string(&encoded).expect("DiagnosticJson must serialize");
         assert!(
             !wire.contains("byte_offset"),
-            "byte offsets are in-process only: {wire}"
+            "{}: byte offsets are in-process only: {wire}",
+            code.name()
         );
-        let value: serde_json::Value = serde_json::from_str(&wire).expect("wire JSON must parse");
+        let value: serde_json::Value = serde_json::from_str(&wire)
+            .unwrap_or_else(|error| panic!("{}: wire JSON must parse: {error}", code.name()));
         assert_no_nulls(&value, code.name());
         for field in [
             "code",
@@ -267,13 +424,21 @@ fn every_documented_code_round_trips_all_structured_fields() {
             "location",
             "hint",
         ] {
+            let expected_present = match field {
+                "page_index" => expected_page_index.is_some(),
+                "location" => expected_object_ref.is_some(),
+                "hint" => true,
+                _ => true,
+            };
             assert!(
-                value.get(field).is_some(),
-                "{} must carry {field}: {value}",
-                code.name()
+                value.get(field).is_some() == expected_present,
+                "{}: {field} presence was {}, expected {expected_present}: {value}",
+                code.name(),
+                value.get(field).is_some()
             );
         }
-        let decoded: DiagnosticJson = serde_json::from_value(value).expect("wire JSON must decode");
+        let decoded: DiagnosticJson = serde_json::from_value(value)
+            .unwrap_or_else(|error| panic!("{}: wire JSON must decode: {error}", code.name()));
         assert_eq!(
             decoded,
             encoded,
@@ -285,14 +450,14 @@ fn every_documented_code_round_trips_all_structured_fields() {
 
 #[test]
 fn every_documented_code_uses_policy_values_without_context() {
-    for (code, documented_severity) in active_documented_codes() {
+    for (code, documented) in active_documented_codes() {
         let typed = Diagnostic::from_context(code, DiagnosticContext::for_code(code));
         let policy = code.policy();
         let catalog = catalog_entry(code);
         assert_eq!(typed.message.as_ref(), policy.message, "{}", code.name());
         assert_eq!(
             typed.severity().to_string(),
-            documented_severity,
+            documented.severity,
             "{}",
             code.name()
         );
@@ -300,10 +465,11 @@ fn every_documented_code_uses_policy_values_without_context() {
         assert_eq!(typed.hint(), policy.hint, "{}", code.name());
         assert_eq!(
             typed.hint(),
-            Some(catalog.suggested_action),
+            Some(documented.hint.as_str()),
             "{}",
             code.name()
         );
+        assert_eq!(catalog.suggested_action, documented.hint, "{}", code.name());
         assert_eq!(
             typed.byte_offset,
             None,
@@ -326,7 +492,7 @@ fn every_documented_code_uses_policy_values_without_context() {
         let encoded = DiagnosticJson::from(&typed);
         assert_eq!(encoded.code, code.name());
         assert_eq!(encoded.message, policy.message);
-        assert_eq!(encoded.severity, documented_severity);
+        assert_eq!(encoded.severity, documented.severity);
         assert_eq!(encoded.page_index, None);
         assert_eq!(encoded.location, None);
         assert_eq!(encoded.hint.as_deref(), policy.hint);
@@ -352,14 +518,17 @@ fn every_documented_code_uses_policy_values_without_context() {
 
 #[test]
 fn legacy_projection_and_display_keep_byte_compatible_context_rules() {
-    let diagnostics: Vec<Diagnostic> = active_documented_codes()
-        .into_iter()
-        .map(|(code, _)| diagnostic_with_context(code))
+    let documented = active_documented_codes();
+    let diagnostics: Vec<Diagnostic> = documented
+        .iter()
+        .map(|(code, documented)| emitted_diagnostic(*code, documented.profile))
         .collect();
     let legacy = to_legacy_strings(&diagnostics);
 
     assert_eq!(legacy.len(), diagnostics.len());
-    for (diagnostic, legacy_message) in diagnostics.iter().zip(&legacy) {
+    for ((diagnostic, legacy_message), (_, documented)) in
+        diagnostics.iter().zip(&legacy).zip(&documented)
+    {
         let message = "contract message";
         assert_eq!(
             legacy_message,
@@ -370,12 +539,19 @@ fn legacy_projection_and_display_keep_byte_compatible_context_rules() {
         assert!(!legacy_message.contains(diagnostic.code.name()));
         assert!(!legacy_message.contains("byte offset"));
         assert!(!legacy_message.contains("12 3 R"));
+        let object_suffix = documented
+            .profile
+            .known_context()
+            .1
+            .map(|object_ref| format!(" [{object_ref}]"))
+            .unwrap_or_default();
         assert_eq!(
             diagnostic.to_string(),
             format!(
-                "{}: {} (byte offset 4096) [12 3 R]",
+                "{}: {} (byte offset 4096){}",
                 diagnostic.code.name(),
-                message
+                message,
+                object_suffix
             ),
             "Display formatting changed for {}",
             diagnostic.code.name()
@@ -472,7 +648,9 @@ fn malformed_json_uses_optional_null_fallback_and_rejects_required_breakage() {
 fn json_and_ndjson_surfaces_preserve_the_same_diagnostic_objects() {
     let diagnostics: Vec<DiagnosticJson> = active_documented_codes()
         .into_iter()
-        .map(|(code, _)| DiagnosticJson::from(&diagnostic_with_context(code)))
+        .map(|(code, documented)| {
+            DiagnosticJson::from(&emitted_diagnostic(code, documented.profile))
+        })
         .collect();
     let legacy = diagnostics
         .iter()
