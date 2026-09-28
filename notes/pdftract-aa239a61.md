@@ -35,5 +35,19 @@ error, and a message naming `madvise(MADV_SEQUENTIAL)`.
 
 ## Verification
 
-Verification results will be appended after the committed clean-extraction
-run set.
+Committed source was extracted from `HEAD` into `/tmp/tmp.fv5y4lowP3`.
+`scripts/definition-of-done.sh --fast` passed with exit 0. The required
+filtered test command then ran consecutively without overlap:
+
+| Runs | Command mode | Result |
+|---|---|---|
+| 1–5 | `timeout --kill-after=30s 600s cargo test -p pdftract-core --lib source::mmap` | 25 passed, 0 failed; exit 0 each |
+| 1–5 | `timeout --kill-after=30s 600s cargo test -p pdftract-core --lib source::mmap -- --test-threads=1` | 25 passed, 0 failed; exit 0 each |
+
+The parallel runs satisfy the minimum five-run requirement. Targeted
+`rustfmt --edition 2021 --check crates/pdftract-core/src/source/mmap.rs`
+passed. `cargo clippy -p pdftract-core --lib --tests` was also attempted but
+is not green at this repository baseline: it reports unrelated deny-level
+lint errors in existing layout, parser, document, and Type3 files; no clippy
+diagnostic was reported for the changed mmap test. The initial filtered test
+run on the shared checkout also passed 25/25.
