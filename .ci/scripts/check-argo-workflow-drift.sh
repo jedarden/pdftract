@@ -1,23 +1,27 @@
 #!/bin/sh
 set -eu
 
-# The WorkflowTemplate is maintained in pdftract and promoted to
+# The Argo manifests are maintained in pdftract and promoted to
 # declarative-config. The deployment repository may change only Kubernetes
-# resource requests/limits for the iad-ci cluster; the workflow contract itself
-# must remain byte-for-byte identical after those blocks are normalized away.
+# resource requests/limits for the iad-ci cluster; each workflow contract must
+# remain byte-for-byte identical after those blocks are normalized away.
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 SOURCE_FILE=${PDFTRACT_CI_SOURCE:-$REPO_ROOT/.ci/argo-workflows/pdftract-ci.yaml}
+FUZZ_SOURCE_FILE=${PDFTRACT_FUZZ_SOURCE:-$REPO_ROOT/.ci/argo-workflows/pdftract-nightly-fuzz.yaml}
 CONFIG_URL=${DECLARATIVE_CONFIG_REPO_URL:-https://git.ardenone.com/jedarden/declarative-config.git}
 CONFIG_REF=${DECLARATIVE_CONFIG_REF:-main}
 CONFIG_PATH=${DECLARATIVE_CONFIG_WORKFLOW_PATH:-k8s/iad-ci/argo-workflows/pdftract-ci.yaml}
+FUZZ_CONFIG_PATH=${DECLARATIVE_CONFIG_FUZZ_WORKFLOW_PATH:-k8s/iad-ci/argo-workflows/pdftract-nightly-fuzz.yaml}
 CONFIG_DIR=${DECLARATIVE_CONFIG_DIR:-}
 
-if [ ! -f "$SOURCE_FILE" ]; then
-    echo "ERROR: source WorkflowTemplate not found: $SOURCE_FILE" >&2
-    exit 2
-fi
+for source_file in "$SOURCE_FILE" "$FUZZ_SOURCE_FILE"; do
+    if [ ! -f "$source_file" ]; then
+        echo "ERROR: source Argo manifest not found: $source_file" >&2
+        exit 2
+    fi
+done
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pdftract-argo-drift.XXXXXX")
 cleanup() {
@@ -33,16 +37,19 @@ if [ -z "$CONFIG_DIR" ]; then
     # only the commit metadata and the file being validated.
     git clone --quiet --filter=blob:none --sparse --depth 1 \
         --branch "$CONFIG_REF" "$CONFIG_URL" "$CONFIG_DIR"
-    git -C "$CONFIG_DIR" sparse-checkout set --no-cone "/$CONFIG_PATH"
+    git -C "$CONFIG_DIR" sparse-checkout set --no-cone "/$CONFIG_PATH" "/$FUZZ_CONFIG_PATH"
 else
     CONFIG_DIR=$(CDPATH= cd -- "$CONFIG_DIR" && pwd)
 fi
 
-DEPLOYED_FILE="$CONFIG_DIR/$CONFIG_PATH"
-if [ ! -f "$DEPLOYED_FILE" ]; then
-    echo "ERROR: deployed WorkflowTemplate not found: $DEPLOYED_FILE" >&2
-    exit 2
-fi
+CI_DEPLOYED_FILE="$CONFIG_DIR/$CONFIG_PATH"
+FUZZ_DEPLOYED_FILE="$CONFIG_DIR/$FUZZ_CONFIG_PATH"
+for deployed_file in "$CI_DEPLOYED_FILE" "$FUZZ_DEPLOYED_FILE"; do
+    if [ ! -f "$deployed_file" ]; then
+        echo "ERROR: deployed Argo manifest not found: $deployed_file" >&2
+        exit 2
+    fi
+done
 
 # Remove each complete resources map and replace it with one marker. This is
 # deliberately structural rather than a list of line numbers, so adding a new
@@ -73,21 +80,43 @@ normalize_workflow() {
     ' "$input" > "$output"
 }
 
-normalize_workflow "$SOURCE_FILE" "$WORK_DIR/source.normalized.yaml"
-normalize_workflow "$DEPLOYED_FILE" "$WORK_DIR/deployed.normalized.yaml"
+compare_workflow() {
+    workflow_name=$1
+    source_file=$2
+    deployed_file=$3
+    source_normalized="$WORK_DIR/$workflow_name.source.normalized.yaml"
+    deployed_normalized="$WORK_DIR/$workflow_name.deployed.normalized.yaml"
 
-source_sha=$(sha256sum "$SOURCE_FILE" | awk '{print $1}')
-deployed_sha=$(sha256sum "$DEPLOYED_FILE" | awk '{print $1}')
-echo "Source:   $SOURCE_FILE (sha256 $source_sha)"
-echo "Deployed: $DEPLOYED_FILE (sha256 $deployed_sha)"
+    normalize_workflow "$source_file" "$source_normalized"
+    normalize_workflow "$deployed_file" "$deployed_normalized"
 
-if cmp -s "$WORK_DIR/source.normalized.yaml" "$WORK_DIR/deployed.normalized.yaml"; then
-    echo "Argo workflow contract is synchronized"
-    echo "Allowed deployment-only differences: resources maps"
-    exit 0
+    source_sha=$(sha256sum "$source_file" | awk '{print $1}')
+    deployed_sha=$(sha256sum "$deployed_file" | awk '{print $1}')
+    echo "Source ($workflow_name):   $source_file (sha256 $source_sha)"
+    echo "Deployed ($workflow_name): $deployed_file (sha256 $deployed_sha)"
+
+    if cmp -s "$source_normalized" "$deployed_normalized"; then
+        echo "Argo workflow contract is synchronized: $workflow_name"
+        return 0
+    fi
+
+    echo "ERROR: Argo workflow contract drift detected: $workflow_name" >&2
+    echo "Only resources maps may differ between source and deployed copies." >&2
+    diff -u "$deployed_normalized" "$source_normalized" >&2 || true
+    return 1
+}
+
+failed=0
+if ! compare_workflow "pdftract-ci" "$SOURCE_FILE" "$CI_DEPLOYED_FILE"; then
+    failed=1
+fi
+if ! compare_workflow "pdftract-nightly-fuzz" "$FUZZ_SOURCE_FILE" "$FUZZ_DEPLOYED_FILE"; then
+    failed=1
 fi
 
-echo "ERROR: Argo workflow contract drift detected" >&2
-echo "Only resources maps may differ between source and deployed copies." >&2
-diff -u "$WORK_DIR/deployed.normalized.yaml" "$WORK_DIR/source.normalized.yaml" >&2 || true
-exit 1
+if [ "$failed" -ne 0 ]; then
+    exit 1
+fi
+
+echo "Argo workflow contracts are synchronized"
+echo "Allowed deployment-only differences: resources maps"
