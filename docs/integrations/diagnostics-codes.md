@@ -33,6 +33,10 @@ every optional field populated):
 ```
 
 The wire `severity` value is one of `info`, `warning`, `error`, or `fatal`.
+Recoverable diagnostics are attached to the extraction result. A `fatal`
+condition may instead make an extraction API return an error before an
+`ExtractionResult` exists; callers must not assume that every fatal diagnostic
+is available in one of these arrays.
 
 | Field | JSON type | Serialized presence | Semantics |
 |-------|-----------|---------------------|-----------|
@@ -77,6 +81,12 @@ is neither the wire object nor the legacy `metadata.diagnostics` value.
    diagnostics in metadata emission order. A page-failure record has the shape
    `{"code":"page_extraction_error","severity":"error","message":"...","page_index":N}`;
    `page_index` is the zero-based failed-page index. This lowercase code is a streaming-only label, not a catalog code.
+
+The NDJSON header carries document metadata but no diagnostic array. A
+successful page frame omits `errors`; a failed page frame carries only its
+synthetic `page_extraction_error` record. The footer is the complete streaming
+diagnostic surface: it contains failed-page records first, then the canonical
+structured diagnostics.
 
 Empty-array behavior differs by surface: `metadata.diagnostics` and
 `metadata.diagnostics_detailed` are omitted entirely when there are no
@@ -175,7 +185,9 @@ exact hint for each name remain in the catalog tables that follow.
 Thus a child implementation does not need to infer context from a formatted
 message: it selects the code's profile, supplies known page/object context,
 uses the catalog severity and hint, and lets the standard serializers produce
-the three structured destinations and the legacy message projection.
+the three structured destinations and the legacy message projection. A fatal
+operation that returns before an extraction result is created is outside those
+result surfaces.
 
 ## Code Categories
 

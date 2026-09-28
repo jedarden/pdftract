@@ -4,7 +4,7 @@ This document explains the complete structure of the errors/diagnostics arrays i
 
 ## Overview
 
-The pdftract extraction system uses a unified diagnostic system to report events at four severities — `info`, `warning`, `error`, and `fatal` (the full enum, with the code catalog, lives in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md)). All diagnostics are emitted during PDF parsing and extraction without panicking (per INV-8), allowing the parser to always attempt recovery and continue processing.
+The pdftract extraction system uses a unified diagnostic system to report events at four severities — `info`, `warning`, `error`, and `fatal` (the full enum, with the code catalog, lives in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md)). Recoverable parsing and extraction issues are emitted without panicking (per INV-8), allowing recovery to continue. A fatal condition may return an API error before an `ExtractionResult` exists, so it is not guaranteed to appear in an extraction result's arrays.
 
 ## Extraction Result Structure
 
@@ -64,14 +64,19 @@ other one-to-one (same length, same order, same diagnostics):
     **Prefer this form** for machine consumption.
 
 The structured metadata array is also projected to the full JSON output's
-top-level `errors` array. In NDJSON streaming output, the footer frame's
-`errors` array is a union: it contains one synthetic
-`page_extraction_error` record per failed page first, followed by the same
-structured extraction diagnostics (including page-scoped entries) in metadata
-emission order. A failed page frame carries its own synthetic record; a
-successful page frame omits `errors`. The synthetic record is
-`{"code":"page_extraction_error","severity":"error","message":"..."}`;
-it is not a `DiagCode` and never appears in either metadata array.
+top-level `errors` array. In NDJSON streaming output, the surfaces are:
+
+| Surface | Diagnostic contents | Empty behavior |
+|---------|---------------------|-----------------|
+| Compact JSON `metadata` | `diagnostics_detailed` plus the message-only `diagnostics` compatibility array | Both metadata keys are omitted when empty |
+| Full JSON `errors` | The same structured objects as `metadata.diagnostics_detailed` | `errors: []` is always present |
+| NDJSON page frame `errors` | One synthetic record only when that page failed | Omitted on successful pages |
+| NDJSON footer `errors` | Failed-page records first, then the structured metadata diagnostics in emission order | `errors: []` is always present |
+
+The synthetic failed-page record is
+`{"code":"page_extraction_error","severity":"error","message":"...","page_index":N}`;
+`page_index` is the zero-based failed-page index. This lowercase code is not a
+`DiagCode` and never appears in either metadata array.
 
 The compatibility guarantee for `metadata.diagnostics` is limited to the
 message bytes, emission order, length, and duplicates. Code, severity,
@@ -280,7 +285,7 @@ surfaces described above; only the context profile differs.
 ```rust
 #[test]
 fn test_clean_pdf_extracts_without_errors() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/clean.pdf"), &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/auxiliary/plain.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // Verify no diagnostics were emitted
@@ -289,6 +294,7 @@ fn test_clean_pdf_extracts_without_errors() {
         "Expected no diagnostics, but got: {:?}",
         result.metadata.diagnostics
     );
+    assert!(result.metadata.diagnostics_detailed.is_empty());
     
     // Verify error count is zero
     assert_eq!(result.metadata.error_count, 0);
@@ -300,7 +306,7 @@ fn test_clean_pdf_extracts_without_errors() {
 ```rust
 #[test]
 fn test_truncated_stream_emits_decode_error() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/truncated.pdf"), &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/malformed/truncated-flate.pdf"), &Default::default())
         .expect("Extraction should succeed (with recovery)");
     
     // Check for STREAM_DECODE_ERROR diagnostic (by code, on the
@@ -316,31 +322,17 @@ fn test_truncated_stream_emits_decode_error() {
 }
 ```
 
-### Pattern 3: Check for Multiple Error Types
+### Pattern 3: Check Multiple Diagnostic Codes
 
 ```rust
-#[test]
-fn test_malformed_pdf_emits_multiple_warnings() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/malformed.pdf"), &Default::default())
-        .expect("Extraction should succeed (with recovery)");
-    
-    // Check for multiple expected diagnostics (by code, on the
-    // structured array)
+fn assert_expected_codes(result: &ExtractionResult) {
+    // Check only codes that the fixture's checked-in contract promises; use
+    // the structured array rather than searching legacy message text.
     let detailed = &result.metadata.diagnostics_detailed;
 
     assert!(
-        detailed.iter().any(|d| d.code == "STRUCT_INVALID_NAME"),
-        "Expected STRUCT_INVALID_NAME"
-    );
-
-    assert!(
-        detailed.iter().any(|d| d.code == "STREAM_DECODE_ERROR"),
-        "Expected STREAM_DECODE_ERROR"
-    );
-
-    assert!(
-        detailed.iter().any(|d| d.code == "XREF_REPAIRED"),
-        "Expected XREF_REPAIRED"
+        detailed.iter().any(|d| d.code == "STRUCT_INVALID_DICT_VALUE"),
+        "Expected STRUCT_INVALID_DICT_VALUE"
     );
 }
 ```
@@ -350,7 +342,7 @@ fn test_malformed_pdf_emits_multiple_warnings() {
 ```rust
 #[test]
 fn test_pdf_with_unmapped_glyphs() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/custom-font.pdf"), &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/encoding/unmapped-glyphs.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // Count unmapped glyph diagnostics
@@ -394,11 +386,7 @@ fn test_encryption_diagnostic_envelope() {
 ### Pattern 6: Check Error Count Matches
 
 ```rust
-#[test]
-fn test_partial_extraction_error_count() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/partial-corrupt.pdf"), &Default::default())
-        .expect("Extraction should succeed");
-    
+fn assert_extraction_error_count(result: &ExtractionResult) {
     // Verify error_count matches failed pages, not diagnostic severity.
     let failed_page_count = result.pages.iter()
         .filter(|page| page.error.is_some())
@@ -417,7 +405,7 @@ fn test_partial_extraction_error_count() {
 ```rust
 #[test]
 fn test_extraction_has_no_fatal_errors() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/complex.pdf"), &Default::default())
+    let result = extract_pdf(std::path::Path::new("tests/fixtures/auxiliary/plain.pdf"), &Default::default())
         .expect("Extraction should succeed");
     
     // Ensure no fatal-level diagnostics were emitted (by typed severity,
@@ -436,12 +424,10 @@ fn test_extraction_has_no_fatal_errors() {
 ### Pattern 8: Verify Expected Number of Diagnostics
 
 ```rust
-#[test]
-fn test_specific_diagnostic_count() {
-    let result = extract_pdf(std::path::Path::new("tests/fixtures/known-issues.pdf"), &Default::default())
-        .expect("Extraction should succeed");
-    
-    // If we know this PDF produces exactly 3 diagnostics
+fn assert_three_diagnostics(result: &ExtractionResult) {
+    // Apply this assertion only to a fixture whose checked-in contract says
+    // it produces exactly three diagnostics; do not infer a count from a
+    // message or from a different fixture.
     assert_eq!(
         result.metadata.diagnostics_detailed.len(),
         3,
@@ -505,7 +491,7 @@ fn test_encrypted_pdf_without_password() {
 ```rust
 #[test]
 fn test_custom_font_with_unmapped_glyphs() {
-    let fixture_path = "tests/fixtures/fonts/custom-subset.pdf";
+    let fixture_path = "tests/fixtures/encoding/unmapped-glyphs.pdf";
     let result = extract_pdf(std::path::Path::new(fixture_path), &Default::default())
         .expect("Extraction should succeed");
     
@@ -557,6 +543,11 @@ pub fn assert_no_diagnostics(result: &ExtractionResult) {
         result.metadata.diagnostics.is_empty(),
         "Expected no diagnostics, got: {:?}",
         result.metadata.diagnostics
+    );
+    assert!(
+        result.metadata.diagnostics_detailed.is_empty(),
+        "Expected no structured diagnostics, got: {:?}",
+        result.metadata.diagnostics_detailed
     );
 }
 
