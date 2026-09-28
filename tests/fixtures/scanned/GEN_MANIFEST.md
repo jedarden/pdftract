@@ -2,9 +2,10 @@
 
 This document tracks the generation status and specifications for all scanned fixtures.
 
-Regenerated 2026-09-13 (bead `bf-33zjo`) with a width-aware generator and an
-OCR-stable corpus; every clean 300 DPI fixture now passes the
-`scripts/measure-wer.sh` WER < 3% gate (see [WER Results](#wer-results)).
+Regenerated 2026-09-28 for bead `pdftract-d070dc82` with a width-aware clean
+generator plus a deterministic edge-fixture generator; every clean 300 DPI
+fixture and every non-degraded edge fixture now passes its per-row target in
+`scripts/measure-wer.sh` acceptance run (see [WER Results](#wer-results)).
 
 ## Fixture Specifications
 
@@ -69,6 +70,27 @@ above 8%. DejaVu Serif also has a serifed capital I, avoiding the sans-serif
   fixture kept for compatibility; `report-300dpi` is the canonical multi-page
   fixture.
 
+## OCR Edge Fixtures
+
+These rows extend the clean corpus without changing the strict clean 3% claim.
+Their manifest class is `stress`, each has a per-fixture target, and the
+recorded WER contributes to the aggregate acceptance result. The
+`expected_extraction_mode` and `expected_page_type` values in each sidecar
+are checked by `scripts/verify-ocr-acceptance.sh` against the PDF structure.
+
+| Fixture | Transform | Expected mode | Target |
+|---------|-----------|---------------|--------|
+| `noisy-300dpi` | deterministic gray dust and slight blur | `scanned` | < 5% |
+| `skewed-300dpi` | deterministic 1.35 degree rotation | `scanned` | < 5% |
+| `low-resolution-150dpi` | single 150×150 PPI image | `scanned` | < 10% |
+| `multi-column-300dpi` | two text columns in one image | `scanned` | < 5% |
+| `mixed-vector-scanned-300dpi` | raster body plus vector sidebar | `mixed` | < 5% |
+
+Each edge directory contains the PDF, ground truth, recorded OCR output, and
+`<fixture>.metadata.json`. The sidecar records the CC0 source, generator,
+transform, expected route, WER target, DPI, and hashes for the PDF and ground
+truth.
+
 ## OCR-Stability Curation Rules
 
 The ground-truth texts avoid constructs that tesseract cannot round-trip at
@@ -115,6 +137,15 @@ re-measured 2026-09-18 after the single-page redesign, with tesseract 5.5.2 +
 | form-300dpi | 166 | 0.60% | PASS (exit 0) | single page since 2026-09-18; 1 word substitution |
 | report-300dpi | 1383 | 0.87% | PASS (exit 0) | 11 pages; residual code-block I/l and split-token noise |
 | degraded-200dpi | 321 | 8.10% | n/a (degraded) | intentionally outside the gate |
+| noisy-300dpi | 55 | 1.82% | PASS (<5%) | deterministic dust/noise |
+| skewed-300dpi | 54 | 1.85% | PASS (<5%) | 1.35° skew |
+| low-resolution-150dpi | 52 | 1.92% | PASS (<10%) | 150 DPI |
+| multi-column-300dpi | 48 | 0.00% | PASS (<5%) | two-column image |
+| mixed-vector-scanned-300dpi | 55 | 0.00% | PASS (<5%) | mixed vector/raster page |
+
+The ten non-degraded rows measured 16 errors over 2,288 reference words, a
+0.70% micro-average. The degraded row remains reported separately and does
+not contribute to that aggregate.
 
 To re-verify:
 
@@ -141,6 +172,19 @@ original fixed-size drawing truncated every long letter line.
 
 Reference OCR outputs are produced by `pdfimages -png` + `tesseract <img>
 stdout -l eng` per page, concatenated in page order.
+
+The edge fixtures are regenerated with:
+
+```sh
+python3 tools/generate_ocr_edge_fixtures.py
+```
+
+For a documented acceptance run, pass `--artifacts DIR` to
+`scripts/measure-wer.sh`. The directory retains per-fixture OCR text,
+Tesseract logs, extracted page images, `summary.tsv`, `aggregate.tsv`, and
+`run-status`. Run `scripts/verify-ocr-acceptance.sh` in the same provisioned
+environment to assert scanned versus mixed routing and validate every sidecar
+hash.
 
 ## Low-Quality Fixtures
 

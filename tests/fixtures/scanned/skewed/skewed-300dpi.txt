@@ -1,0 +1,5 @@
+SKEWED SCAN ACCEPTANCE FIXTURE
+This page is rotated by a small angle before it is stored as a PDF image.
+Deskew handling should preserve the title, the body text, and the final line.
+Document ID SKEW 300. Review date September 28 2026.
+The expected extraction route is scanned OCR and the source is CC0.

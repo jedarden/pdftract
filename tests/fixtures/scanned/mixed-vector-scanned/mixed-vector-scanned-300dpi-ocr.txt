@@ -1,0 +1,15 @@
+SCANNED BODY ACCEPTANCE FIXTURE
+This body is raster content beneath a
+separate vector header and sidebar.
+
+The OCR transcript covers only the
+scanned body so the vector layer can be
+checked independently by the routing
+verifier.
+
+Document ID MIXED 300. Review date
+September 28 2026.
+
+The expected extraction route is mixed
+
+vector and scanned content.

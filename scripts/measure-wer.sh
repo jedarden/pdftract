@@ -31,6 +31,8 @@
 # --recorded skips the OCR step and measures the committed *-ocr.txt reference
 # outputs instead. That verifies the gate arithmetic and the recorded state of
 # the corpus — it does NOT measure live OCR quality — and needs only python3.
+# --artifacts DIR retains per-fixture OCR text, Tesseract logs, page images,
+# and a tab-separated summary for the documented acceptance gate.
 #
 # Normalization contract (applied identically to both sides before the
 # word-level Levenshtein comparison): Unicode NFKC, curly quotes/apostrophes
@@ -45,6 +47,7 @@
 #   scripts/measure-wer.sh --recorded        corpus mode on committed *-ocr.txt
 #   scripts/measure-wer.sh --corpus DIR      alternate corpus root
 #   scripts/measure-wer.sh --fixture NAME    measure one manifested fixture only
+#   scripts/measure-wer.sh --artifacts DIR    retain run artifacts in DIR
 #   scripts/measure-wer.sh --threshold PCT   clean gate threshold (default 3)
 #   scripts/measure-wer.sh --self-test       built-in acceptance checks
 #   scripts/measure-wer.sh OCR.txt GT.txt    legacy two-file comparison
@@ -71,6 +74,7 @@ DEGRADED_TARGET_PCT="10"   # informational soft target, matches GEN_MANIFEST.md
 RECORDED=0
 CORPUS=""
 ONLY_FIXTURE=""
+ARTIFACTS=""
 SELF_TEST=0
 MODE=""                    # "corpus" | "twofile"
 TWOFILE_OCR=""
@@ -86,20 +90,27 @@ cleanup() { [[ -n "$WORK_DIR" ]] && rm -rf -- "$WORK_DIR"; return 0; }
 usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SELF"; }
 
 # ---------------------------------------------------------------------------
-# Manifest: name|class|scan.pdf|ground-truth.txt|reference-ocr.txt
+# Manifest: name|class|expected-mode|target-pct|scan.pdf|ground-truth.txt|
+#          reference-ocr.txt|metadata.json-or-'-'
 # Paths are relative to the corpus root. `clean` fixtures carry the gate;
-# `degraded` fixtures are reported but never gate. To add a fixture: generate
+# `stress` fixtures carry their own target; `degraded` fixtures are reported
+# but never gate. To add a fixture: generate
 # the scan + ground truth per tests/fixtures/scanned/README.md ("Adding New
 # Fixtures"), produce the reference OCR, measure it, then add a row here and
 # to README.md / GEN_MANIFEST.md.
 # ---------------------------------------------------------------------------
 read -r -d '' FIXTURE_MANIFEST <<'EOF' || true
-receipt-300dpi|clean|receipt/receipt-300dpi-scanned.pdf|receipt/receipt-300dpi.txt|receipt/receipt-300dpi-ocr.txt
-invoice-300dpi|clean|invoice/invoice-300dpi.pdf|invoice/invoice-300dpi-ground-truth.txt|invoice/invoice-300dpi-ocr.txt
-letter-300dpi|clean|letter/letter-300dpi.pdf|letter/letter-300dpi-ground-truth.txt|letter/letter-300dpi-ocr.txt
-form-300dpi|clean|form/form-300dpi.pdf|form/form-300dpi-ground-truth.txt|form/form-300dpi-ocr.txt
-report-300dpi|clean|multi-page/report-300dpi.pdf|multi-page/report-300dpi-ground-truth.txt|multi-page/report-300dpi-ocr.txt
-degraded-200dpi|degraded|low-quality/degraded-200dpi.pdf|low-quality/degraded-200dpi.txt|low-quality/degraded-200dpi-ocr.txt
+receipt-300dpi|clean|scanned|3|receipt/receipt-300dpi-scanned.pdf|receipt/receipt-300dpi.txt|receipt/receipt-300dpi-ocr.txt|-
+invoice-300dpi|clean|scanned|3|invoice/invoice-300dpi.pdf|invoice/invoice-300dpi-ground-truth.txt|invoice/invoice-300dpi-ocr.txt|-
+letter-300dpi|clean|scanned|3|letter/letter-300dpi.pdf|letter/letter-300dpi-ground-truth.txt|letter/letter-300dpi-ocr.txt|-
+form-300dpi|clean|scanned|3|form/form-300dpi.pdf|form/form-300dpi-ground-truth.txt|form/form-300dpi-ocr.txt|-
+report-300dpi|clean|scanned|3|multi-page/report-300dpi.pdf|multi-page/report-300dpi-ground-truth.txt|multi-page/report-300dpi-ocr.txt|-
+degraded-200dpi|degraded|scanned|10|low-quality/degraded-200dpi.pdf|low-quality/degraded-200dpi.txt|low-quality/degraded-200dpi-ocr.txt|-
+noisy-300dpi|stress|scanned|5|noisy/noisy-300dpi.pdf|noisy/noisy-300dpi.txt|noisy/noisy-300dpi-ocr.txt|noisy/noisy-300dpi.metadata.json
+skewed-300dpi|stress|scanned|5|skewed/skewed-300dpi.pdf|skewed/skewed-300dpi.txt|skewed/skewed-300dpi-ocr.txt|skewed/skewed-300dpi.metadata.json
+low-resolution-150dpi|stress|scanned|10|low-resolution/low-resolution-150dpi.pdf|low-resolution/low-resolution-150dpi.txt|low-resolution/low-resolution-150dpi-ocr.txt|low-resolution/low-resolution-150dpi.metadata.json
+multi-column-300dpi|stress|scanned|5|multi-column/multi-column-300dpi.pdf|multi-column/multi-column-300dpi.txt|multi-column/multi-column-300dpi-ocr.txt|multi-column/multi-column-300dpi.metadata.json
+mixed-vector-scanned-300dpi|stress|mixed|5|mixed-vector-scanned/mixed-vector-scanned-300dpi.pdf|mixed-vector-scanned/mixed-vector-scanned-300dpi.txt|mixed-vector-scanned/mixed-vector-scanned-300dpi-ocr.txt|mixed-vector-scanned/mixed-vector-scanned-300dpi.metadata.json
 EOF
 
 # ---------------------------------------------------------------------------
@@ -192,6 +203,8 @@ while [[ $# -gt 0 ]]; do
                   CORPUS="$2"; shift ;;
         --fixture) [[ $# -ge 2 ]] || die 2 "--fixture requires a fixture name argument"
                    ONLY_FIXTURE="$2"; shift ;;
+        --artifacts) [[ $# -ge 2 ]] || die 2 "--artifacts requires a directory argument"
+                     ARTIFACTS="$2"; shift ;;
         --threshold) [[ $# -ge 2 ]] || die 2 "--threshold requires a percentage argument"
                      [[ "$2" =~ ^[0-9]+([.][0-9]+)?$ ]] || die 2 "--threshold must be a non-negative number (percent), got '$2'"
                      THRESHOLD_PCT="$2"; shift ;;
@@ -285,6 +298,19 @@ run_corpus() {
         require_cmd tesseract "live OCR needs tesseract 5.x with the 'eng' traineddata (nix: nix-shell -p tesseract poppler-utils)."
     fi
 
+    if [[ -n "$ARTIFACTS" ]]; then
+        mkdir -p -- "$ARTIFACTS" || die 2 "cannot create artifact directory: $ARTIFACTS"
+        ARTIFACTS="$(cd "$ARTIFACTS" && pwd)"
+        {
+            printf 'measure-wer artifact format v1\n'
+            printf 'corpus\t%s\n' "$CORPUS"
+            printf 'recorded\t%s\n' "$RECORDED"
+            printf 'threshold_percent\t%s\n' "$THRESHOLD_PCT"
+        } > "$ARTIFACTS/run-info.tsv"
+        printf 'fixture\tclass\tmode\ttarget_percent\tpages\twords\tsub\tdel\tins\terrors\twer_percent\tstatus\n' > "$ARTIFACTS/summary.tsv"
+        printf 'scope\terrors\twords\twer_percent\tfixture_count\tstatus\n' > "$ARTIFACTS/aggregate.tsv"
+    fi
+
     local -a lines=()
     mapfile -t lines <<<"$FIXTURE_MANIFEST"
 
@@ -303,7 +329,7 @@ run_corpus() {
     trap cleanup EXIT
 
     local gate_fail=0
-    local agg_errors=0 agg_words=0 clean_count=0
+    local agg_errors=0 agg_words=0 clean_count=0 acceptance_count=0
     local -a table=() failed_fixtures=()
 
     printf '=== scanned-corpus WER measurement ===\n'
@@ -318,9 +344,9 @@ run_corpus() {
     printf '\n%-18s %5s %6s %4s %4s %4s %8s  %s\n' \
         FIXTURE PAGES WORDS SUB DEL INS WER GATE
 
-    local spec name class scan_rel gt_rel rec_rel scan gt rec
+    local spec name class mode target scan_rel gt_rel rec_rel metadata_rel scan gt rec
     for spec in "${lines[@]}"; do
-        IFS='|' read -r name class scan_rel gt_rel rec_rel <<<"$spec"
+        IFS='|' read -r name class mode target scan_rel gt_rel rec_rel metadata_rel <<<"$spec"
         [[ -n "$ONLY_FIXTURE" && "$name" != "$ONLY_FIXTURE" ]] && continue
         scan="$(dash_guard "$CORPUS/$scan_rel")"
         gt="$(dash_guard "$CORPUS/$gt_rel")"
@@ -328,14 +354,21 @@ run_corpus() {
         [[ -f "$scan" ]] || die 2 "fixture '$name': scan PDF not found: $CORPUS/$scan_rel"
         [[ -f "$gt" ]] || die 2 "fixture '$name': ground-truth transcript not found: $CORPUS/$gt_rel"
 
-        local hyp pages="?"
+        local hyp pages="?" log=""
         if (( RECORDED )); then
             [[ -f "$rec" ]] || die 2 "fixture '$name': reference OCR output missing: $CORPUS/$rec_rel — regenerate per GEN_MANIFEST.md or run live OCR mode"
             hyp="$rec"
         else
             hyp="$work/$name.ocr.txt"
-            ocr_fixture "$scan" "$hyp" "$work/$name.tesseract.log" "$work/$name.pages"
+            log="$work/$name.tesseract.log"
+            ocr_fixture "$scan" "$hyp" "$log" "$work/$name.pages"
             pages="$PAGES"
+        fi
+
+        if [[ -n "$ARTIFACTS" ]]; then
+            cp -- "$hyp" "$ARTIFACTS/$name.ocr.txt"
+            [[ -n "$log" && -f "$log" ]] && cp -- "$log" "$ARTIFACTS/$name.tesseract.log"
+            [[ -d "$work/$name.pages" ]] && cp -a -- "$work/$name.pages" "$ARTIFACTS/$name.pages"
         fi
 
         local out
@@ -343,18 +376,21 @@ run_corpus() {
         parse_summary "$out"
 
         local status gate_cell
+        local row_target="$target"
+        if [[ "$class" == "clean" ]]; then row_target="$THRESHOLD_PCT"; fi
         if [[ "$class" == "degraded" ]]; then
             gate_cell="non-gating"
-            if wer_lt "$S_WER" "$DEGRADED_TARGET_PCT"; then
-                status="REPORTED (soft target <${DEGRADED_TARGET_PCT}%)"
+            if wer_lt "$S_WER" "$row_target"; then
+                status="REPORTED (soft target <${row_target}%)"
             else
-                status="REPORTED-OVER (soft target ${DEGRADED_TARGET_PCT}%)"
+                status="REPORTED-OVER (soft target ${row_target}%)"
             fi
         else
-            gate_cell="<${THRESHOLD_PCT}%"
-            if wer_lt "$S_WER" "$THRESHOLD_PCT"; then
+            gate_cell="<${row_target}%"
+            acceptance_count=$((acceptance_count + 1))
+            if wer_lt "$S_WER" "$row_target"; then
                 status="PASS"
-                clean_count=$((clean_count + 1))
+                [[ "$class" == "clean" ]] && clean_count=$((clean_count + 1))
                 agg_errors=$((agg_errors + S_ERRORS))
                 agg_words=$((agg_words + S_WORDS))
             else
@@ -368,6 +404,12 @@ run_corpus() {
         table+=("$(printf '%-18s %5s %6s %4s %4s %4s %8s  %s' \
             "$name" "$pages" "$S_WORDS" "$S_SUBS" "$S_DELS" "$S_INS" "${S_WER}%" "$status ($gate_cell)")")
 
+        if [[ -n "$ARTIFACTS" ]]; then
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$name" "$class" "$mode" "$row_target" "$pages" "$S_WORDS" "$S_SUBS" "$S_DELS" "$S_INS" "$S_ERRORS" "$S_WER" "$status" \
+                >> "$ARTIFACTS/summary.tsv"
+        fi
+
         if [[ "$status" == FAIL* || "$status" == REPORTED-OVER* ]] && [[ "${VERBOSE:-0}" == "1" ]]; then
             printf -- '--- %s word-level detail (first 15) ---\n' "$name"
             wer_compute "$gt" "$hyp" 1 | grep -v '^SUMMARY' || true
@@ -378,8 +420,18 @@ run_corpus() {
     for row in "${table[@]}"; do printf '%s\n' "$row"; done
 
     if (( agg_words > 0 )); then
-        awk -v e="$agg_errors" -v w="$agg_words" -v t="$THRESHOLD_PCT" \
-            'BEGIN { printf "\nclean aggregate: %d errors / %d reference words = %.2f%% (micro-average; threshold %.2f%%)\n", e, w, e*100/w, t }'
+        awk -v e="$agg_errors" -v w="$agg_words" -v t="$THRESHOLD_PCT" -v n="$acceptance_count" \
+            'BEGIN { printf "\nacceptance aggregate: %d errors / %d reference words = %.2f%% across %d non-degraded fixtures (micro-average; threshold %.2f%%)\n", e, w, e*100/w, n, t }'
+        if ! awk -v e="$agg_errors" -v w="$agg_words" -v t="$THRESHOLD_PCT" \
+            'BEGIN { exit !((e * 100.0 / w) < t) }'; then
+            gate_fail=1
+            failed_fixtures+=("aggregate")
+            printf 'GATE: aggregate WER is not below the strict %s%% threshold\n' "$THRESHOLD_PCT"
+        fi
+        if [[ -n "$ARTIFACTS" ]]; then
+            awk -v e="$agg_errors" -v w="$agg_words" -v t="$THRESHOLD_PCT" -v n="$acceptance_count" \
+                'BEGIN { printf "aggregate\t%d\t%d\t%.2f\t%d\t%s\n", e, w, e*100/w, n, ((e * 100.0 / w) < t ? "PASS" : "FAIL") }' >> "$ARTIFACTS/aggregate.tsv"
+        fi
     fi
 
     note_unmanifested_dirs
@@ -391,9 +443,11 @@ run_corpus() {
             printf '  - %s: see the S/D/I columns (SUB=misread, DEL=dropped, INS=hallucinated words);\n' "$f"
             printf '    re-check preprocessing and the OCR-stability rules in tests/fixtures/scanned/GEN_MANIFEST.md\n'
         done
+        [[ -n "$ARTIFACTS" ]] && printf 'FAIL\n' > "$ARTIFACTS/run-status"
         return 1
     fi
-    printf 'GATE: PASS — %s clean fixture(s) under %s%%\n' "$clean_count" "$THRESHOLD_PCT"
+    printf 'GATE: PASS — %s clean fixture(s) and %s non-degraded fixture(s) met their per-fixture targets\n' "$clean_count" "$acceptance_count"
+    [[ -n "$ARTIFACTS" ]] && printf 'PASS\n' > "$ARTIFACTS/run-status"
     return 0
 }
 
@@ -403,7 +457,7 @@ run_corpus() {
 note_unmanifested_dirs() {
     local -a manifested_dirs=()
     local spec d base matched candidate
-    while IFS='|' read -r _ _ scan_rel _ _; do
+    while IFS='|' read -r _ _ _ _ scan_rel _ _ _; do
         manifested_dirs+=("$(dirname "$scan_rel")")
     done <<<"$FIXTURE_MANIFEST"
     while IFS= read -r -d '' d; do

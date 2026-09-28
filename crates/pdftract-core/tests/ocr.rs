@@ -6,8 +6,9 @@
 //! `tests/fixtures/scanned/README.md`. These tests pin the *fixture contract*
 //! that the gate depends on — every manifest row matches a file on disk,
 //! ground truths are non-trivial, the script stays executable, and the
-//! clean/degraded class split that keeps the degraded 200 DPI fixture visible
-//! but non-gating is intact — so a missing, moved, or emptied fixture (or a
+//! clean/stress/degraded class split keeps edge conditions visible with
+//! per-fixture targets while the degraded 200 DPI fixture remains non-gating —
+//! so a missing, moved, or emptied fixture (or a
 //! manifest row that drifts from disk) fails `cargo test` directly instead of
 //! only surfacing inside a shell run:
 //!
@@ -37,9 +38,12 @@ const CORPUS_SUBPATH: &str = "tests/fixtures/scanned";
 struct ManifestRow {
     name: String,
     class: String,
+    mode: String,
+    target_percent: f64,
     scan: String,
     ground_truth: String,
     reference_ocr: String,
+    metadata: Option<String>,
 }
 
 fn repo_root() -> PathBuf {
@@ -81,16 +85,24 @@ fn manifest_rows() -> Vec<ManifestRow> {
         let fields: Vec<&str> = line.split('|').collect();
         assert_eq!(
             fields.len(),
-            5,
-            "manifest row `{line}` must carry 5 |-separated fields: \
-             name|class|scan.pdf|ground-truth.txt|reference-ocr.txt"
+            8,
+            "manifest row `{line}` must carry 8 |-separated fields: \
+             name|class|mode|target-percent|scan.pdf|ground-truth.txt|reference-ocr.txt|metadata.json"
         );
         rows.push(ManifestRow {
             name: fields[0].to_string(),
             class: fields[1].to_string(),
-            scan: fields[2].to_string(),
-            ground_truth: fields[3].to_string(),
-            reference_ocr: fields[4].to_string(),
+            mode: fields[2].to_string(),
+            target_percent: fields[3].parse().unwrap_or_else(|_| {
+                panic!(
+                    "fixture {} has invalid WER target `{}`",
+                    fields[0], fields[3]
+                )
+            }),
+            scan: fields[4].to_string(),
+            ground_truth: fields[5].to_string(),
+            reference_ocr: fields[6].to_string(),
+            metadata: (fields[7] != "-").then(|| fields[7].to_string()),
         });
     }
     assert!(
@@ -104,8 +116,7 @@ fn manifest_rows() -> Vec<ManifestRow> {
 #[test]
 fn gate_script_is_present_and_executable() {
     let path = gate_script_path();
-    let meta = fs::metadata(&path)
-        .unwrap_or_else(|e| panic!("{} must exist: {e}", path.display()));
+    let meta = fs::metadata(&path).unwrap_or_else(|e| panic!("{} must exist: {e}", path.display()));
     assert!(meta.is_file(), "{} must be a regular file", path.display());
     #[cfg(unix)]
     {
@@ -122,9 +133,9 @@ fn gate_script_is_present_and_executable() {
 fn fixture_manifest_rows_are_wellformed() {
     let rows = manifest_rows();
     assert!(
-        rows.len() >= 6,
+        rows.len() >= 11,
         "gate corpus shrank: {} manifested fixtures, expected at least the \
-         5 clean + 1 degraded rows",
+         5 clean + 1 degraded + 5 OCR edge rows",
         rows.len()
     );
     let mut names = HashSet::new();
@@ -138,6 +149,18 @@ fn fixture_manifest_rows_are_wellformed() {
             names.insert(row.name.as_str()),
             "duplicate manifest entry for fixture `{}`",
             row.name
+        );
+        assert!(
+            matches!(row.mode.as_str(), "scanned" | "mixed"),
+            "fixture {}: mode must be scanned or mixed, got `{}`",
+            row.name,
+            row.mode
+        );
+        assert!(
+            row.target_percent > 0.0,
+            "fixture {}: WER target must be positive, got {}",
+            row.name,
+            row.target_percent
         );
         assert!(
             row.scan.ends_with(".pdf"),
@@ -158,8 +181,8 @@ fn clean_and_degraded_classes_are_separated() {
     let rows = manifest_rows();
     for row in &rows {
         assert!(
-            row.class == "clean" || row.class == "degraded",
-            "fixture {}: class `{}` must be `clean` or `degraded`",
+            matches!(row.class.as_str(), "clean" | "stress" | "degraded"),
+            "fixture {}: class `{}` must be `clean`, `stress`, or `degraded`",
             row.name,
             row.class
         );
@@ -175,6 +198,71 @@ fn clean_and_degraded_classes_are_separated() {
         "the degraded 200 DPI fixture must stay manifested as class `degraded` \
          so its expected-high WER is reported without gating"
     );
+    assert!(
+        rows.iter().filter(|r| r.class == "stress").count() >= 5,
+        "the edge corpus must retain at least five stress fixtures"
+    );
+}
+
+#[test]
+fn edge_fixtures_cover_noise_skew_resolution_columns_and_hybrid_routing() {
+    let rows = manifest_rows();
+    let expected = [
+        ("noisy-300dpi", "scanned"),
+        ("skewed-300dpi", "scanned"),
+        ("low-resolution-150dpi", "scanned"),
+        ("multi-column-300dpi", "scanned"),
+        ("mixed-vector-scanned-300dpi", "mixed"),
+    ];
+    for (name, mode) in expected {
+        let row = rows
+            .iter()
+            .find(|row| row.name == name)
+            .unwrap_or_else(|| panic!("missing OCR edge fixture {name}"));
+        assert_eq!(row.class, "stress", "{name} must remain stress coverage");
+        assert_eq!(row.mode, mode, "{name} routing mode drifted");
+        assert!(
+            row.metadata.is_some(),
+            "{name} must carry a provenance sidecar"
+        );
+    }
+}
+
+#[test]
+fn edge_fixture_provenance_sidecars_match_manifest() {
+    let root = corpus_root();
+    for row in manifest_rows()
+        .into_iter()
+        .filter(|row| row.class == "stress")
+    {
+        let metadata_rel = row
+            .metadata
+            .as_deref()
+            .expect("stress fixture must have metadata");
+        let metadata_path = root.join(metadata_rel);
+        let metadata: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&metadata_path).unwrap_or_else(|e| {
+                panic!("{} metadata unreadable: {e}", metadata_path.display())
+            }))
+            .unwrap_or_else(|e| panic!("{} metadata invalid JSON: {e}", metadata_path.display()));
+        assert_eq!(metadata["fixture"], row.name);
+        assert_eq!(metadata["expected_extraction_mode"], row.mode);
+        assert_eq!(metadata["expected_page_type"], row.mode);
+        assert_eq!(
+            metadata["wer_target_percent"].as_f64(),
+            Some(row.target_percent)
+        );
+        for field in ["source", "license", "generator", "generation_method"] {
+            assert!(
+                metadata[field].as_str().is_some() || metadata[field].is_object(),
+                "{} metadata field {field} must be populated",
+                row.name
+            );
+        }
+        assert!(metadata["pdf_sha256"].as_str().is_some());
+        assert!(metadata["ground_truth_sha256"].as_str().is_some());
+        assert!(metadata["dpi"].as_u64().is_some());
+    }
 }
 
 #[test]
@@ -331,9 +419,22 @@ fn recorded_corpus_wer_gate_passes() {
         String::from_utf8_lossy(&output.stdout)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let aggregate_percent = stdout
+        .lines()
+        .find(|line| line.starts_with("acceptance aggregate:"))
+        .and_then(|line| line.split('=').nth(1))
+        .and_then(|value| value.split('%').next())
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("recorded gate output must include aggregate WER:\n{stdout}"));
     assert!(
-        stdout.contains("GATE: PASS") && stdout.contains("<3%"),
-        "recorded gate output must report a passing strict <3% gate:\n{stdout}"
+        stdout.contains("GATE: PASS")
+            && stdout.contains("acceptance aggregate")
+            && stdout.contains("<3%"),
+        "recorded gate output must report a passing strict <3% acceptance aggregate:\n{stdout}"
+    );
+    assert!(
+        aggregate_percent < 3.0,
+        "recorded acceptance aggregate WER must be below 3%, got {aggregate_percent:.2}%"
     );
 }
 

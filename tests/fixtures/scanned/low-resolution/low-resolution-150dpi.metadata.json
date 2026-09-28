@@ -1,0 +1,18 @@
+{
+  "document_type": "low-resolution",
+  "dpi": 150,
+  "expected_extraction_mode": "scanned",
+  "expected_page_type": "scanned",
+  "fixture": "low-resolution-150dpi",
+  "generation_method": {
+    "base": "Pillow text rasterization with DejaVu Serif",
+    "transform": "single 150 by 150 PPI raster"
+  },
+  "generator": "tools/generate_ocr_edge_fixtures.py",
+  "ground_truth_sha256": "f0cdbce0e364ad52202b13a20a7afcce593c9af8f9e9bef1481331c6a612ff3f",
+  "license": "CC0-1.0",
+  "pdf_sha256": "d542d96f8d3596595e75fe2dcd4d1e3a767afef193f2501413d4f1a359b97607",
+  "source": "Original synthetic composition created for the pdftract OCR acceptance corpus.",
+  "wer_class": "stress",
+  "wer_target_percent": 10
+}

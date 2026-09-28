@@ -583,12 +583,14 @@ Independent validation (PyMuPDF 1.27.2): opens clean, 1 page, 2,050 chars.
 
 # Phase 5 OCR acceptance corpus (canonical ledger)
 
-The six manifest rows in `scripts/measure-wer.sh` pair each scanned PDF with
+The eleven manifest rows in `scripts/measure-wer.sh` pair each scanned PDF with
 the ground-truth transcript and a recorded reference OCR output. Clean rows
 are original synthetic CC0-1.0 compositions rendered and rasterized at 300
 DPI; the degraded row is public-domain source material and is reported but
-does not gate the clean WER threshold. SHA-256 values below cover the exact
-committed acceptance assets.
+does not gate the clean WER threshold. The five edge rows are original
+synthetic CC0-1.0 compositions; their metadata sidecars also bind the
+expected extraction mode and generation method. SHA-256 values below cover
+the exact committed acceptance assets.
 
 | Path | Role | License | SHA-256 |
 |------|------|---------|---------|
@@ -610,3 +612,23 @@ committed acceptance assets.
 | scanned/low-quality/degraded-200dpi.pdf | degraded 200 DPI scan (non-gating) | public-domain | ec655a34d2a8b6ca6d510ceafb24338e528c722f16d9f6c1a76e95baf2abd557 |
 | scanned/low-quality/degraded-200dpi.txt | ground-truth transcript | public-domain | 1ccb4f12ac17e2287b3a3d1b5478dbdb7e86771a6805d39ec214a980ba3025cc |
 | scanned/low-quality/degraded-200dpi-ocr.txt | recorded reference OCR | public-domain | 7afd95654eafface718873e344ffc54bedb49cafcfef75362c7dcb322e88eb43 |
+| scanned/noisy/noisy-300dpi.pdf | noisy 300 DPI stress scan | CC0-1.0 | abe6cee2fcb5d677267d5b494ad4d146807894cc5a3aad5b8876a865b54b27f7 |
+| scanned/noisy/noisy-300dpi.txt | ground-truth transcript | CC0-1.0 | 4b454869988c4818868e4118bfbfffe8dd37da25ba46c37a9e6c708c71fa786c |
+| scanned/noisy/noisy-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 343663231911911a585d26a5b72fe4f9dc73c7fa7d90d921b3f6deff093cf061 |
+| scanned/noisy/noisy-300dpi.metadata.json | routing/provenance sidecar | CC0-1.0 | 98d710855b0fde638eca15688c8d877ff3407411ee8422fe8d7ccc80d3bdef51 |
+| scanned/skewed/skewed-300dpi.pdf | skewed 300 DPI stress scan | CC0-1.0 | 9b46f8af633e94631fbf310f2b075f5cf568bb0ea13c444f35285eff36c5d243 |
+| scanned/skewed/skewed-300dpi.txt | ground-truth transcript | CC0-1.0 | 5c0f007b6e4c00e71c9434ef2fe605cf40137ba39d494e5cf037ea2565f03961 |
+| scanned/skewed/skewed-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 70268083d5ddc4c16cd6394e2a132d7cf0d5e03bb1b5b0d5bd2a4a790fbf32cc |
+| scanned/skewed/skewed-300dpi.metadata.json | routing/provenance sidecar | CC0-1.0 | 51e3aeda387b44b7f0ded309ae34cccf8ee15344352278bd913cae763c1dc3b8 |
+| scanned/low-resolution/low-resolution-150dpi.pdf | low-resolution 150 DPI stress scan | CC0-1.0 | d542d96f8d3596595e75fe2dcd4d1e3a767afef193f2501413d4f1a359b97607 |
+| scanned/low-resolution/low-resolution-150dpi.txt | ground-truth transcript | CC0-1.0 | f0cdbce0e364ad52202b13a20a7afcce593c9af8f9e9bef1481331c6a612ff3f |
+| scanned/low-resolution/low-resolution-150dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 19b307293fc26da2dcf98dd7ad671f693ff5171f7afc5c05cb35e52c9cacaa09 |
+| scanned/low-resolution/low-resolution-150dpi.metadata.json | routing/provenance sidecar | CC0-1.0 | e9de07fe763cf3662410d6034192f057b1b93cac73da00eff3190c79d0b66cc0 |
+| scanned/multi-column/multi-column-300dpi.pdf | multi-column 300 DPI stress scan | CC0-1.0 | 9f686177dd5a41b94d2c8ff6033e5dc314bca905e39309bf20eb1d846a150685 |
+| scanned/multi-column/multi-column-300dpi.txt | ground-truth transcript | CC0-1.0 | 3cf12165660d690fb01dc5160c9be171064a79e82eb8a03a6c43620f96be59dc |
+| scanned/multi-column/multi-column-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | e56f13b0488938cb5e6b67c64fc463764af8032f56cb1ce020349a9ddc0d4e5e |
+| scanned/multi-column/multi-column-300dpi.metadata.json | routing/provenance sidecar | CC0-1.0 | 3c09f64f478bb859d247f407bd5097e2c7e7e570d0d3c7f96e2df1f47209af28 |
+| scanned/mixed-vector-scanned/mixed-vector-scanned-300dpi.pdf | mixed vector/raster 300 DPI stress scan | CC0-1.0 | db6c2e390e11187fa37395635dc63f11eef48148c314889ea59e76f042733708 |
+| scanned/mixed-vector-scanned/mixed-vector-scanned-300dpi.txt | raster-body ground-truth transcript | CC0-1.0 | 512335af977c7bba75fcd41974548b91cfc4451ad1c05a793bafe35b76cf44a3 |
+| scanned/mixed-vector-scanned/mixed-vector-scanned-300dpi-ocr.txt | recorded reference OCR | CC0-1.0 | 44f448620ac2cedb9793a9df5446c6e075e8c993da3a71f8e305fe01debe2c5a |
+| scanned/mixed-vector-scanned/mixed-vector-scanned-300dpi.metadata.json | routing/provenance sidecar | CC0-1.0 | 26575b71eed0283bdf6a5bf57021de165a43f9ec949f82ad3f4990f0ce721aa0 |

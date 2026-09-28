@@ -1,0 +1,18 @@
+{
+  "document_type": "multi-column",
+  "dpi": 300,
+  "expected_extraction_mode": "scanned",
+  "expected_page_type": "scanned",
+  "fixture": "multi-column-300dpi",
+  "generation_method": {
+    "base": "Pillow text rasterization with DejaVu Serif",
+    "transform": "two-column page rasterized as one image"
+  },
+  "generator": "tools/generate_ocr_edge_fixtures.py",
+  "ground_truth_sha256": "3cf12165660d690fb01dc5160c9be171064a79e82eb8a03a6c43620f96be59dc",
+  "license": "CC0-1.0",
+  "pdf_sha256": "9f686177dd5a41b94d2c8ff6033e5dc314bca905e39309bf20eb1d846a150685",
+  "source": "Original synthetic composition created for the pdftract OCR acceptance corpus.",
+  "wer_class": "stress",
+  "wer_target_percent": 5
+}

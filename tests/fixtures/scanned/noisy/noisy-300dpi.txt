@@ -1,0 +1,6 @@
+NOISY SCAN ACCEPTANCE FIXTURE
+The archive team tested a noisy paper scan for the OCR acceptance gate.
+Random dust and faint background marks are present, but every sentence is
+still recoverable from the page.
+Document ID NOISE 300. Review date September 28 2026.
+The expected extraction route is scanned OCR and the source is CC0.

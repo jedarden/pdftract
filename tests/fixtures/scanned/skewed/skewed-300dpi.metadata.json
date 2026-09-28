@@ -1,0 +1,18 @@
+{
+  "document_type": "skewed",
+  "dpi": 300,
+  "expected_extraction_mode": "scanned",
+  "expected_page_type": "scanned",
+  "fixture": "skewed-300dpi",
+  "generation_method": {
+    "base": "Pillow text rasterization with DejaVu Serif",
+    "transform": "deterministic 1.35 degree clockwise skew"
+  },
+  "generator": "tools/generate_ocr_edge_fixtures.py",
+  "ground_truth_sha256": "5c0f007b6e4c00e71c9434ef2fe605cf40137ba39d494e5cf037ea2565f03961",
+  "license": "CC0-1.0",
+  "pdf_sha256": "9b46f8af633e94631fbf310f2b075f5cf568bb0ea13c444f35285eff36c5d243",
+  "source": "Original synthetic composition created for the pdftract OCR acceptance corpus.",
+  "wer_class": "stress",
+  "wer_target_percent": 5
+}

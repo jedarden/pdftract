@@ -1,0 +1,5 @@
+LOW RESOLUTION ACCEPTANCE FIXTURE
+This document is intentionally rendered at one hundred fifty dots per inch.
+Small but legible type checks that the OCR path remains useful at low input
+resolution. Document ID LOW 150. Review date September 28 2026.
+The expected extraction route is scanned OCR and the source is CC0.

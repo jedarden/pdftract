@@ -1,0 +1,18 @@
+{
+  "document_type": "mixed-vector-scanned",
+  "dpi": 300,
+  "expected_extraction_mode": "mixed",
+  "expected_page_type": "mixed",
+  "fixture": "mixed-vector-scanned-300dpi",
+  "generation_method": {
+    "base": "Pillow text rasterization with DejaVu Serif",
+    "transform": "left scanned raster plus right vector text"
+  },
+  "generator": "tools/generate_ocr_edge_fixtures.py",
+  "ground_truth_sha256": "512335af977c7bba75fcd41974548b91cfc4451ad1c05a793bafe35b76cf44a3",
+  "license": "CC0-1.0",
+  "pdf_sha256": "db6c2e390e11187fa37395635dc63f11eef48148c314889ea59e76f042733708",
+  "source": "Original synthetic composition created for the pdftract OCR acceptance corpus.",
+  "wer_class": "stress",
+  "wer_target_percent": 5
+}
