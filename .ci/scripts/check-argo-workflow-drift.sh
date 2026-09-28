@@ -10,13 +10,15 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 SOURCE_FILE=${PDFTRACT_CI_SOURCE:-$REPO_ROOT/.ci/argo-workflows/pdftract-ci.yaml}
 FUZZ_SOURCE_FILE=${PDFTRACT_FUZZ_SOURCE:-$REPO_ROOT/.ci/argo-workflows/pdftract-nightly-fuzz.yaml}
+SUPPLY_CHAIN_SOURCE_FILE=${PDFTRACT_SUPPLY_CHAIN_SOURCE:-$REPO_ROOT/.ci/argo-workflows/pdftract-nightly-supply-chain.yaml}
 CONFIG_URL=${DECLARATIVE_CONFIG_REPO_URL:-https://git.ardenone.com/jedarden/declarative-config.git}
 CONFIG_REF=${DECLARATIVE_CONFIG_REF:-main}
 CONFIG_PATH=${DECLARATIVE_CONFIG_WORKFLOW_PATH:-k8s/iad-ci/argo-workflows/pdftract-ci.yaml}
 FUZZ_CONFIG_PATH=${DECLARATIVE_CONFIG_FUZZ_WORKFLOW_PATH:-k8s/iad-ci/argo-workflows/pdftract-nightly-fuzz.yaml}
+SUPPLY_CHAIN_CONFIG_PATH=${DECLARATIVE_CONFIG_SUPPLY_CHAIN_WORKFLOW_PATH:-k8s/iad-ci/argo-workflows/pdftract-nightly-supply-chain.yaml}
 CONFIG_DIR=${DECLARATIVE_CONFIG_DIR:-}
 
-for source_file in "$SOURCE_FILE" "$FUZZ_SOURCE_FILE"; do
+for source_file in "$SOURCE_FILE" "$FUZZ_SOURCE_FILE" "$SUPPLY_CHAIN_SOURCE_FILE"; do
     if [ ! -f "$source_file" ]; then
         echo "ERROR: source Argo manifest not found: $source_file" >&2
         exit 2
@@ -37,14 +39,15 @@ if [ -z "$CONFIG_DIR" ]; then
     # only the commit metadata and the file being validated.
     git clone --quiet --filter=blob:none --sparse --depth 1 \
         --branch "$CONFIG_REF" "$CONFIG_URL" "$CONFIG_DIR"
-    git -C "$CONFIG_DIR" sparse-checkout set --no-cone "/$CONFIG_PATH" "/$FUZZ_CONFIG_PATH"
+    git -C "$CONFIG_DIR" sparse-checkout set --no-cone "/$CONFIG_PATH" "/$FUZZ_CONFIG_PATH" "/$SUPPLY_CHAIN_CONFIG_PATH"
 else
     CONFIG_DIR=$(CDPATH= cd -- "$CONFIG_DIR" && pwd)
 fi
 
 CI_DEPLOYED_FILE="$CONFIG_DIR/$CONFIG_PATH"
 FUZZ_DEPLOYED_FILE="$CONFIG_DIR/$FUZZ_CONFIG_PATH"
-for deployed_file in "$CI_DEPLOYED_FILE" "$FUZZ_DEPLOYED_FILE"; do
+SUPPLY_CHAIN_DEPLOYED_FILE="$CONFIG_DIR/$SUPPLY_CHAIN_CONFIG_PATH"
+for deployed_file in "$CI_DEPLOYED_FILE" "$FUZZ_DEPLOYED_FILE" "$SUPPLY_CHAIN_DEPLOYED_FILE"; do
     if [ ! -f "$deployed_file" ]; then
         echo "ERROR: deployed Argo manifest not found: $deployed_file" >&2
         exit 2
@@ -111,6 +114,9 @@ if ! compare_workflow "pdftract-ci" "$SOURCE_FILE" "$CI_DEPLOYED_FILE"; then
     failed=1
 fi
 if ! compare_workflow "pdftract-nightly-fuzz" "$FUZZ_SOURCE_FILE" "$FUZZ_DEPLOYED_FILE"; then
+    failed=1
+fi
+if ! compare_workflow "pdftract-nightly-supply-chain" "$SUPPLY_CHAIN_SOURCE_FILE" "$SUPPLY_CHAIN_DEPLOYED_FILE"; then
     failed=1
 fi
 

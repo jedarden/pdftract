@@ -2,10 +2,12 @@
 
 The gated Argo manifests have two tracked copies:
 
-- Authoritative sources: `.ci/argo-workflows/pdftract-ci.yaml` and
-  `.ci/argo-workflows/pdftract-nightly-fuzz.yaml` in this repository.
-- Deployed copies: `k8s/iad-ci/argo-workflows/pdftract-ci.yaml` and
-  `k8s/iad-ci/argo-workflows/pdftract-nightly-fuzz.yaml` in
+- Authoritative sources: `.ci/argo-workflows/pdftract-ci.yaml`,
+  `.ci/argo-workflows/pdftract-nightly-fuzz.yaml`, and
+  `.ci/argo-workflows/pdftract-nightly-supply-chain.yaml` in this repository.
+- Deployed copies: `k8s/iad-ci/argo-workflows/pdftract-ci.yaml`,
+  `k8s/iad-ci/argo-workflows/pdftract-nightly-fuzz.yaml`, and
+  `k8s/iad-ci/argo-workflows/pdftract-nightly-supply-chain.yaml` in
   `jedarden/declarative-config`.
 
 The in-tree copies are authoritative workflow contracts. Their deployed copies
@@ -29,7 +31,7 @@ still a failure. Resource changes remain subject to declarative-config's
 
 2. Commit and push the pdftract source change to Forgejo `origin/main`.
 
-3. In a clean checkout of `jedarden/declarative-config`, update only the two
+3. In a clean checkout of `jedarden/declarative-config`, update only the three
    corresponding `k8s/iad-ci/argo-workflows/` manifests from the same source
    revision. Preserve only the existing `resources:` overrides required by the
    cluster; do not hand-edit tasks, gates, images, parameters, schedules, or

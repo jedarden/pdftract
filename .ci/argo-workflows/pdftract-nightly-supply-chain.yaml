@@ -19,9 +19,9 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedules:
-    - "*/1 * * * *" # Temporary one-minute trigger for cluster verification.
+    - "0 3 * * *" # Daily at 03:00 UTC, before the nightly fuzz run.
   timezone: UTC
-  concurrencyPolicy: Allow # Temporary overlap permits a fresh scratch-space run while an earlier PVC-backed attempt drains.
+  concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 7
@@ -30,14 +30,13 @@ spec:
     serviceAccountName: argo-workflow
 
     # Setup (300s) + audit (1800s) + deny (1800s), with scheduling and image
-    # pull headroom. This also bounds a run whose PVC never becomes usable.
+    # pull headroom. This also bounds a run whose scratch volume never becomes usable.
     activeDeadlineSeconds: 5400
 
     # iad-ci does not expose an artifact repository. Keep pods until the
     # workflow is terminal, then delay pod GC so kubectl logs remains available
-    # for one day. PVCs are deleted at workflow completion and are independently
-    # bounded below; workflow status survives for 3 days (success) or 7 days
-    # (failure) for terminal-phase and exit-code evidence.
+    # for one day. Scratch volumes are bounded below; workflow status survives
+    # for 3 days (success) or 7 days (failure) for terminal-phase and exit-code evidence.
     podGC:
       strategy: OnWorkflowCompletion
       deleteDelayDuration: 24h
@@ -131,7 +130,7 @@ spec:
               memory: 256Mi
             limits:
               cpu: 1000m
-              memory: 1Gi
+              memory: 512Mi
 
       - name: cargo-audit
         activeDeadlineSeconds: 1800
@@ -158,8 +157,8 @@ spec:
               cpu: 500m
               memory: 1Gi
             limits:
-              cpu: 2500m
-              memory: 4Gi
+              cpu: 1500m
+              memory: 2Gi
 
       - name: cargo-deny
         activeDeadlineSeconds: 1800
@@ -186,8 +185,8 @@ spec:
               cpu: 500m
               memory: 1Gi
             limits:
-              cpu: 2500m
-              memory: 4Gi
+              cpu: 1500m
+              memory: 2Gi
 
       - name: policy-gate
         activeDeadlineSeconds: 120
