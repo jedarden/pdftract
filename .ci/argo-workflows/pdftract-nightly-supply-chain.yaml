@@ -19,9 +19,9 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedules:
-    - "*/1 * * * *" # Temporary verification trigger while capturing one run.
+    - "0 3 * * *" # Daily at 03:00 UTC, before the nightly fuzz run.
   timezone: UTC
-  concurrencyPolicy: Allow # Temporary overlap permits one corrected verification run while stale attempts drain.
+  concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 7
