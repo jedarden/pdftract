@@ -597,10 +597,17 @@ mod tests {
             captured
         };
 
-        let captured = capture(&source);
-        // The explicit cache rebuild inside `with_default` makes the capture
-        // independent of which thread first evaluates this callsite and keeps
-        // the one-event assertion meaningful under the parallel test runner.
+        let mut captured = capture(&source);
+        // The explicit cache rebuild normally makes the capture independent
+        // of which thread first evaluates this callsite. If the competing
+        // bare-thread test wins the callsite's first registration between
+        // that rebuild and this test's failing prefetch, the first round can
+        // still be empty. One retry is sufficient: the callsite is then
+        // registered, and constructing the second dispatcher rebuilds its
+        // interest with this capturing subscriber included.
+        if captured.lock().unwrap().is_empty() {
+            captured = capture(&source);
+        }
         let events = captured.lock().unwrap();
         assert_eq!(
             events.len(),

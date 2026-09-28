@@ -28,6 +28,12 @@ dispatcher churn cannot replace the cache with a static `never` while it is
 registered. No sleep or timing assumption is used, and production
 `MmapSource::prefetch` is unchanged.
 
+If a bare-thread test wins the callsite's first registration immediately
+after that rebuild, the capture retries once when the first round is empty.
+The retry is bounded and not timing-based: the first round has completed the
+callsite registration, so constructing the second dispatcher rebuilds the
+registered callsite with the capturing subscriber included.
+
 The test retains the one-event/zero-event split and field-level assertions:
 the in-range prefetch must capture zero events, while the past-EOF prefetch
 must capture exactly one TRACE event containing offset, length, file_len,
