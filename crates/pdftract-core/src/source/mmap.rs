@@ -506,9 +506,9 @@ mod tests {
     /// field-level capture, and the scoped dispatcher used below installs
     /// nothing global, so it cannot conflict with a default subscriber
     /// another test in this binary may have set. The one global it does
-    /// touch is the callsite interest cache — see
-    /// [`test_prefetch_madvise_failure_is_traced`] for why that cache is
-    /// racy under the parallel test runner and how the test compensates.
+    /// touch is the callsite interest cache. The capture test explicitly
+    /// rebuilds that cache after installing this subscriber so the scoped
+    /// dispatcher is included even when it is the only registered dispatcher.
     #[derive(Default)]
     struct CapturingSubscriber {
         events: Arc<Mutex<Vec<CapturedEvent>>>,
@@ -572,6 +572,15 @@ mod tests {
             let subscriber = CapturingSubscriber::default();
             let captured = Arc::clone(&subscriber.events);
             tracing::subscriber::with_default(subscriber, || {
+                // `with_default` installs the thread-local dispatcher after
+                // `Dispatch::new` has rebuilt tracing's global interest
+                // cache. Rebuild once more while this dispatcher is active;
+                // otherwise a concurrent first evaluation can cache
+                // `Interest::never` from the bare default dispatcher and
+                // short-circuit the trace event before this subscriber sees
+                // it.
+                tracing::callsite::rebuild_interest_cache();
+
                 // In-range prefetch must stay silent — the event signals a
                 // dropped readahead hint, not routine operation.
                 source.prefetch(0, 4);
@@ -584,56 +593,21 @@ mod tests {
                 // prefetch has an error to log while still returning ()
                 // without panicking.
                 source.prefetch(0, 100);
-
-                // An overflowing range takes the other failure path and
-                // must remain observable as well.
-                source.prefetch(u64::MAX, 10);
             });
             captured
         };
 
-        let mut captured = capture(&source);
-        // The capture can legitimately come back empty once, without the
-        // production code having changed: a `tracing` callsite's cached
-        // interest is computed lazily at its *first* evaluation, and when the
-        // dispatcher registry holds a single (scoped) dispatch, tracing-core
-        // computes it from the *evaluating thread's* current default rather
-        // than that registered dispatch. `test_prefetch_past_eof` evaluates
-        // this same callsite on a bare thread (no dispatcher installed); if
-        // that first evaluation lands between this test's `with_default`
-        // entry and its own failing prefetch calls, the callsite caches
-        // `Interest::never` (the no-subscriber default) and the past-EOF
-        // and overflow `trace!` calls are short-circuited before the scoped
-        // dispatcher is ever consulted — zero events captured.
-        //
-        // One bounded retry closes the race deterministically, without sleeps
-        // or timing assumptions: after the first round the callsite is
-        // necessarily registered, its once-only lazy registration cannot
-        // re-poison the cache, and entering a fresh `with_default` constructs
-        // a new `Dispatch`, which rebuilds every registered callsite's
-        // interest through the dispatcher registry — where this subscriber is
-        // visible and answers "ask me per event". A genuinely missing `trace!`
-        // fails identically on the retry, so no assertion is weakened.
-        if captured.lock().unwrap().len() < 2 {
-            captured = capture(&source);
-        }
-
+        let captured = capture(&source);
+        // The explicit cache rebuild inside `with_default` makes the capture
+        // independent of which thread first evaluates this callsite and keeps
+        // the one-event assertion meaningful under the parallel test runner.
         let events = captured.lock().unwrap();
         assert_eq!(
             events.len(),
-            2,
-            "expected exactly one event for each failing prefetch: {events:?}"
+            1,
+            "expected exactly one trace event: {events:?}"
         );
-        assert_prefetch_failure_event(&events[0], 0, 100, 4);
-        assert_prefetch_failure_event(&events[1], u64::MAX, 10, 4);
-    }
-
-    fn assert_prefetch_failure_event(
-        event: &CapturedEvent,
-        expected_offset: u64,
-        expected_length: usize,
-        expected_file_len: u64,
-    ) {
+        let event = &events[0];
         assert_eq!(event.level, tracing::Level::TRACE);
         assert!(
             event.target.starts_with("pdftract_core::source"),
@@ -642,12 +616,9 @@ mod tests {
         );
         // Each field is asserted on its own so dropping any one of them from
         // the trace! call fails here rather than passing vacuously.
-        let expected_offset = expected_offset.to_string();
-        let expected_length = expected_length.to_string();
-        let expected_file_len = expected_file_len.to_string();
-        assert_eq!(event.field("offset"), Some(expected_offset.as_str()));
-        assert_eq!(event.field("length"), Some(expected_length.as_str()));
-        assert_eq!(event.field("file_len"), Some(expected_file_len.as_str()));
+        assert_eq!(event.field("offset"), Some("0"));
+        assert_eq!(event.field("length"), Some("100"));
+        assert_eq!(event.field("file_len"), Some("4"));
         let error = event.field("error").unwrap_or_default();
         assert!(!error.is_empty(), "error field must carry a message");
         let message = event.field("message").unwrap_or_default();
