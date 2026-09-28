@@ -217,6 +217,11 @@ fn structured_diagnostic_round_trips_without_losing_fields() {
     let structured = DiagnosticJson::from(&typed);
 
     let wire = serde_json::to_string(&structured).expect("diagnostic JSON serializes");
+    assert_eq!(
+        wire,
+        r#"{"code":"STREAM_BOMB","message":"decompression limit exceeded after 4096 bytes","severity":"error","page_index":7,"location":{"object_number":12,"generation_number":3},"hint":"Increase --max-decompress-gb if the PDF is trusted; otherwise treat as a hostile file"}"#,
+        "diagnostic JSON field order and omission rules must be deterministic"
+    );
     let decoded: DiagnosticJson =
         serde_json::from_str(&wire).expect("diagnostic JSON deserializes");
     assert_eq!(
@@ -355,6 +360,90 @@ fn published_json_and_ndjson_examples_match_wire_shapes() {
         for (index, error) in footer.errors.iter().enumerate() {
             assert_documented_diagnostic(error, &format!("{path} footer error {index}"));
         }
+    }
+}
+
+#[test]
+fn null_optional_fields_are_tolerated_on_input_and_never_produced_on_output() {
+    // docs/notes/diagnostics-contract.md, "JSON/NDJSON representation": the
+    // optional fields are omitted — never serialized as `null` — while
+    // deserialization "uses `#[serde(default)]`-style optional handling, so
+    // `null` is tolerated on input but never produced on output". Both
+    // spellings of a document-level diagnostic (explicit nulls and absent
+    // keys) must decode to the same envelope, and re-serializing that
+    // envelope must omit the keys again.
+    let with_nulls: DiagnosticJson = serde_json::from_value(serde_json::json!({
+        "code": "XREF_REPAIRED",
+        "message": "Xref was reconstructed via forward scan",
+        "severity": "info",
+        "page_index": null,
+        "location": null,
+        "hint": null
+    }))
+    .expect("explicit-null optional fields must deserialize");
+    let with_absent: DiagnosticJson = serde_json::from_value(serde_json::json!({
+        "code": "XREF_REPAIRED",
+        "message": "Xref was reconstructed via forward scan",
+        "severity": "info"
+    }))
+    .expect("absent optional fields must deserialize");
+
+    assert_eq!(with_nulls.page_index, None);
+    assert_eq!(with_nulls.location, None);
+    assert_eq!(with_nulls.hint, None);
+    assert_eq!(
+        with_nulls, with_absent,
+        "an explicit-null diagnostic and the same diagnostic with the keys \
+         absent must decode identically"
+    );
+
+    let value = serde_json::to_value(&with_nulls).unwrap();
+    assert_no_nulls(&value);
+    for optional in ["page_index", "location", "hint"] {
+        assert!(
+            value.get(optional).is_none(),
+            "`{optional}` decoded from null must re-serialize omitted (not null), \
+             got: {value}"
+        );
+    }
+
+    // A page-scoped diagnostic keeps the context it does carry while the
+    // remaining optional fields arrive as null.
+    let page_scoped: DiagnosticJson = serde_json::from_value(serde_json::json!({
+        "code": "PAGE_OUT_OF_RANGE",
+        "message": "page 12 exceeds document page count (10)",
+        "severity": "error",
+        "page_index": 11,
+        "location": null,
+        "hint": null
+    }))
+    .expect("a mix of present and null optional fields must deserialize");
+    assert_eq!(page_scoped.page_index, Some(11));
+    assert_eq!(page_scoped.location, None);
+    assert_eq!(page_scoped.hint, None);
+    let value = serde_json::to_value(&page_scoped).unwrap();
+    assert_no_nulls(&value);
+    assert_eq!(value["page_index"], 11);
+    for optional in ["location", "hint"] {
+        assert!(
+            value.get(optional).is_none(),
+            "`{optional}` decoded from null must re-serialize omitted, got: {value}"
+        );
+    }
+
+    // The always-present fields have no fallback: a null there is a malformed
+    // diagnostic, not one to paper over with defaults.
+    for required in ["code", "message", "severity"] {
+        let mut malformed = serde_json::json!({
+            "code": "XREF_REPAIRED",
+            "message": "Xref was reconstructed via forward scan",
+            "severity": "info"
+        });
+        malformed[required] = serde_json::Value::Null;
+        assert!(
+            serde_json::from_value::<DiagnosticJson>(malformed).is_err(),
+            "null `{required}` must be rejected — the field is always present"
+        );
     }
 }
 
