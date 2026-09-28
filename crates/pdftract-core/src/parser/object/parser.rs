@@ -71,7 +71,9 @@ impl<'a> ObjectParser<'a> {
     fn attach_object_context(&mut self, start: usize, object_ref: ObjRef) {
         let object_ref = crate::diagnostics::ObjRef::new(object_ref.object, object_ref.generation);
         for diagnostic in &mut self.diagnostics[start..] {
-            diagnostic.object_ref = Some(object_ref);
+            *diagnostic = diagnostic
+                .clone()
+                .with_available_context(Some(object_ref), None);
         }
     }
 
@@ -1244,6 +1246,34 @@ mod tests {
             Some(crate::diagnostics::ObjRef::new(7, 2))
         );
         assert_eq!(diagnostic.byte_offset, None);
+    }
+
+    #[test]
+    fn indirect_body_forwarding_preserves_existing_object_location() {
+        let mut parser = ObjectParser::new(b"");
+        parser.diagnostics.push(
+            Diag::with_static_no_offset(
+                DiagCode::StructInvalidDictValue,
+                "inner object diagnostic",
+            )
+            .with_object_ref(crate::diagnostics::ObjRef::new(2, 1)),
+        );
+        parser.attach_object_context(0, ObjRef::new(7, 2));
+        let diagnostic = parser.diagnostics.first().expect("diagnostic should exist");
+
+        assert_eq!(
+            diagnostic.object_ref,
+            Some(crate::diagnostics::ObjRef::new(2, 1))
+        );
+        assert_eq!(
+            crate::diagnostics_compat::to_legacy_string(&diagnostic),
+            "inner object diagnostic"
+        );
+        assert_eq!(diagnostic.severity(), crate::diagnostics::Severity::Warning);
+        assert_eq!(
+            diagnostic.hint(),
+            DiagCode::StructInvalidDictValue.policy().hint
+        );
     }
 
     #[test]

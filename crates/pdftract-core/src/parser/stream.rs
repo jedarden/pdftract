@@ -3666,10 +3666,12 @@ fn with_stream_context(
     page_index: Option<usize>,
 ) -> Diagnostic {
     diagnostic
-        .with_object_ref_parts_opt(
-            object_ref.map(|reference| (reference.object, reference.generation)),
+        .with_available_context(
+            object_ref.map(|reference| {
+                crate::diagnostics::ObjRef::new(reference.object, reference.generation)
+            }),
+            page_index,
         )
-        .with_page_index_opt(page_index)
 }
 
 fn with_stream_contexts(
@@ -4177,7 +4179,40 @@ fn decode_stream_impl(
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use crate::diagnostics::{DiagCode, Severity};
+    use crate::diagnostics_compat::to_legacy_string;
     use indexmap::IndexMap;
+
+    #[test]
+    fn stream_context_attaches_available_fields_without_replacing_precise_fields() {
+        let document_level = Diagnostic::with_static_no_offset(
+            DiagCode::StreamDecodeError,
+            "stream could not be decoded",
+        );
+        let attached = with_stream_context(document_level, Some(ObjRef::new(12, 4)), Some(6));
+        assert_eq!(attached.object_ref, Some(crate::diagnostics::ObjRef::new(12, 4)));
+        assert_eq!(attached.page_index, Some(6));
+        assert_eq!(attached.severity(), Severity::Warning);
+        assert_eq!(
+            attached.hint(),
+            DiagCode::StreamDecodeError.policy().hint,
+        );
+        assert_eq!(to_legacy_string(&attached), "stream could not be decoded");
+
+        let precise = Diagnostic::with_static_no_offset(
+            DiagCode::StreamDecodeError,
+            "inner stream diagnostic",
+        )
+        .with_object_ref(crate::diagnostics::ObjRef::new(2, 1))
+        .with_page_index(3);
+        let forwarded = with_stream_context(precise, Some(ObjRef::new(99, 0)), Some(10));
+        assert_eq!(
+            forwarded.object_ref,
+            Some(crate::diagnostics::ObjRef::new(2, 1))
+        );
+        assert_eq!(forwarded.page_index, Some(3));
+        assert_eq!(to_legacy_string(&forwarded), "inner stream diagnostic");
+    }
 
     #[test]
     fn test_extraction_options_default() {
