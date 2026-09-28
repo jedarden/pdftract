@@ -279,8 +279,12 @@ spec:
 
           - name: brew-verify
             template: brew-verify
-            dependencies: [versioned-tag-gate, wait-for-mirror]
+            dependencies: [versioned-tag-gate, verify-release-metadata, wait-for-mirror]
             when: "{{tasks.versioned-tag-gate.outputs.parameters.proceed}} == true && {{workflow.parameters.dry_run}} != true"
+            arguments:
+              parameters:
+                - name: source-archive-sha256
+                  value: "{{tasks.verify-release-metadata.outputs.parameters.source-archive-sha256}}"
 
     # === Versioned-Tag Gate ===
     # Publishes to the tap only for immutable, non-prerelease versioned tags
@@ -784,10 +788,18 @@ spec:
     # public, so no credential is needed here. The formula builds from
     # source (depends_on "rust"), so brew pulls the rust toolchain first --
     # hence the generous deadline and memory.
+    # Before installing, this step checks the formula exposed by the
+    # client-facing tap for the exact versioned archive URL, release version,
+    # and signed source-archive checksum handoff. A missing or floating
+    # Formula/pdftract.rb therefore fails before brew can report an install
+    # result.
     #
     # Retry: limit 1 (2 attempts) -- brew downloads are network-flaky;
     # a retry re-installs into a fresh container and cannot double-publish.
     - name: brew-verify
+      inputs:
+        parameters:
+          - name: source-archive-sha256
       activeDeadlineSeconds: 5400
       retryStrategy:
         limit: "1"
@@ -808,6 +820,25 @@ spec:
             echo "=== brew verify: tapping jedarden/tap from github.com/${TAP_REPO} ==="
             brew tap jedarden/tap "https://github.com/${TAP_REPO}.git"
 
+            SOURCE_ARCHIVE_SHA256="{{inputs.parameters.source-archive-sha256}}"
+            SOURCE_ARCHIVE_URL="https://github.com/jedarden/pdftract/archive/refs/tags/v${VERSION}.tar.gz"
+            TAP_PATH="$(brew --repo jedarden/tap)"
+            FORMULA_PATH="${TAP_PATH}/Formula/pdftract.rb"
+            [ -f "${FORMULA_PATH}" ] \
+              || { echo "ERROR: client-facing tap is missing Formula/pdftract.rb" >&2; exit 1; }
+            [ "$(grep -c '^  url "' "${FORMULA_PATH}")" -eq 1 ] \
+              || { echo "ERROR: formula must contain exactly one source URL" >&2; exit 1; }
+            [ "$(grep -c '^  version "' "${FORMULA_PATH}")" -eq 1 ] \
+              || { echo "ERROR: formula must contain exactly one version" >&2; exit 1; }
+            [ "$(grep -c '^  sha256 "' "${FORMULA_PATH}")" -eq 1 ] \
+              || { echo "ERROR: formula must contain exactly one checksum" >&2; exit 1; }
+            grep -Fqx "  url \"${SOURCE_ARCHIVE_URL}\"" "${FORMULA_PATH}" \
+              || { echo "ERROR: formula source URL is not the immutable ${SOURCE_ARCHIVE_URL}" >&2; exit 1; }
+            grep -Fqx "  version \"${VERSION}\"" "${FORMULA_PATH}" \
+              || { echo "ERROR: formula version is not ${VERSION}" >&2; exit 1; }
+            grep -Fqx "  sha256 \"${SOURCE_ARCHIVE_SHA256}\"" "${FORMULA_PATH}" \
+              || { echo "ERROR: formula checksum does not match the signed release handoff" >&2; exit 1; }
+            echo "=== formula verify PASS: ${FORMULA_PATH} is pinned to ${VERSION}, ${SOURCE_ARCHIVE_URL}, and the signed checksum ==="
             echo "=== brew install jedarden/tap/pdftract ==="
             brew install jedarden/tap/pdftract
 
@@ -816,6 +847,9 @@ spec:
             echo "${INSTALLED_VERSION}"
             echo "${INSTALLED_VERSION}" | grep -q "${VERSION}" \
               || { echo "ERROR: installed pdftract does not report ${VERSION}" >&2; exit 1; }
+
+            [ "${INSTALLED_VERSION}" = "pdftract ${VERSION}" ] \
+              || { echo "ERROR: installed pdftract version is not exactly pdftract ${VERSION}" >&2; exit 1; }
 
             echo "=== brew verify PASS: pdftract ${VERSION} installed and runs ==="
         resources:

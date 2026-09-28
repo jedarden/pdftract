@@ -37,6 +37,7 @@ class HomebrewWorkflowContractTests(unittest.TestCase):
         cls.wait = cls.homebrew.split("    # === Wait for Mirror ===", 1)[1].split(
             "    # === Brew Install Verification ===", 1
         )[0]
+        cls.brew = cls.homebrew.split("    # === Brew Install Verification ===", 1)[1]
 
     def _run_gate(self, tag: str) -> tuple[subprocess.CompletedProcess[str], Path]:
         """Run the checked-in gate shell with an isolated proceed output."""
@@ -398,6 +399,129 @@ esac
             self.assertIn("GitHub mirror did not reflect tap commit", result.stderr)
             self.assertIn("within 5 minutes", result.stderr)
             self.assertNotIn("Mirror reflects", result.stdout)
+
+    def test_brew_verification_is_after_mirror_and_checks_exact_formula(self) -> None:
+        homebrew_dag = self.homebrew.split(
+            "    - name: homebrew-pipeline\n", 1
+        )[1].split("    # === Versioned-Tag Gate ===", 1)[0]
+        positions = {
+            name: homebrew_dag.index(f"          - name: {name}\n")
+            for name in (
+                "verify-release-metadata",
+                "push-tap",
+                "wait-for-mirror",
+                "brew-verify",
+            )
+        }
+        self.assertLess(positions["verify-release-metadata"], positions["push-tap"])
+        self.assertLess(positions["push-tap"], positions["wait-for-mirror"])
+        self.assertLess(positions["wait-for-mirror"], positions["brew-verify"])
+        self.assertIn(
+            "dependencies: [versioned-tag-gate, verify-release-metadata, wait-for-mirror]",
+            homebrew_dag,
+        )
+        self.assertIn(
+            "{{tasks.verify-release-metadata.outputs.parameters.source-archive-sha256}}",
+            homebrew_dag,
+        )
+        self.assertIn(
+            'brew tap jedarden/tap "https://github.com/${TAP_REPO}.git"', self.brew
+        )
+        self.assertIn("brew install jedarden/tap/pdftract", self.brew)
+        self.assertIn("pdftract --version", self.brew)
+        self.assertIn('grep -Fqx "  url \\"${SOURCE_ARCHIVE_URL}\\""', self.brew)
+        self.assertIn('grep -Fqx "  version \\"${VERSION}\\""', self.brew)
+        self.assertIn(
+            'grep -Fqx "  sha256 \\"${SOURCE_ARCHIVE_SHA256}\\""', self.brew
+        )
+        self.assertIn('[ "${INSTALLED_VERSION}" = "pdftract ${VERSION}" ]', self.brew)
+        self.assertIn("retryPolicy: OnFailure", self.brew)
+
+    def _run_brew_verification(
+        self, formula: str | None, installed_version: str = "pdftract 1.2.3"
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        digest = "a" * 64
+        script = self.brew.split("          - |", 1)[1].split(
+            "        resources:", 1
+        )[0]
+        script = textwrap.dedent(script)
+        script = script.replace(
+            'VERSION="{{workflow.parameters.version}}"', 'VERSION="1.2.3"'
+        )
+        script = script.replace(
+            'SOURCE_ARCHIVE_SHA256="{{inputs.parameters.source-archive-sha256}}"',
+            f'SOURCE_ARCHIVE_SHA256="{digest}"',
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            tap = root / "tap"
+            formula_path = tap / "Formula" / "pdftract.rb"
+            if formula is not None:
+                formula_path.parent.mkdir(parents=True)
+                formula_path.write_text(formula, encoding="utf-8")
+
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_brew = fake_bin / "brew"
+            fake_brew.write_text(
+                f"""#!/bin/sh
+echo "$*" >> "{root / "brew.log"}"
+case "$1" in
+  --repo) echo "{tap}" ;;
+  tap|install) exit 0 ;;
+  *) exit 1 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_brew.chmod(0o700)
+            fake_pdftract = fake_bin / "pdftract"
+            fake_pdftract.write_text(
+                f"#!/bin/sh\nprintf '%s\\n' '{installed_version}'\n",
+                encoding="utf-8",
+            )
+            fake_pdftract.chmod(0o700)
+
+            result = subprocess.run(
+                ["sh", "-c", script],
+                env={
+                    **os.environ,
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+            )
+            log = (root / "brew.log").read_text(encoding="utf-8")
+            return result, log
+
+    def test_brew_verification_rejects_missing_or_floating_formula(self) -> None:
+        digest = "a" * 64
+        valid_url = (
+            "https://github.com/jedarden/pdftract/archive/refs/tags/v1.2.3.tar.gz"
+        )
+        valid_formula = (
+            f'  url "{valid_url}"\n'
+            '  version "1.2.3"\n'
+            f'  sha256 "{digest}"\n'
+        )
+
+        result, log = self._run_brew_verification(valid_formula)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("formula verify PASS", result.stdout)
+        self.assertIn("install", log)
+
+        missing, log = self._run_brew_verification(None)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("missing Formula/pdftract.rb", missing.stderr)
+        self.assertNotIn("install", log)
+
+        floating, log = self._run_brew_verification(
+            valid_formula.replace("/refs/tags/v1.2.3", "/refs/heads/main")
+        )
+        self.assertNotEqual(floating.returncode, 0)
+        self.assertIn("immutable", floating.stderr)
+        self.assertNotIn("install", log)
 
     def test_publication_is_pinned_to_the_approved_tap_and_formula_path(self) -> None:
         self.assertIn(
