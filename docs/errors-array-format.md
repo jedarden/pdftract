@@ -1,6 +1,6 @@
 # Errors Array Format and Test Integration Guide
 
-This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The serialized `DiagnosticJson` object is canonical; the string array is a message-only compatibility surface. The complete code registry is maintained in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
+This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The serialized `DiagnosticJson` object is canonical: catalog diagnostics have the same object fields, values, and order in compact metadata, full JSON `errors`, and the NDJSON footer `errors` array. The string array is a message-only compatibility surface. The complete code registry is maintained in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
 
 ## Overview
 
@@ -77,6 +77,12 @@ The synthetic failed-page record is
 `{"code":"page_extraction_error","severity":"error","message":"...","page_index":N}`;
 `page_index` is the zero-based failed-page index. This lowercase code is not a
 `DiagCode` and never appears in either metadata array.
+
+For every catalog diagnostic, the object in `metadata.diagnostics_detailed` is
+the same structured value copied to full JSON `errors` and to the footer after
+any synthetic page-failure records. Consumers can therefore use one decoder
+for all three catalog-diagnostic surfaces. `byte_offset` is retained only on
+the in-process `Diagnostic` and is never a serialized field.
 
 The compatibility guarantee for `metadata.diagnostics` is limited to the
 message bytes, emission order, length, and duplicates. Code, severity,
@@ -266,10 +272,11 @@ for (s, d) in result.metadata.diagnostics.iter()
 
 ## Diagnostic Categories and Codes
 
-The complete 113-code registry is maintained in
-[`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
-That registry is the only normative source for code names, severities, phase
-origins, hints, reserved/feature-gated status, and the code-to-emission
+The complete registry is maintained in
+[`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md):
+113 rows in the default build, plus two `CJK_*` rows when the `cjk` feature is
+enabled. That registry is the only normative source for code names, severities,
+phase origins, hints, reserved/feature-gated status, and the code-to-emission
 context profile. This guide intentionally does not repeat a partial list: a
 code is documented once, so the two guides cannot drift again.
 

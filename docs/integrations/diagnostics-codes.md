@@ -4,8 +4,10 @@ This document is the normative diagnostic contract. The canonical
 machine-readable surface is the serialized `DiagnosticJson` object (the
 in-process equivalent is `Diagnostic`): each catalog-backed entry has a stable
 `SCREAMING_SNAKE_CASE` identifier, a human-readable message, a severity level,
-and a catalog hint. The legacy string array remains available as a compatibility
-projection; it is not a competing diagnostic schema.
+and a catalog hint. The same object shape is used unchanged in compact
+metadata, full JSON `errors`, and the NDJSON footer `errors` array. The legacy
+string array remains available as a compatibility projection; it is not a
+competing diagnostic schema.
 
 ## Contract decision
 
@@ -53,6 +55,14 @@ both decode as unknown; re-serializing either form omits the field again. The
 required `code`, `message`, and `severity` fields must not be `null` or omitted.
 These field names, types, omission rules, and the severity enum are pinned by
 `crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
+
+For catalog diagnostics, the structured object is serialized once and copied
+through each structured surface: `metadata.diagnostics_detailed`, full JSON
+`errors`, and the diagnostic portion of the NDJSON footer `errors` are equal in
+field names, values, and order. `byte_offset` is in-process-only and is never
+added to any of those objects. The only NDJSON exception is the synthetic
+`page_extraction_error` record described below; it represents a failed page and
+is not a catalog `DiagCode`.
 
 ### In-process byte-offset formatting
 
@@ -172,8 +182,10 @@ reservation: it is not required to appear until that implementation/feature is
 enabled, but its wire fields and profile are already fixed.
 
 The complete inventory below assigns every code in the catalog exactly one
-profile and names its emission owner. The severity, phase, description, and
-exact hint for each name remain in the catalog tables that follow.
+profile and names its emission owner. The default build has 113 catalog rows;
+the two `CJK_*` rows are gated by the `cjk` feature, so an all-features build
+has 115 active rows. The severity, phase, description, and exact hint for each
+name remain in the catalog tables that follow.
 
 | Profile | Emission owner | Codes |
 |---------|----------------|-------|
