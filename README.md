@@ -98,20 +98,23 @@ usable until a real release has been published and independently verified.
 | Homebrew | `jedarden/homebrew-tap` | Pending: the tap is reachable, but `Formula/pdftract.rb` is not published; see the [verification record](packaging/homebrew/README.md#current-publication-verification) below before treating Homebrew as available |
 | Hosted user guide | `pdftract.com` | Domain is not a supported channel |
 
-**Homebrew verification record (2026-09-27).** The client-facing
+**Homebrew verification record (2026-09-28).** The client-facing
 `jedarden/homebrew-tap` main branch is at `c7aec641d5cf9e638285fdbc706499f19495f6a2`
 and contains only `Formula/.gitkeep`; `Formula/pdftract.rb` is absent. The
-candidate `v1.2.0` source archive fetched successfully and
+candidate `v1.2.0` source archive URL fetched successfully and
 `sha256sum` returned
 `db8390ced458a1e3d3816e43a3488a3e643bcb43a8ac7404f1de38b28f503e75`, but the
-signed `SHA256SUMS` handoff returned HTTP 404, and the tag's `Cargo.toml`
-declares `0.1.0` rather than `1.2.0`. The intended verification command —
+signed `SHA256SUMS`, `SHA256SUMS.sig`, and `SHA256SUMS.pem` assets each returned
+HTTP 404. Because the formula is absent, no formula URL/checksum binding can be
+verified; the tag's `Cargo.toml` also declares `0.1.0` rather than `1.2.0`. The
+approved verification command —
 `brew tap jedarden/tap https://github.com/jedarden/homebrew-tap.git && brew install jedarden/tap/pdftract && pdftract --version`
-— was not run because `WARN command -v brew` exited 1; therefore there is no
-Homebrew `pdftract --version` result (the local source smoke reports
-`pdftract 0.1.0`). Homebrew remains pending publication of a correctly
-versioned signed release handoff and `Formula/pdftract.rb`, followed by the
-same smoke test in a Homebrew-capable environment.
+— was attempted but exited 127 (`brew: command not found`) after `WARN command
+-v brew` exited 1. Therefore there is no Homebrew `pdftract --version` result;
+the clean committed source smoke reports `pdftract 0.1.0`. Homebrew remains
+pending publication of a correctly versioned signed release handoff and
+`Formula/pdftract.rb`, followed by the same smoke test in a Homebrew-capable
+environment.
 
 The locally supported Docker variants are `default` and `full`; their build and
 smoke-test contract is automated by

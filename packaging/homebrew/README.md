@@ -112,7 +112,7 @@ for the same tag are idempotent (unchanged formula ⇒ no-op push).
 
 ### Current publication verification
 
-The client-facing tap was checked on 2026-09-27. It is reachable, but its
+The client-facing tap was checked on 2026-09-28. It is reachable, but its
 `main` branch (`c7aec641d5cf9e638285fdbc706499f19495f6a2`) contains only
 `Formula/.gitkeep`; no `Formula/pdftract.rb` is published. The source archive
 URL for the versioned `v1.2.0` tag is reachable and hashes to
@@ -120,12 +120,18 @@ URL for the versioned `v1.2.0` tag is reachable and hashes to
 is not evidence of a published formula or a completed Homebrew install. The
 corresponding `SHA256SUMS`, `SHA256SUMS.sig`, and `SHA256SUMS.pem` release assets
 are also not published, so the signed release handoff required to render the
-formula is incomplete.
+formula is incomplete. Since the formula is absent, no versioned formula
+archive URL or checksum binding can be independently verified.
 
 The CLI now accepts `--version`, and the local source smoke prints
 `pdftract 0.1.0`. The `v1.2.0` tag still declares workspace version `0.1.0`,
 so a future formula rendered as version `1.2.0` must not be treated as
-verified until release metadata and the formula agree.
+verified until release metadata and the formula agree. The approved command
+`brew tap jedarden/tap https://github.com/jedarden/homebrew-tap.git && brew install
+jedarden/tap/pdftract && pdftract --version` was attempted on this host but
+returned 127 because `brew` is not installed (`command -v brew` returned 1).
+The clean committed source smoke command returned 0 with `pdftract 0.1.0`;
+there is no Homebrew-reported version.
 
 Verification evidence and the exact commands are recorded on bead
 `pdftract-ed8d28bf`. The remaining blockers are publication of the signed release
