@@ -57,3 +57,12 @@ is not green at this repository baseline: it reports unrelated deny-level
 lint errors in existing layout, parser, document, and Type3 files; no clippy
 diagnostic was reported for the changed mmap test. The initial filtered test
 run on the shared checkout also passed 25/25.
+
+The first ten-run set above preceded the final retry refinement. During the
+next clean-HEAD check at `a665d848`, parallel run 2 reproduced the original
+empty capture (24/25), which established that rebuilding the cache alone did
+not cover a first-registration race. The final source commit `671f5382`
+adds the bounded empty-capture retry. Its clean extraction
+`/tmp/tmp.RGwaXhefss` passed the definition-of-done script and all ten
+acceptance runs: five parallel runs and five serial runs, each 25 passed,
+zero failed, exit 0. That extraction was removed after the successful gate.
