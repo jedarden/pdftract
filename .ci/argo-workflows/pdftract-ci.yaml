@@ -30,7 +30,7 @@
 # - is-tag: Boolean ("true" if ref is a tag, "false" otherwise)
 #
 # === DAG Structure ===
-# setup -> [parallel: build-matrix, test-matrix, quality-matrix, bench-matrix] -> publish-if-tag
+# setup -> [parallel: build-matrix, test-matrix, sdk-conformance -> quality-matrix, bench-matrix] -> publish-if-tag
 #
 # - setup: Clone repo, fetch dependencies, warm cargo cache
 # - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
@@ -223,7 +223,10 @@ spec:
 
           - name: quality-matrix
             template: quality-matrix
-            dependencies: [workflow-source-drift]
+            # SDK conformance is an upstream hard gate. Keep the per-language
+            # reports on sdk-conformance, but do not allow the quality matrix
+            # to run (and appear green) when any SDK report is invalid.
+            dependencies: [workflow-source-drift, sdk-conformance]
 
           - name: wasm32-check
             template: wasm32-check
