@@ -285,6 +285,13 @@ The registry's `D-PDF`, `D-OP`, `P`, and `C` profiles also specify whether
 carried. All registered codes use the same structured object fields and output
 surfaces described above; only the context profile differs.
 
+Every registry row is covered by the data-driven round-trip contract in
+[`crates/pdftract-core/tests/diagnostics_roundtrip_contract.rs`](../crates/pdftract-core/tests/diagnostics_roundtrip_contract.rs),
+which checks each code's `code`, `message`, `severity`, catalog `hint`, optional
+context, JSON/NDJSON propagation, and message-only legacy projection. The
+examples in this guide are representative of that contract rather than
+additional code-specific wire formats.
+
 ## Assertion Patterns for Tests
 
 ### Pattern 1: Check for No Errors (Clean Extraction)

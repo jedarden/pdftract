@@ -201,6 +201,14 @@ the three structured destinations and the legacy message projection. A fatal
 operation that returns before an extraction result is created is outside those
 result surfaces.
 
+Every catalog row and matching hint row is covered by the data-driven round-trip
+contract in
+[`crates/pdftract-core/tests/diagnostics_roundtrip_contract.rs`](../../crates/pdftract-core/tests/diagnostics_roundtrip_contract.rs).
+That contract reads this registry and checks each documented code's `code`,
+`message`, `severity`, catalog `hint`, optional context, JSON/NDJSON propagation,
+and legacy projection. The examples above are representative; no catalog code
+has a different wire shape.
+
 ## Code Categories
 
 ### STRUCT_* — PDF Structure Errors
