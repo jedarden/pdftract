@@ -20,8 +20,9 @@ page/location context, or hint is encoded into the legacy strings.
 
 ## Diagnostic Format
 
-The canonical JSON/NDJSON diagnostic object follows this structure (shown with
-every optional field populated):
+The canonical JSON/NDJSON diagnostic object follows this structure. The first
+example shows every optional field populated; a document-level diagnostic can
+be smaller:
 
 ```json
 {
@@ -34,6 +35,14 @@ every optional field populated):
 }
 ```
 
+```json
+{
+  "code": "XREF_REPAIRED",
+  "message": "Xref was reconstructed via forward scan",
+  "severity": "info"
+}
+```
+
 The wire `severity` value is one of `info`, `warning`, `error`, or `fatal`.
 Recoverable diagnostics are attached to the extraction result. A `fatal`
 condition may instead make an extraction API return an error before an
@@ -42,17 +51,21 @@ is available in one of these arrays.
 
 | Field | JSON type | Serialized presence | Semantics |
 |-------|-----------|---------------------|-----------|
-| `code` | string | Always | Stable `DiagCode::name()` identifier in `SCREAMING_SNAKE_CASE`; classify on this value. |
-| `message` | string | Always | Human-readable display text; it may contain emission-site context and is not a classification key. |
-| `severity` | string | Always | Exactly `info`, `warning`, `error`, or `fatal`; derived from the typed code policy. |
-| `page_index` | integer | When the owning page is known | Zero-based page index. It is omitted for document- or operation-level diagnostics. |
-| `location` | object | When the originating indirect object is known | `{"object_number": u32, "generation_number": u16}`; this identifies a PDF object, not a byte offset. |
-| `hint` | string | When the code has a catalog hint | Catalog guidance. Every current catalog row has a non-empty hint string, including rows whose text begins `None —`; consumers must tolerate omission for future codes. |
+| `code` | string | Required; always serialized | Stable `DiagCode::name()` identifier in `SCREAMING_SNAKE_CASE`; classify on this value. |
+| `message` | string | Required; always serialized | Human-readable display text; it may contain emission-site context and is not a classification key. |
+| `severity` | string | Required; always serialized | Exactly `info`, `warning`, `error`, or `fatal`; derived from the typed code policy. |
+| `page_index` | integer | Optional; serialized when the owning page is known | Zero-based page index. It is omitted for document- or operation-level diagnostics. |
+| `location` | object | Optional; serialized when the originating indirect object is known | `{"object_number": u32, "generation_number": u16}`; both members are required numbers when the object is present. This identifies a PDF object, not a byte offset. |
+| `hint` | string | Optional; serialized when a hint is available | Catalog guidance. Every current catalog row has a non-empty hint string, including rows whose text begins `None —`; consumers must tolerate omission for future codes and synthetic records. |
 
 Optional fields are **omitted, never serialized as `null`**, when unavailable.
 For input compatibility, a missing optional field and an explicit JSON `null`
-both decode as unknown; re-serializing either form omits the field again. The
-required `code`, `message`, and `severity` fields must not be `null` or omitted.
+both decode as unknown; re-serializing either form omits the field again. Thus,
+for example, an input `{"page_index":null,"location":null,"hint":null}`
+has the same meaning as the minimal example above and is normalized back to
+omission. The required `code`, `message`, and `severity` fields must not be
+`null` or omitted, and a present `location` must contain non-null numeric
+`object_number` and `generation_number` members.
 These field names, types, omission rules, and the severity enum are pinned by
 `crates/pdftract-core/tests/diagnostics_serialization_format.rs`.
 
@@ -66,9 +79,10 @@ is not a catalog `DiagCode`.
 
 ### In-process byte-offset formatting
 
-An in-process `Diagnostic` may retain a source `byte_offset`, but
+An in-process `Diagnostic` may retain a source `byte_offset` (`u64`), but
 `DiagnosticJson` never serializes a `byte_offset` field. Its `Display`
-implementation is a separate human-readable rendering:
+implementation is a separate human-readable rendering. The offset is rendered
+as an unsigned decimal number (not hexadecimal):
 
 ```text
 STREAM_DECODE_ERROR: corrupt flate (byte offset 1234)
@@ -95,8 +109,11 @@ is neither the wire object nor the legacy `metadata.diagnostics` value.
 The NDJSON header carries document metadata but no diagnostic array. A
 successful page frame omits `errors`; a failed page frame carries only its
 synthetic `page_extraction_error` record. The footer is the complete streaming
-diagnostic surface: it contains failed-page records first, then the canonical
-structured diagnostics.
+diagnostic surface: it contains one synthetic record per failed page first, in
+page-frame/page-index order, then the canonical structured diagnostics in their
+metadata emission order. The metadata arrays and full JSON `errors` preserve
+that same diagnostic emission order; the legacy and structured metadata arrays
+also correspond by index.
 
 Empty-array behavior differs by surface: `metadata.diagnostics` and
 `metadata.diagnostics_detailed` are omitted entirely when there are no

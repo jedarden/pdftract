@@ -1,6 +1,6 @@
 # Errors Array Format and Test Integration Guide
 
-This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The serialized `DiagnosticJson` object is canonical: catalog diagnostics have the same object fields, values, and order in compact metadata, full JSON `errors`, and the NDJSON footer `errors` array. The string array is a message-only compatibility surface. The complete code registry is maintained in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
+This document explains the complete structure of the errors/diagnostics arrays in pdftract extraction results and how to integrate assertions in tests. The serialized `DiagnosticJson` object is canonical: catalog diagnostics have the same object fields, values, and order in compact metadata, full JSON `errors`, and the NDJSON footer `errors` array. The string array is a message-only compatibility surface, not an alternative structured schema. The complete code registry is maintained in [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md).
 
 ## Overview
 
@@ -66,12 +66,12 @@ other one-to-one (same length, same order, same diagnostics):
 The structured metadata array is also projected to the full JSON output's
 top-level `errors` array. In NDJSON streaming output, the surfaces are:
 
-| Surface | Diagnostic contents | Empty behavior |
+| Surface | Diagnostic contents and ordering | Empty behavior |
 |---------|---------------------|-----------------|
 | Compact JSON `metadata` | `diagnostics_detailed` plus the message-only `diagnostics` compatibility array | Both metadata keys are omitted when empty |
 | Full JSON `errors` | The same structured objects as `metadata.diagnostics_detailed` | `errors: []` is always present |
 | NDJSON page frame `errors` | One synthetic record only when that page failed | Omitted on successful pages |
-| NDJSON footer `errors` | Failed-page records first, then the structured metadata diagnostics in emission order | `errors: []` is always present |
+| NDJSON footer `errors` | Failed-page records first, in page-frame/page-index order, then the structured metadata diagnostics in emission order | `errors: []` is always present |
 
 The synthetic failed-page record is
 `{"code":"page_extraction_error","severity":"error","message":"...","page_index":N}`;
@@ -81,8 +81,10 @@ The synthetic failed-page record is
 For every catalog diagnostic, the object in `metadata.diagnostics_detailed` is
 the same structured value copied to full JSON `errors` and to the footer after
 any synthetic page-failure records. Consumers can therefore use one decoder
-for all three catalog-diagnostic surfaces. `byte_offset` is retained only on
-the in-process `Diagnostic` and is never a serialized field.
+for all three catalog-diagnostic surfaces. The metadata arrays and full JSON
+`errors` retain diagnostic emission order; only the footer prepends its
+synthetic page-failure records. `byte_offset` is retained only on the
+in-process `Diagnostic` and is never a serialized field.
 
 The compatibility guarantee for `metadata.diagnostics` is limited to the
 message bytes, emission order, length, and duplicates. Code, severity,
@@ -163,15 +165,28 @@ output) holds one object per diagnostic, as documented in
 | `hint` | string | when the code has a catalog hint | Catalog guidance; every current catalog row has a non-empty hint string, including `None —` rows, but consumers must tolerate omission. |
 
 Fields that do not apply — `page_index`, `location`, and `hint` — are omitted,
-not `null`. Because `severity`, `page_index`, and `location` come from the
-typed diagnostic itself, prefer the structured form whenever a consumer needs
-more than a substring search. Byte offsets remain in-process-only context and
-are never a `DiagnosticJson` field.
+not `null`. A present `location` is an object with the required, non-null
+numeric fields `object_number` (`u32`) and `generation_number` (`u16`); it is a
+PDF indirect-object reference, not a byte offset. Because `severity`,
+`page_index`, and `location` come from the typed diagnostic itself, prefer the
+structured form whenever a consumer needs more than a substring search. Byte
+offsets remain in-process-only context and are never a `DiagnosticJson` field.
 
 When reading JSON, an absent optional field and an explicit `null` are both
 accepted as unknown and decode identically. When writing JSON, both forms are
 normalized to omission; `null` is never emitted for these fields. The required
 `code`, `message`, and `severity` fields must always be present and non-null.
+
+For example, these two inputs have the same meaning and serialize to the same
+minimal object (the optional fields are omitted):
+
+```json
+{"code":"XREF_REPAIRED","message":"Xref was reconstructed via forward scan","severity":"info"}
+```
+
+```json
+{"code":"XREF_REPAIRED","message":"Xref was reconstructed via forward scan","severity":"info","page_index":null,"location":null,"hint":null}
+```
 
 In NDJSON streaming output, a footer with no failed pages uses the same
 structured object shape:
