@@ -17,7 +17,7 @@
 
 use crate::diagnostics::{DiagCode, Diagnostic};
 use crate::parser::object::{ObjRef as ParserObjRef, PdfDict, PdfObject};
-use crate::parser::stream::{decode_stream, ExtractionOptions, PdfSource};
+use crate::parser::stream::{decode_stream_with_context, ExtractionOptions, PdfSource};
 use crate::parser::xref::XrefResolver;
 use std::collections::HashMap;
 
@@ -129,6 +129,7 @@ pub fn extract_xfa_fields_with_diagnostics(
         opts,
         &mut decompress_counter,
         &mut diagnostics,
+        None,
     ) {
         Some(bytes) => bytes,
         None => {
@@ -159,6 +160,7 @@ fn extract_xfa_bytes(
     opts: &ExtractionOptions,
     decompress_counter: &mut u64,
     diagnostics: &mut Vec<Diagnostic>,
+    object_ref: Option<ParserObjRef>,
 ) -> Option<Vec<u8>> {
     match xfa_obj {
         // Single stream: this is the full XDP
@@ -168,7 +170,7 @@ fn extract_xfa_bytes(
             opts,
             decompress_counter,
             diagnostics,
-            None,
+            object_ref,
         )),
         // Array: alternating (Name, Stream) pairs
         PdfObject::Array(arr) => extract_xfa_bytes_from_array(
@@ -178,6 +180,7 @@ fn extract_xfa_bytes(
             opts,
             decompress_counter,
             diagnostics,
+            object_ref,
         ),
         // Indirect reference: resolve and try again
         PdfObject::Ref(ref_) => {
@@ -199,6 +202,7 @@ fn extract_xfa_bytes(
                 opts,
                 decompress_counter,
                 diagnostics,
+                Some(*ref_),
             )
         }
         // Invalid type
@@ -209,7 +213,7 @@ fn extract_xfa_bytes(
                     "Invalid /XFA type: expected stream or array, got {}",
                     xfa_obj.type_name()
                 ),
-                None,
+                object_ref,
             ));
             None
         }
@@ -227,6 +231,7 @@ fn extract_xfa_bytes_from_array(
     opts: &ExtractionOptions,
     decompress_counter: &mut u64,
     diagnostics: &mut Vec<Diagnostic>,
+    enclosing_ref: Option<ParserObjRef>,
 ) -> Option<Vec<u8>> {
     let mut xdp_bytes = Vec::new();
 
@@ -267,7 +272,7 @@ fn extract_xfa_bytes_from_array(
                     opts,
                     decompress_counter,
                     diagnostics,
-                    None,
+                    enclosing_ref,
                 );
                 let name_str = name_obj
                     .as_name()
@@ -284,7 +289,7 @@ fn extract_xfa_bytes_from_array(
                         name_obj.type_name(),
                         stream_obj.type_name()
                     ),
-                    None,
+                    enclosing_ref,
                 ));
                 continue;
             }
@@ -342,7 +347,7 @@ fn extract_xfa_bytes_from_array(
         diagnostics.push(xfa_diagnostic(
             DiagCode::StructUnexpectedEof,
             "XFA array produced no data".to_string(),
-            None,
+            enclosing_ref,
         ));
         None
     } else {
@@ -361,10 +366,17 @@ fn decode_stream_bytes(
     diagnostics: &mut Vec<Diagnostic>,
     object_ref: Option<ParserObjRef>,
 ) -> Vec<u8> {
-    let bytes = decode_stream(stream, source, opts, decompress_counter);
-    // Note: decode_stream returns Vec<u8> directly (not a Result)
-    // If it fails, it returns empty Vec
-    if bytes.is_empty() && stream.len_hint.is_some() {
+    let decoded =
+        decode_stream_with_context(stream, source, opts, decompress_counter, object_ref, None);
+    // Keep decoder diagnostics (including byte offsets) instead of reducing
+    // the result to the compatibility byte-only API.  The XFA object is the
+    // best enclosing location for diagnostics emitted while parsing the XML;
+    // stream diagnostics already carry their own object when a stream ref is
+    // available and are preserved by the caller's `with_available_context`.
+    let had_decoder_diagnostic = !decoded.diagnostics.is_empty();
+    diagnostics.extend(decoded.diagnostics);
+    let bytes = decoded.bytes;
+    if bytes.is_empty() && stream.len_hint.is_some() && !had_decoder_diagnostic {
         diagnostics.push(xfa_diagnostic(
             DiagCode::StructUnexpectedEof,
             "Failed to decode XFA stream (returned empty bytes)".to_string(),
@@ -704,6 +716,54 @@ mod tests {
         let fields = extract_xfa_fields(&resolver, &acroform_dict, &source, &opts);
 
         assert!(fields.is_empty());
+    }
+
+    #[test]
+    fn test_xfa_decoder_diagnostic_keeps_stream_context_in_json() {
+        let resolver = XrefResolver::new();
+        let source = MemorySource::new(vec![0x78, 0x9c, 0xff]);
+        let stream_ref = ObjRef::new(100, 2);
+
+        let mut stream_dict = IndexMap::new();
+        stream_dict.insert(intern("Length"), PdfObject::Integer(3));
+        stream_dict.insert(intern("Filter"), PdfObject::Name(intern("FlateDecode")));
+        resolver.cache_object(
+            stream_ref,
+            PdfObject::Stream(Box::new(crate::parser::object::PdfStream::new(
+                stream_dict,
+                0,
+                Some(3),
+            ))),
+        );
+
+        let mut acroform_dict = IndexMap::new();
+        acroform_dict.insert(intern("XFA"), PdfObject::Ref(stream_ref));
+        let opts = ExtractionOptions::default();
+        let (_, diagnostics) =
+            extract_xfa_fields_with_diagnostics(&resolver, &acroform_dict, &source, &opts);
+
+        let diagnostic = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == DiagCode::StreamDecodeError)
+            .expect("malformed XFA stream should retain decoder diagnostic");
+        assert_eq!(
+            diagnostic.object_ref,
+            Some(crate::diagnostics::ObjRef::new(100, 2))
+        );
+        assert_eq!(diagnostic.page_index, None);
+        assert_eq!(diagnostic.severity(), crate::diagnostics::Severity::Warning);
+        assert!(diagnostic.hint().is_some());
+
+        let wire = serde_json::to_value(crate::schema::DiagnosticJson::from(diagnostic))
+            .expect("diagnostic should serialize");
+        assert_eq!(wire["code"], "STREAM_DECODE_ERROR");
+        assert_eq!(wire["severity"], "warning");
+        assert_eq!(wire["location"]["object_number"], 100);
+        assert_eq!(wire["location"]["generation_number"], 2);
+        assert_eq!(
+            crate::diagnostics_compat::to_legacy_string(diagnostic),
+            diagnostic.message.as_ref()
+        );
     }
 
     #[test]

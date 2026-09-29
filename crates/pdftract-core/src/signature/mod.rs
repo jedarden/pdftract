@@ -1598,4 +1598,39 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "");
     }
+
+    #[test]
+    fn test_signature_text_diagnostic_serializes_field_context() {
+        let field = SigFieldRef {
+            full_name: "approval".to_string(),
+            v_ref: None,
+            rect: None,
+            page_index: Some(4),
+            field_ref: ObjRef::new(77, 3),
+        };
+        let mut diagnostics = Vec::new();
+
+        assert!(decode_signature_text(b"\xfe\xff\x00", &field, &mut diagnostics).is_none());
+        let diagnostic = diagnostics
+            .first()
+            .expect("invalid signature text should emit a diagnostic");
+        assert_eq!(
+            diagnostic.object_ref,
+            Some(crate::diagnostics::ObjRef::new(77, 3))
+        );
+        assert_eq!(diagnostic.page_index, Some(4));
+        assert_eq!(diagnostic.severity(), crate::diagnostics::Severity::Warning);
+
+        let wire = serde_json::to_value(crate::schema::DiagnosticJson::from(diagnostic))
+            .expect("diagnostic should serialize");
+        assert_eq!(wire["code"], "STRUCT_INVALID_UTF16");
+        assert_eq!(wire["severity"], "warning");
+        assert_eq!(wire["page_index"], 4);
+        assert_eq!(wire["location"]["object_number"], 77);
+        assert_eq!(wire["location"]["generation_number"], 3);
+        assert_eq!(
+            crate::diagnostics_compat::to_legacy_string(diagnostic),
+            diagnostic.message.as_ref()
+        );
+    }
 }

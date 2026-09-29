@@ -1288,6 +1288,16 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code, DiagCode::StructMissingKey);
         assert_eq!(diagnostics[0].object_ref, Some(crate::diagnostics::ObjRef::new(33, 2)));
+        assert_eq!(diagnostics[0].page_index, None);
+        assert_eq!(diagnostics[0].severity(), crate::diagnostics::Severity::Warning);
+        let wire = serde_json::to_value(crate::schema::DiagnosticJson::from(&diagnostics[0]))
+            .expect("image diagnostic should serialize");
+        assert_eq!(wire["location"]["object_number"], 33);
+        assert_eq!(wire["location"]["generation_number"], 2);
+        assert_eq!(
+            crate::diagnostics_compat::to_legacy_string(&diagnostics[0]),
+            diagnostics[0].message.as_ref()
+        );
     }
 
     #[test]
