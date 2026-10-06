@@ -81,6 +81,12 @@ spec:
           image: python:3.13-slim-bookworm
           command: [python3, /opt/evidence/capture.py]
           args: ["{{workflow.name}}", "{{workflow.status}}", pdftract-nightly-supply-chain]
+          env:
+            - name: REDACT_FORGEJO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-webhook-token
+                  key: token
           volumeMounts:
             - name: nightly-evidence-script
               mountPath: /opt/evidence

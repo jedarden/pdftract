@@ -57,13 +57,14 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
         if "container=clone-source" in url:
             return io.BytesIO((revision + "\n").encode())
         if "container=main" in url:
-            return io.BytesIO(b"run failed: token=private-value\n")
+            return io.BytesIO(b"run failed: token=private-value; also fixture-secret\n")
         raise AssertionError("unexpected API request " + url)
 
     urllib.request.urlopen = urlopen
     ssl.create_default_context = lambda **kwargs: None
     os.environ["KUBERNETES_SERVICE_HOST"] = "test-api"
     os.environ["KUBERNETES_SERVICE_PORT"] = "443"
+    os.environ["REDACT_FORGEJO_TOKEN"] = "fixture-secret"
     sys.argv = ["capture.py", name, "Failed", "pdftract-nightly-fuzz"]
     exec(compile(source, "capture.py", "exec"), {"__name__": "__main__"})
 
@@ -75,7 +76,9 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
     assert len(manifest["pods"]) == 1
     assert len(manifest["coverage"]) == 1
     assert len(manifest["crash_set"]) == 1
-    assert "private-value" not in (evidence / "logs" / (pod + "-main.log")).read_text()
+    sanitized = (evidence / "logs" / (pod + "-main.log")).read_text()
+    assert "private-value" not in sanitized
+    assert "fixture-secret" not in sanitized
 
     crash.unlink()
     shutil.rmtree(evidence)

@@ -69,6 +69,9 @@ data:
     )
 
     def sanitize(value):
+        forgejo_token = os.environ.get("REDACT_FORGEJO_TOKEN")
+        if forgejo_token:
+            value = value.replace(forgejo_token, "[REDACTED]")
         for pattern, replacement in patterns:
             value = pattern.sub(replacement, value)
         return value

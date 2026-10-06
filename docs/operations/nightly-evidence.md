@@ -26,7 +26,8 @@ archives additionally contain each generated `coverage.profdata` and every
 empty result; check that `coverage` is nonempty before treating it as a
 completed fuzz coverage run. Task logs are limited to 16 MiB per container;
 each log reference records whether that limit was reached. Logs are redacted
-for common credential forms before upload. No Kubernetes pod spec,
+for common credential forms and the supply-chain clone token before upload.
+No Kubernetes pod spec,
 Secret value, or command environment is archived.
 
 ## Retrieve an archive after pod or Workflow deletion
