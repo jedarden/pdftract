@@ -289,11 +289,12 @@ for (s, d) in result.metadata.diagnostics.iter()
 
 The complete registry is maintained in
 [`docs/integrations/diagnostics-codes.md`](integrations/diagnostics-codes.md):
-113 rows in the default build, plus two `CJK_*` rows when the `cjk` feature is
-enabled. That registry is the only normative source for code names, severities,
-phase origins, hints, reserved/feature-gated status, and the code-to-emission
-context profile. This guide intentionally does not repeat a partial list: a
-code is documented once, so the two guides cannot drift again.
+113 rows total: 111 active in the default build, plus two `CJK_*` rows when
+the `cjk` feature is enabled. That registry is the only normative source for
+code names, severities, phase origins, hints, reserved/feature-gated status,
+and the code-to-emission context profile. This guide intentionally does not
+repeat a partial list: a code is documented once, so the two guides cannot
+drift again.
 
 The registry's `D-PDF`, `D-OP`, `P`, and `C` profiles also specify whether
 `page_index` is omitted, required, or conditional and when `location` is

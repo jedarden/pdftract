@@ -202,7 +202,7 @@ fn documented_codes() -> BTreeMap<String, DocumentedCode> {
     assert_eq!(
         rows.len(),
         113,
-        "the documented diagnostics matrix changed; update this acceptance test deliberately"
+        "the documented diagnostics matrix changed; update the integration guides and this test together"
     );
 
     for (name, row) in &mut rows {
@@ -264,6 +264,11 @@ fn active_documented_codes() -> Vec<(DiagCode, DocumentedCode)> {
 
     let active_names: BTreeSet<&str> = active.iter().map(|(code, _)| code.name()).collect();
     let enum_names: BTreeSet<&str> = DiagCode::ALL.iter().map(|code| code.name()).collect();
+    assert_eq!(
+        active.len(),
+        if cfg!(feature = "cjk") { 113 } else { 111 },
+        "the feature-gated catalog count in both integration guides changed"
+    );
     assert_eq!(
         active_names, enum_names,
         "the documented active code set and DiagCode::ALL must agree"
@@ -646,21 +651,20 @@ fn malformed_json_uses_optional_null_fallback_and_rejects_required_breakage() {
 
 #[test]
 fn json_and_ndjson_surfaces_preserve_the_same_diagnostic_objects() {
-    let diagnostics: Vec<DiagnosticJson> = active_documented_codes()
+    let typed: Vec<Diagnostic> = active_documented_codes()
         .into_iter()
-        .map(|(code, documented)| {
-            DiagnosticJson::from(&emitted_diagnostic(code, documented.profile))
-        })
+        .map(|(code, documented)| emitted_diagnostic(code, documented.profile))
         .collect();
-    let legacy = diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.message.clone())
-        .collect();
+    let diagnostics: Vec<DiagnosticJson> = typed.iter().map(DiagnosticJson::from).collect();
+    let legacy = to_legacy_strings(&typed);
     let mut result = empty_result();
     result.metadata.diagnostics = legacy;
     result.metadata.diagnostics_detailed = diagnostics.clone();
 
-    let compact = result_to_json(&result);
+    let compact: serde_json::Value = serde_json::from_str(
+        &serde_json::to_string(&result_to_json(&result)).expect("compact JSON must serialize"),
+    )
+    .expect("compact JSON must parse");
     let compact_detailed = compact["metadata"]["diagnostics_detailed"]
         .as_array()
         .expect("compact structured diagnostics array");
@@ -675,12 +679,31 @@ fn json_and_ndjson_surfaces_preserve_the_same_diagnostic_objects() {
             &serde_json::to_value(diagnostic).unwrap()
         );
         assert_eq!(compact_legacy[index], diagnostic.message);
+        let decoded: DiagnosticJson = serde_json::from_value(compact_detailed[index].clone())
+            .unwrap_or_else(|error| panic!("compact {} must decode: {error}", diagnostic.code));
+        assert_eq!(
+            decoded, *diagnostic,
+            "compact {} lost a field",
+            diagnostic.code
+        );
     }
 
-    let full = serde_json::to_value(result_to_output(&result)).expect("full JSON must serialize");
+    let full: serde_json::Value = serde_json::from_str(
+        &serde_json::to_string(&result_to_output(&result)).expect("full JSON must serialize"),
+    )
+    .expect("full JSON must parse");
     let full_errors = full["errors"].as_array().expect("full errors array");
     assert_eq!(full_errors.len(), diagnostics.len());
     assert_eq!(full_errors, compact_detailed);
+    for (value, diagnostic) in full_errors.iter().zip(&diagnostics) {
+        let decoded: DiagnosticJson = serde_json::from_value(value.clone())
+            .unwrap_or_else(|error| panic!("full JSON {} must decode: {error}", diagnostic.code));
+        assert_eq!(
+            decoded, *diagnostic,
+            "full JSON {} lost a field",
+            diagnostic.code
+        );
+    }
 
     let footer_values = footer_errors(&result).expect("footer diagnostics must serialize");
     assert_eq!(footer_values, full_errors.clone());
@@ -703,11 +726,21 @@ fn json_and_ndjson_surfaces_preserve_the_same_diagnostic_objects() {
         panic!("diagnostic stream must end in a footer frame");
     };
     assert_eq!(decoded_footer.errors, full_errors.clone());
+    for (value, diagnostic) in decoded_footer.errors.iter().zip(&diagnostics) {
+        let decoded: DiagnosticJson = serde_json::from_value(value.clone())
+            .unwrap_or_else(|error| panic!("NDJSON {} must decode: {error}", diagnostic.code));
+        assert_eq!(
+            decoded, *diagnostic,
+            "NDJSON {} lost a field",
+            diagnostic.code
+        );
+    }
 
     let page_error = serde_json::json!({
         "code": "page_extraction_error",
         "message": "page failed deterministically",
-        "severity": "error"
+        "severity": "error",
+        "page_index": 7
     });
     let page = PageFrame::new(7, "blank".to_owned(), vec![], vec![], vec![])
         .with_errors(vec![page_error.clone()]);

@@ -318,20 +318,36 @@ fn emitted_severities_match_documented_enum() {
 fn published_json_and_ndjson_examples_match_wire_shapes() {
     let diagnostics_doc = fs::read_to_string(DIAGNOSTICS_DOC).unwrap();
     let errors_doc = fs::read_to_string(ERRORS_DOC).unwrap();
+    let mut canonical_examples = Vec::new();
+    let mut footer_examples = Vec::new();
 
     for (path, document) in [
         (DIAGNOSTICS_DOC, diagnostics_doc.as_str()),
         (ERRORS_DOC, errors_doc.as_str()),
     ] {
         let blocks = fenced_blocks(document, "json");
-        assert_eq!(
-            blocks.len(),
-            1,
-            "{path} should have exactly one JSON diagnostic example"
-        );
-        let value: serde_json::Value = serde_json::from_str(&blocks[0])
-            .unwrap_or_else(|error| panic!("{path} JSON example is invalid: {error}"));
-        assert_documented_diagnostic(&value, path);
+        assert!(!blocks.is_empty(), "{path} needs a JSON diagnostic example");
+        for (index, block) in blocks.iter().enumerate() {
+            let value: serde_json::Value = serde_json::from_str(block)
+                .unwrap_or_else(|error| panic!("{path} JSON example {index} is invalid: {error}"));
+            let decoded: DiagnosticJson =
+                serde_json::from_value(value.clone()).unwrap_or_else(|error| {
+                    panic!("{path} JSON example {index} cannot decode: {error}")
+                });
+            let optional_null = ["page_index", "location", "hint"]
+                .iter()
+                .any(|field| value.get(field) == Some(&serde_json::Value::Null));
+            if optional_null {
+                // The errors guide also demonstrates accepted input with
+                // explicit nulls; output must normalize those to omission.
+                assert_no_nulls(&serde_json::to_value(decoded).unwrap());
+            } else {
+                assert_documented_diagnostic(&value, path);
+            }
+            if index == 0 {
+                canonical_examples.push(value);
+            }
+        }
 
         let ndjson_blocks = fenced_blocks(document, "ndjson");
         assert_eq!(
@@ -360,7 +376,16 @@ fn published_json_and_ndjson_examples_match_wire_shapes() {
         for (index, error) in footer.errors.iter().enumerate() {
             assert_documented_diagnostic(error, &format!("{path} footer error {index}"));
         }
+        footer_examples.push(footer.errors);
     }
+    assert_eq!(
+        canonical_examples[0], canonical_examples[1],
+        "the guides' canonical JSON examples differ"
+    );
+    assert_eq!(
+        footer_examples[0], footer_examples[1],
+        "the guides' NDJSON footer examples differ"
+    );
 }
 
 #[test]

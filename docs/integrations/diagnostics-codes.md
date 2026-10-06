@@ -199,10 +199,11 @@ reservation: it is not required to appear until that implementation/feature is
 enabled, but its wire fields and profile are already fixed.
 
 The complete inventory below assigns every code in the catalog exactly one
-profile and names its emission owner. The default build has 113 catalog rows;
-the two `CJK_*` rows are gated by the `cjk` feature, so an all-features build
-has 115 active rows. The severity, phase, description, and exact hint for each
-name remain in the catalog tables that follow.
+profile and names its emission owner. The registry documents 113 rows total:
+111 are active in the default build, and the two `CJK_*` rows require the
+`cjk` feature, yielding 113 active rows in an all-features build. The severity,
+phase, description, and exact hint for each name remain in the catalog tables
+that follow.
 
 | Profile | Emission owner | Codes |
 |---------|----------------|-------|
