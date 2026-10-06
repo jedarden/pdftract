@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
 
     name = "pdftract-nightly-fuzz-12345"
     pod = name + "-setup-123"
+    second_pod = name + "-other-123"
     pods = {"items": [
         {"metadata": {"name": pod}, "status": {"phase": "Failed",
          "initContainerStatuses": [{"name": "clone-source", "state": {"terminated": {"exitCode": 0}}}],
@@ -54,6 +55,8 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
         url = request.full_url
         if "?labelSelector=" in url:
             return io.BytesIO(json.dumps(pods).encode())
+        if second_pod in url and "container=clone-source" in url:
+            return io.BytesIO((("b" * 40) + "\n").encode())
         if "container=clone-source" in url:
             return io.BytesIO((revision + "\n").encode())
         if "container=main" in url:
@@ -72,6 +75,7 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
     assert manifest["workflow"] == name
     assert manifest["final_phase"] == "Failed"
     assert manifest["source_revision"] == revision
+    assert manifest["source_revisions"] == [{"pod": pod, "revision": revision}]
     assert manifest["pods"][0]["containers"][1]["exit_code"] == 5
     assert len(manifest["pods"]) == 1
     assert len(manifest["coverage"]) == 1
@@ -86,5 +90,15 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
     empty_manifest = json.loads((evidence / "manifest.json").read_text())
     assert empty_manifest["crash_set"] == []
     assert len(empty_manifest["coverage"]) == 1
+
+    pods["items"].insert(1, {"metadata": {"name": second_pod},
+                            "status": {"phase": "Failed",
+                                       "initContainerStatuses": [{"name": "clone-source", "state": {"terminated": {"exitCode": 0}}}],
+                                       "containerStatuses": [{"name": "main", "state": {"terminated": {"exitCode": 1}}}]}})
+    shutil.rmtree(evidence)
+    exec(compile(source, "capture.py", "exec"), {"__name__": "__main__"})
+    mixed_manifest = json.loads((evidence / "manifest.json").read_text())
+    assert mixed_manifest["source_revision"] is None
+    assert {item["revision"] for item in mixed_manifest["source_revisions"]} == {revision, "b" * 40}
 
 print("nightly evidence collector fixture passed")

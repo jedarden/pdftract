@@ -18,9 +18,11 @@ The collector's temporary output is capped at 1 GiB for fuzz and 128 MiB for
 supply-chain, preserving space in the shared 20 GiB bucket. An oversized run
 fails its exit handler visibly instead of silently dropping files.
 
-`manifest.json` records the Workflow name, schedule, final phase, source commit
-(or `null` when clone logs were unavailable), task pod
-and container exit codes, and SHA-256/size references for task logs. Fuzz
+`manifest.json` records the Workflow name, schedule, final phase, each task
+source commit in `source_revisions`, task pod
+and container exit codes, and SHA-256/size references for task logs. The
+top-level `source_revision` is set only when all recorded task revisions
+match; it is `null` when revisions differ or clone logs are unavailable. Fuzz
 archives additionally contain each generated `coverage.profdata` and every
 `crash-*`, `leak-*`, and `timeout-*` file. An empty `crash_set` is an explicit
 empty result; check that `coverage` is nonempty before treating it as a
@@ -46,7 +48,7 @@ mkdir -p nightly-evidence
   nightly-evidence/supply-chain.tgz
 mkdir -p nightly-evidence/supply-chain
 tar -xzf nightly-evidence/supply-chain.tgz -C nightly-evidence/supply-chain
-jq '{workflow, source_revision, final_phase, pods, task_logs, coverage, crash_set, missing_logs}' \
+jq '{workflow, source_revision, source_revisions, final_phase, pods, task_logs, coverage, crash_set, missing_logs}' \
   nightly-evidence/supply-chain/manifest.json
 ```
 

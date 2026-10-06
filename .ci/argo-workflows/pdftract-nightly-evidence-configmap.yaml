@@ -88,7 +88,7 @@ data:
 
     evidence = {
         "workflow": workflow, "schedule": schedule, "final_phase": phase,
-        "source_revision": None, "pods": [], "task_logs": [],
+        "source_revision": None, "source_revisions": [], "pods": [], "task_logs": [],
         "coverage": [], "crash_set": [], "missing_logs": [],
     }
     revision = re.compile(r"(?m)^([0-9a-f]{40})$")
@@ -120,16 +120,21 @@ data:
                                                  "http_status": error.code})
                 continue
             value = sanitize(raw.decode("utf-8", errors="replace"))
-            if kind == "clone-source" or (schedule.endswith("fuzz") and kind == "main"):
+            if kind == "clone-source" or (schedule.endswith("fuzz") and kind == "main" and "-setup-" in name):
                 match = revision.search(value)
-                if match and evidence["source_revision"] is None:
-                    evidence["source_revision"] = match.group(1)
+                if match:
+                    pod_status["source_revision"] = match.group(1)
+                    evidence["source_revisions"].append({"pod": name, "revision": match.group(1)})
             path = logs / (name + "-" + kind + ".log")
             path.write_text(value)
             log_ref = record(path)
             log_ref["truncated"] = len(raw) >= 16777216
             evidence["task_logs"].append(log_ref)
         evidence["pods"].append(pod_status)
+
+    revisions = {item["revision"] for item in evidence["source_revisions"]}
+    if len(revisions) == 1:
+        evidence["source_revision"] = revisions.pop()
 
     if schedule.endswith("fuzz"):
         coverage_root = Path("/workspace/pdftract/fuzz/coverage")
