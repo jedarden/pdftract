@@ -3,6 +3,7 @@
 require 'minitest/autorun'
 require 'json'
 require_relative '../lib/pdftract'
+require_relative '../lib/pdftract/client'
 
 module Pdftract
   #
