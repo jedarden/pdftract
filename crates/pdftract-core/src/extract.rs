@@ -1749,12 +1749,16 @@ pub fn result_to_json(result: &ExtractionResult) -> serde_json::Value {
         .pages
         .iter()
         .map(|page| {
-            json!({
+            let mut output = json!({
                 "index": page.index,
                 "spans": page.spans,
                 "blocks": page.blocks,
                 "tables": page.tables,
-            })
+            });
+            if let Some(ref page_type) = page.page_type {
+                output["type"] = json!(page_type);
+            }
+            output
         })
         .collect();
 

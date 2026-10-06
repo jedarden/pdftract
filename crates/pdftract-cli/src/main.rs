@@ -14,6 +14,8 @@ mod hash;
 mod header;
 mod inspect;
 mod mcp;
+#[cfg(feature = "ocr")]
+mod ocr_cli;
 // Metrics registry and OpenMetrics exposition (`metrics` feature) — the bin
 // re-declares the lib's modules, so serve/mcp/grep can resolve
 // `crate::metrics` here too.
@@ -1355,8 +1357,13 @@ fn cmd_extract(
             std::io::copy(&mut source, temp_pdf.as_file_mut())
                 .context("Failed to download remote PDF")?;
 
-            let result = extract_pdf(temp_pdf.path(), &options)
+            let mut result = extract_pdf(temp_pdf.path(), &options)
                 .context("Failed to extract PDF from remote source")?;
+
+            #[cfg(feature = "ocr")]
+            if ocr {
+                ocr_cli::augment_with_ocr(temp_pdf.path(), &mut result, &options.ocr_language)?;
+            }
 
             (result, "skipped".to_string(), None) // Cache not applicable for remote
         }
@@ -1364,8 +1371,19 @@ fn cmd_extract(
         // Local file extraction path (with cache). Name the input path in the
         // outermost context so a failure identifies WHICH file failed — the
         // io error beneath it carries only the errno text, not the path.
-        cache::extract_with_cache(&input, &options, cache_dir_ref, no_cache, cache_size_bytes)
-            .with_context(|| format!("Failed to extract PDF: {}", input.display()))?
+        let (mut result, status, age) = cache::extract_with_cache(
+            &input,
+            &options,
+            cache_dir_ref,
+            no_cache || ocr,
+            cache_size_bytes,
+        )
+        .with_context(|| format!("Failed to extract PDF: {}", input.display()))?;
+        #[cfg(feature = "ocr")]
+        if ocr {
+            ocr_cli::augment_with_ocr(&input, &mut result, &options.ocr_language)?;
+        }
+        (result, status, age)
     };
 
     // Set cache status metadata

@@ -7,8 +7,10 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,12 +37,92 @@ def compare_bytes(actual: bytes, expected_path: Path) -> str | None:
     )
 
 
+def ocr_words(value: str) -> list[str]:
+    value = unicodedata.normalize("NFKC", value)
+    for source, target in (("‘", "'"), ("’", "'"), ("“", '"'), ("”", '"'),
+                           ("–", "-"), ("—", "-"), ("−", "-"), ("…", "..."), ("\u00a0", " ")):
+        value = value.replace(source, target)
+    return value.split()
+
+
+def word_error_rate(reference: str, hypothesis: str) -> tuple[int, int, float]:
+    expected, observed = ocr_words(reference), ocr_words(hypothesis)
+    if not expected:
+        raise ValueError("OCR ground truth has no words")
+    previous = list(range(len(observed) + 1))
+    for index, word in enumerate(expected, 1):
+        current = [index]
+        for column, candidate in enumerate(observed, 1):
+            current.append(min(previous[column] + 1, current[-1] + 1,
+                               previous[column - 1] + (word != candidate)))
+        previous = current
+    errors = previous[-1]
+    return errors, len(expected), errors * 100 / len(expected)
+
+
+def check_ocr_output(case: dict, case_dir: Path, stdout: bytes) -> list[str]:
+    errors = []
+    output = case_dir / "output.json"
+    if not output.is_file():
+        return [f"missing OCR JSON output: {output}"]
+    try:
+        document = json.loads(output.read_text(encoding="utf-8"))
+        pages = document["pages"]
+        if len(pages) != 1:
+            raise ValueError(f"expected one page, found {len(pages)}")
+        page = pages[0]
+        observed_type = page.get("type")
+        if observed_type != case["expected_page_type"]:
+            errors.append(f"page route {observed_type!r}, expected {case['expected_page_type']!r}")
+        spans = page["spans"]
+        ocr_text = "\n".join(span["text"] for span in spans if span.get("confidence_source") == "ocr")
+        if not ocr_text.strip():
+            errors.append("no OCR-sourced text in CLI JSON output")
+        reference = path_in_repo(case["ocr_ground_truth_file"]).read_text(encoding="utf-8")
+        error_count, word_count, percent = word_error_rate(reference, ocr_text)
+        threshold = case["max_wer_percent"]
+        (case_dir / "ocr-metrics.json").write_text(json.dumps({
+            "errors": error_count, "reference_words": word_count,
+            "wer_percent": round(percent, 2), "max_wer_percent": threshold,
+            "page_type": observed_type,
+        }, indent=2) + "\n", encoding="utf-8")
+        if percent >= threshold:
+            errors.append(f"OCR WER {percent:.2f}% ({error_count}/{word_count} words), expected < {threshold}%")
+        if case["ocr_kind"] == "mixed":
+            vector_text = " ".join(span["text"] for span in spans
+                                   if span.get("confidence_source") != "ocr")
+            required = case["required_vector_text"]
+            if required not in vector_text:
+                errors.append(f"vector text missing from CLI JSON output: {required!r}")
+            if required.encode("utf-8") not in stdout:
+                errors.append(f"vector text missing from CLI text output: {required!r}")
+            first_ocr_line = ocr_text.splitlines()[0] if ocr_text else ""
+            if first_ocr_line and first_ocr_line.encode("utf-8") not in stdout:
+                errors.append("OCR text missing from CLI text output")
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        errors.append(f"invalid OCR JSON output or ground truth: {exc}")
+    return errors
+
+
+def check_ocr_dependencies() -> None:
+    for tool in ("pdfimages", "tesseract"):
+        if shutil.which(tool) is None:
+            raise ValueError(f"OCR acceptance requires '{tool}' on PATH")
+    languages = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, check=False)
+    if languages.returncode != 0 or "eng" not in languages.stdout.split():
+        raise ValueError("OCR acceptance requires Tesseract English traineddata (eng)")
+
+
 def run_case(case: dict, binary: Path, fixture: Path, artifacts: Path) -> dict:
     name = case["name"]
     case_dir = artifacts / name
     case_dir.mkdir(parents=True, exist_ok=True)
     # A previous run must never satisfy an expected output from this run.
-    for output_name in case.get("output_files", {}):
+    output_names = set(case.get("output_files", {}))
+    if "ocr_kind" in case:
+        output_names.add("output.json")
+        output_names.add("ocr-metrics.json")
+    for output_name in output_names:
         output = case_dir / output_name
         if output.is_file():
             output.unlink()
@@ -74,9 +156,12 @@ def run_case(case: dict, binary: Path, fixture: Path, artifacts: Path) -> dict:
     (case_dir / "status.json").write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
     if exit_code != expected_exit_code:
         errors.append(f"CLI exit code {exit_code}, expected {expected_exit_code}")
-    result = compare_bytes(stdout, path_in_repo(case["stdout_file"]))
-    if result:
-        errors.append(f"stdout {result}")
+        if b"--ocr requires the 'ocr' feature" in stderr:
+            errors.append("OCR acceptance requires a pdftract binary built with --features ocr")
+    if "stdout_file" in case:
+        result = compare_bytes(stdout, path_in_repo(case["stdout_file"]))
+        if result:
+            errors.append(f"stdout {result}")
     if "stderr_contains" in case and case["stderr_contains"].encode("utf-8") not in stderr:
         errors.append(f"stderr missing expected diagnostic: {case['stderr_contains']}")
     for output_name, expected_name in case.get("output_files", {}).items():
@@ -87,6 +172,8 @@ def run_case(case: dict, binary: Path, fixture: Path, artifacts: Path) -> dict:
         result = compare_bytes(output.read_bytes(), path_in_repo(expected_name))
         if result:
             errors.append(f"{output_name} {result}")
+    if "ocr_kind" in case:
+        errors.extend(check_ocr_output(case, case_dir, stdout))
     return {"name": name, "passed": not errors, "errors": errors}
 
 
@@ -108,6 +195,9 @@ def main() -> int:
             raise ValueError(f"missing binary: {args.binary}")
         if not cases or len({case["name"] for case in cases}) != len(cases):
             raise ValueError("cases must be nonempty with unique names")
+        ocr_cases = [case for case in cases if case["category"] == "ocr"]
+        if {case.get("ocr_kind") for case in ocr_cases} != {"scanned", "mixed"} or len(ocr_cases) != 2:
+            raise ValueError("OCR acceptance requires exactly one scanned and one mixed case")
         for case in cases:
             if not case["name"].replace("-", "").replace("_", "").isalnum():
                 raise ValueError(f"unsafe case name: {case['name']}")
@@ -123,11 +213,29 @@ def main() -> int:
             for output_name in case.get("output_files", {}):
                 if Path(output_name).name != output_name:
                     raise ValueError(f"{case['name']}: output name must be a basename")
+            if case["category"] != "ocr" and "stdout_file" not in case:
+                raise ValueError(f"{case['name']}: non-OCR case needs a stdout golden")
+            if case["category"] == "ocr":
+                if case["expected_page_type"] != case["ocr_kind"]:
+                    raise ValueError(f"{case['name']}: OCR page route must match kind")
+                if type(case.get("max_wer_percent")) not in (int, float) or not 0 < case["max_wer_percent"] <= 100:
+                    raise ValueError(f"{case['name']}: max_wer_percent must be in (0, 100]")
+                if case["ocr_kind"] == "mixed" and not case.get("required_vector_text"):
+                    raise ValueError(f"{case['name']}: mixed case needs required_vector_text")
+                if "--ocr" not in case["command"] or "output.json" not in " ".join(case["command"]):
+                    raise ValueError(f"{case['name']}: OCR command must request --ocr and output.json")
+                ground_truth = path_in_repo(case["ocr_ground_truth_file"])
+                if not ground_truth.is_file():
+                    raise ValueError(f"{case['name']}: missing OCR ground truth: {ground_truth}")
+                if hashlib.sha256(ground_truth.read_bytes()).hexdigest() != case["ocr_ground_truth_sha256"]:
+                    raise ValueError(f"{case['name']}: OCR ground truth SHA-256 differs: {ground_truth}")
         if args.category:
             unknown = set(args.category) - {case["category"] for case in cases}
             if unknown:
                 raise ValueError(f"unknown category: {', '.join(sorted(unknown))}")
             cases = [case for case in cases if case["category"] in args.category]
+        if any(case["category"] == "ocr" for case in cases):
+            check_ocr_dependencies()
         results = []
         for case in cases:
             fixture = path_in_repo(case["fixture"])
