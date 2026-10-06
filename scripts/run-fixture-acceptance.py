@@ -54,20 +54,31 @@ def run_case(case: dict, binary: Path, fixture: Path, artifacts: Path) -> dict:
     env.update(LC_ALL="C", LANG="C", TZ="UTC", SOURCE_DATE_EPOCH="0", NO_COLOR="1", RUST_BACKTRACE="0")
     errors = []
     try:
-        completed = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, check=False)
+        stdin = case.get("stdin_text")
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            input=stdin.encode("utf-8") if stdin is not None else None,
+            capture_output=True,
+            check=False,
+        )
         stdout, stderr, exit_code = completed.stdout, completed.stderr, completed.returncode
     except OSError as exc:
         stdout, stderr, exit_code = b"", str(exc).encode(), None
         errors.append(f"could not start CLI: {exc}")
     (case_dir / "stdout").write_bytes(stdout)
     (case_dir / "stderr").write_bytes(stderr)
-    status = {"command": command, "exit_code": exit_code, "expected_exit_code": 0}
+    expected_exit_code = case.get("expected_exit_code", 0)
+    status = {"command": command, "exit_code": exit_code, "expected_exit_code": expected_exit_code}
     (case_dir / "status.json").write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
-    if exit_code != 0:
-        errors.append(f"CLI exit code {exit_code}, expected 0")
+    if exit_code != expected_exit_code:
+        errors.append(f"CLI exit code {exit_code}, expected {expected_exit_code}")
     result = compare_bytes(stdout, path_in_repo(case["stdout_file"]))
     if result:
         errors.append(f"stdout {result}")
+    if "stderr_contains" in case and case["stderr_contains"].encode("utf-8") not in stderr:
+        errors.append(f"stderr missing expected diagnostic: {case['stderr_contains']}")
     for output_name, expected_name in case.get("output_files", {}).items():
         output = case_dir / output_name
         if not output.is_file():
@@ -104,6 +115,11 @@ def main() -> int:
                 raise ValueError(f"{case['name']}: command must start with {{binary}}")
             if not isinstance(case["category"], str) or not case["category"]:
                 raise ValueError(f"{case['name']}: category must be nonempty")
+            if type(case.get("expected_exit_code", 0)) is not int or case.get("expected_exit_code", 0) < 0:
+                raise ValueError(f"{case['name']}: expected_exit_code must be a nonnegative integer")
+            for field in ("stdin_text", "stderr_contains"):
+                if field in case and (not isinstance(case[field], str) or not case[field]):
+                    raise ValueError(f"{case['name']}: {field} must be a nonempty string")
             for output_name in case.get("output_files", {}):
                 if Path(output_name).name != output_name:
                     raise ValueError(f"{case['name']}: output name must be a basename")

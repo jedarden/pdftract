@@ -1,0 +1,63 @@
+{
+  "attachments": [
+    {
+      "data": "SGVsbG8gYXR0YWNobWVudCE=",
+      "description": "Fixture notes",
+      "mime_type": "text/plain",
+      "name": "notes.txt",
+      "size": 17,
+      "truncated": false
+    }
+  ],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            72.0,
+            720.0,
+            194.39999389648438,
+            732.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Auxiliary fixture"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            72.0,
+            720.0,
+            194.39999389648438,
+            732.0
+          ],
+          "color": "#000000",
+          "confidence": 1.0,
+          "confidence_source": "native",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Auxiliary fixture"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}

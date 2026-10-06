@@ -1,0 +1,79 @@
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:cd0fe35a93a7949a27a24ce0af7d13292ea0a40ba65b01a805b93ca583b71ce8",
+  "form_fields": [
+    {
+      "multiline": false,
+      "name": "customer_name",
+      "read_only": false,
+      "required": false,
+      "type": "text",
+      "value": "Ada Lovelace"
+    }
+  ],
+  "javascript_actions": [
+    {
+      "code_excerpt": "app.alert('fixture')",
+      "location": "catalog.openaction"
+    }
+  ],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "diagnostics": [
+      "Detected 1 JavaScript action(s) in PDF document. JavaScript was NOT executed."
+    ],
+    "diagnostics_detailed": [
+      {
+        "code": "JAVASCRIPT_PRESENT",
+        "hint": "The PDF contains embedded JavaScript. Review the document metadata.javascript_actions array for details. pdftract never executes embedded JS.",
+        "message": "Detected 1 JavaScript action(s) in PDF document. JavaScript was NOT executed.",
+        "severity": "info"
+      }
+    ],
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            72.0,
+            720.0,
+            194.39999389648438,
+            732.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Auxiliary fixture"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            72.0,
+            720.0,
+            194.39999389648438,
+            732.0
+          ],
+          "color": "#000000",
+          "confidence": 1.0,
+          "confidence_source": "native",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Auxiliary fixture"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}

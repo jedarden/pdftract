@@ -105,6 +105,134 @@
         "-"
       ],
       "stdout_file": "tests/fixtures/acceptance/expected/layout-reading-order.txt"
+    },
+    {
+      "name": "malformed-recovered-endobj",
+      "category": "malformed",
+      "fixture": "tests/error_recovery/fixtures/missing_endobj.pdf",
+      "fixture_sha256": "afd80908aef3f7850a14d621bd06d1c3128a414ba783591852c6fe3188158d75",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/missing-endobj.txt",
+      "expected_exit_code": 0
+    },
+    {
+      "name": "malformed-rejected-empty",
+      "category": "malformed",
+      "fixture": "tests/fixtures/malformed/empty.pdf",
+      "fixture_sha256": "e5c62df5dab5c87b6a015ef3d43597074d1eec433b15f51aec63b8582d0e4ab4",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/empty.txt",
+      "expected_exit_code": 1,
+      "stderr_contains": "startxref not found in PDF"
+    },
+    {
+      "name": "encrypted-aes128",
+      "category": "encrypted",
+      "fixture": "tests/fixtures/encrypted/EC-05-aes128-encrypted.pdf",
+      "fixture_sha256": "ad83d1e4857cdf3f90cdabf8f69047aa7117636acebc5c5cecafe84e54ec2544",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--password-stdin",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/encrypted-aes128.txt",
+      "stdin_text": "test\n",
+      "expected_exit_code": 0
+    },
+    {
+      "name": "encrypted-aes256",
+      "category": "encrypted",
+      "fixture": "tests/fixtures/encrypted/EC-06-aes256-encrypted.pdf",
+      "fixture_sha256": "427a11b325f14700e3eed1763938b679fbd49cfe3d9de976b3ca25fe9fc4ef16",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--password-stdin",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/encrypted-aes256.txt",
+      "stdin_text": "test\n",
+      "expected_exit_code": 0
+    },
+    {
+      "name": "encrypted-wrong-password",
+      "category": "encrypted",
+      "fixture": "tests/fixtures/encrypted/EC-05-aes128-encrypted.pdf",
+      "fixture_sha256": "ad83d1e4857cdf3f90cdabf8f69047aa7117636acebc5c5cecafe84e54ec2544",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--password-stdin",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/wrong-password.txt",
+      "expected_exit_code": 1,
+      "stdin_text": "wrongpassword\n",
+      "stderr_contains": "ENCRYPTION_WRONG_PASSWORD"
+    },
+    {
+      "name": "metadata-form-javascript",
+      "category": "metadata",
+      "fixture": "tests/fixtures/auxiliary/form-and-javascript.pdf",
+      "fixture_sha256": "1cd0498973cb562cd1188c703012e17eb94dd07e9d39dd2b5d2500e3ac6f3e20",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--json",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/form-javascript.json",
+      "expected_exit_code": 0
+    },
+    {
+      "name": "metadata-signature",
+      "category": "metadata",
+      "fixture": "tests/fixtures/auxiliary/signature.pdf",
+      "fixture_sha256": "88a61c754d88208228bd3e8ca0d2694f48211cd5bee050d643c00fe6dbd8e5b9",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--json",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/signature.json",
+      "expected_exit_code": 0
+    },
+    {
+      "name": "metadata-attachment",
+      "category": "metadata",
+      "fixture": "tests/fixtures/auxiliary/attachment.pdf",
+      "fixture_sha256": "2473a2f38a476c50b21526183f32fd5648dea5b36da983203da20c9d5d1fe995",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--json",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/attachment.json",
+      "expected_exit_code": 0
     }
   ]
 }

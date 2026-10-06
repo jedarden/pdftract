@@ -1,0 +1,79 @@
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [
+    {
+      "name": "approval_signature",
+      "read_only": false,
+      "required": false,
+      "type": "signature",
+      "value": 8
+    }
+  ],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            72.0,
+            720.0,
+            194.39999389648438,
+            732.0
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Auxiliary fixture"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            72.0,
+            720.0,
+            194.39999389648438,
+            732.0
+          ],
+          "color": "#000000",
+          "confidence": 1.0,
+          "confidence_source": "native",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Auxiliary fixture"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [
+    {
+      "byte_range": [
+        0,
+        100,
+        200,
+        300
+      ],
+      "coverage_fraction": 0.333889816360601,
+      "field_name": "approval_signature",
+      "location": "New York",
+      "reason": "Approved",
+      "signer_name": "Ada Lovelace",
+      "signing_date": "2026-01-02T11:22:33Z",
+      "sub_filter": "adbe.pkcs7.detached",
+      "validation_status": "not_checked"
+    }
+  ],
+  "threads": []
+}
