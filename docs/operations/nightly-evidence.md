@@ -76,4 +76,10 @@ The source manifests live at `.ci/argo-workflows/pdftract-nightly-fuzz.yaml`,
 `.ci/argo-workflows/pdftract-nightly-supply-chain.yaml`, and
 `.ci/argo-workflows/pdftract-nightly-evidence-configmap.yaml`. Their deployment
 copies are under `jedarden/declarative-config/k8s/iad-ci/argo-workflows/`.
-Run `.ci/scripts/check-argo-workflow-drift.sh` after promotion.
+After promotion, run the live drift check to verify both the GitOps copies
+and the 03:00/04:00 UTC CronWorkflows:
+
+```sh
+ARGO_LIVE_API_BASE=http://traefik-iad-ci:8001 \
+  .ci/scripts/check-argo-workflow-drift.sh --live
+```

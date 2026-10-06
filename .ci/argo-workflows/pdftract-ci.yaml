@@ -525,19 +525,25 @@ spec:
           - name: workflow-metadata
             path: /workspace/workflow-metadata.json
 
-    # === Source-to-deployed workflow drift gate ===
+    # === Source, GitOps, and live nightly workflow drift gate ===
     # The deployed copy is in declarative-config. Only cluster-specific
-    # resources maps may differ; schema and quality-gate drift fails here.
+    # resources maps may differ there. Read the live CronWorkflows through
+    # iad-ci's read-only proxy and compare their full specs with GitOps.
     - name: workflow-source-drift
       activeDeadlineSeconds: 300
       container:
         image: alpine/git:v2.54.0
+        # Alpine packages are installed only for this read-only drift check.
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
         command: [sh, -c]
         args:
           - |
             set -eu
             cd /workspace
-            .ci/scripts/check-argo-workflow-drift.sh
+            apk add --no-cache python3 py3-yaml
+            .ci/scripts/check-argo-workflow-drift.sh --live
         volumeMounts:
           - name: workspace
             mountPath: /workspace

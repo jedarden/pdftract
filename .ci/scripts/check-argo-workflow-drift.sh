@@ -19,6 +19,16 @@ FUZZ_CONFIG_PATH=${DECLARATIVE_CONFIG_FUZZ_WORKFLOW_PATH:-k8s/iad-ci/argo-workfl
 SUPPLY_CHAIN_CONFIG_PATH=${DECLARATIVE_CONFIG_SUPPLY_CHAIN_WORKFLOW_PATH:-k8s/iad-ci/argo-workflows/pdftract-nightly-supply-chain.yaml}
 EVIDENCE_CONFIG_PATH=${DECLARATIVE_CONFIG_EVIDENCE_PATH:-k8s/iad-ci/argo-workflows/pdftract-nightly-evidence-configmap.yaml}
 CONFIG_DIR=${DECLARATIVE_CONFIG_DIR:-}
+LIVE_CHECK=0
+case ${1:-} in
+    '') ;;
+    --live) LIVE_CHECK=1 ;;
+    *) echo "usage: $0 [--live]" >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [--live]" >&2
+    exit 2
+fi
 
 for source_file in "$SOURCE_FILE" "$FUZZ_SOURCE_FILE" "$SUPPLY_CHAIN_SOURCE_FILE" "$EVIDENCE_SOURCE_FILE"; do
     if [ ! -f "$source_file" ]; then
@@ -132,3 +142,42 @@ fi
 
 echo "Argo workflow contracts are synchronized"
 echo "Allowed deployment-only differences: resources maps"
+
+if [ "$LIVE_CHECK" -eq 1 ]; then
+    # This in-cluster proxy uses the devpod-observer read-only ServiceAccount.
+    # The CI workflow's own ServiceAccount cannot read CronWorkflows.
+    LIVE_API_BASE=${ARGO_LIVE_API_BASE:-http://kubectl-proxy.devpod-observer.svc.cluster.local:8001}
+    LIVE_DIR=${ARGO_LIVE_CRONWORKFLOW_DIR:-}
+    for workflow_name in pdftract-nightly-supply-chain pdftract-nightly-fuzz; do
+        live_file="$WORK_DIR/$workflow_name.live.json"
+        if [ -n "$LIVE_DIR" ]; then
+            if [ ! -f "$LIVE_DIR/$workflow_name.json" ]; then
+                echo "ERROR: live CronWorkflow missing: $workflow_name" >&2
+                exit 1
+            fi
+            cp "$LIVE_DIR/$workflow_name.json" "$live_file"
+        else
+            live_url="$LIVE_API_BASE/apis/argoproj.io/v1alpha1/namespaces/argo-workflows/cronworkflows/$workflow_name"
+            if ! wget -q -O "$live_file" "$live_url"; then
+                echo "ERROR: cannot read live CronWorkflow $workflow_name from iad-ci/argo-workflows" >&2
+                exit 1
+            fi
+        fi
+        case "$workflow_name" in
+            pdftract-nightly-supply-chain)
+                deployed_file=$SUPPLY_CHAIN_DEPLOYED_FILE
+                schedule='0 3 * * *'
+                ;;
+            pdftract-nightly-fuzz)
+                deployed_file=$FUZZ_DEPLOYED_FILE
+                schedule='0 4 * * *'
+                ;;
+        esac
+        if ! python3 "$SCRIPT_DIR/check-live-cronworkflow-drift.py" \
+            "$deployed_file" "$live_file" "$workflow_name" "$schedule"; then
+            failed=1
+        fi
+    done
+    [ "$failed" -eq 0 ] || exit 1
+    echo "Live iad-ci CronWorkflow specs match declarative-config"
+fi
