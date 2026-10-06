@@ -10,7 +10,7 @@ The canonical invocation for the pdftract MCP server is:
 pdftract mcp --stdio
 ```
 
-Clients discover the binary by absolute path or via `PATH`. The server communicates over standard input/output using the JSON-RPC 2.0 protocol with LSP-style framing (Content-Length headers).
+Clients discover the binary by absolute path or via `PATH`. The server communicates over standard input/output using JSON-RPC 2.0. It accepts MCP's newline-delimited JSON framing and the older LSP-style `Content-Length` framing.
 
 ## Authoritative tool catalog
 
@@ -57,6 +57,22 @@ This check is also the required `mcp-catalog` gate in the `pdftract-ci`
 quality matrix. CI builds a release binary with the `mcp` feature, points
 `PDFTRACT_MCP_BIN` at it, and runs the same lifecycle check against the
 documented client snippets.
+
+The official Python MCP SDK also exercises all four snippets (including both
+Claude Desktop command forms). The test uses `mcp==1.30.0`, pinned in the
+script's inline dependency metadata. It launches a fresh server for each
+snippet, checks discovery against the catalog, invokes a successful tool,
+checks an in-band tool failure and unknown-tool rejection, then verifies a
+clean exit after the SDK closes stdin. To reproduce locally with `uv` and
+Python 3.10 or newer, run:
+
+```bash
+UV_CACHE_DIR="$PWD/.mcp-sdk-cache" uv run --script scripts/check-mcp-sdk-client.py
+```
+
+Set `PDFTRACT_MCP_BIN=/path/to/pdftract` to use a prebuilt `mcp`-enabled
+binary. Run the independent failure probe with `--probe-broken-config`; it
+breaks only the Cursor launch and requires the other three sessions to pass.
 
 ## Claude Desktop
 
@@ -198,7 +214,7 @@ the local root; they still pass the server's remote/SSRF checks. Without
 
 ## Custom Integration (SDK Template)
 
-For SDK builders, here's a generic stdio MCP client harness in Python using `mcp-sdk-python`:
+For SDK builders, here's a generic stdio MCP client harness in Python using the official `mcp` package:
 
 ```python
 import asyncio
@@ -325,7 +341,7 @@ If the log shows "stdio transport: stdout writer initialized", the server is run
 
 1. Check stderr logs for initialization errors
 2. Verify `pdftract --version` matches expected version
-3. Test stdio mode manually (the server expects LSP-style `Content-Length` framing — a bare JSON line is silently consumed as a header and produces no response):
+3. Test stdio mode manually with the supported LSP-style `Content-Length` framing:
 
 ```bash
 body='{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
