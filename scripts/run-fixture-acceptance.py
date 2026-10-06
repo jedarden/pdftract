@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run exact-byte CLI acceptance cases for the public vector PDF."""
+"""Run exact-byte CLI acceptance cases for tracked PDF fixtures."""
 
 from __future__ import annotations
 
@@ -84,18 +84,15 @@ def main() -> int:
     parser.add_argument("--binary", type=Path, required=True, help="built pdftract executable")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--artifact-dir", type=Path, required=True)
+    parser.add_argument("--category", action="append", help="run only cases in this category (repeatable)")
     args = parser.parse_args()
     artifacts = args.artifact_dir.resolve()
     artifacts.mkdir(parents=True, exist_ok=True)
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-        fixture = path_in_repo(manifest["fixture"])
+        if manifest["schema"] != 2:
+            raise ValueError("unsupported acceptance manifest schema")
         cases = manifest["cases"]
-        if not fixture.is_file():
-            raise ValueError(f"missing fixture: {fixture}")
-        digest = hashlib.sha256(fixture.read_bytes()).hexdigest()
-        if digest != manifest["fixture_sha256"]:
-            raise ValueError(f"fixture SHA-256 differs: {fixture}")
         if not args.binary.is_file():
             raise ValueError(f"missing binary: {args.binary}")
         if not cases or len({case["name"] for case in cases}) != len(cases):
@@ -105,10 +102,25 @@ def main() -> int:
                 raise ValueError(f"unsafe case name: {case['name']}")
             if not isinstance(case["command"], list) or not case["command"] or case["command"][0] != "{binary}":
                 raise ValueError(f"{case['name']}: command must start with {{binary}}")
+            if not isinstance(case["category"], str) or not case["category"]:
+                raise ValueError(f"{case['name']}: category must be nonempty")
             for output_name in case.get("output_files", {}):
                 if Path(output_name).name != output_name:
                     raise ValueError(f"{case['name']}: output name must be a basename")
-        results = [run_case(case, args.binary.resolve(), fixture, artifacts) for case in cases]
+        if args.category:
+            unknown = set(args.category) - {case["category"] for case in cases}
+            if unknown:
+                raise ValueError(f"unknown category: {', '.join(sorted(unknown))}")
+            cases = [case for case in cases if case["category"] in args.category]
+        results = []
+        for case in cases:
+            fixture = path_in_repo(case["fixture"])
+            if fixture.suffix.lower() != ".pdf" or not fixture.is_file():
+                raise ValueError(f"{case['name']}: missing PDF fixture: {fixture}")
+            digest = hashlib.sha256(fixture.read_bytes()).hexdigest()
+            if digest != case["fixture_sha256"]:
+                raise ValueError(f"{case['name']}: fixture SHA-256 differs: {fixture}")
+            results.append(run_case(case, args.binary.resolve(), fixture, artifacts))
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         results = []
         error = str(exc)

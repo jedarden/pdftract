@@ -1,36 +1,110 @@
 {
-  "schema": 1,
-  "fixture": "tests/fixtures/test-minimal.pdf",
-  "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4",
+  "schema": 2,
   "cases": [
     {
       "name": "text",
-      "command": ["{binary}", "extract", "{fixture}", "--text", "-"],
-      "stdout_file": "tests/fixtures/acceptance/expected/text.txt"
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/text.txt",
+      "category": "vector",
+      "fixture": "tests/fixtures/test-minimal.pdf",
+      "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4"
     },
     {
       "name": "json",
-      "command": ["{binary}", "extract", "{fixture}", "--json", "-"],
-      "stdout_file": "tests/fixtures/acceptance/expected/output.json"
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--json",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/output.json",
+      "category": "vector",
+      "fixture": "tests/fixtures/test-minimal.pdf",
+      "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4"
     },
     {
       "name": "markdown",
-      "command": ["{binary}", "extract", "{fixture}", "--md", "-"],
-      "stdout_file": "tests/fixtures/acceptance/expected/output.md"
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--md",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/output.md",
+      "category": "vector",
+      "fixture": "tests/fixtures/test-minimal.pdf",
+      "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4"
     },
     {
       "name": "ndjson",
-      "command": ["{binary}", "extract", "{fixture}", "--ndjson"],
-      "stdout_file": "tests/fixtures/acceptance/expected/output.ndjson"
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--ndjson"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/output.ndjson",
+      "category": "vector",
+      "fixture": "tests/fixtures/test-minimal.pdf",
+      "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4"
     },
     {
       "name": "simultaneous",
-      "command": ["{binary}", "extract", "{fixture}", "--text", "-", "--md", "{artifact_dir}/output.md", "--json", "{artifact_dir}/output.json"],
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--text",
+        "-",
+        "--md",
+        "{artifact_dir}/output.md",
+        "--json",
+        "{artifact_dir}/output.json"
+      ],
       "stdout_file": "tests/fixtures/acceptance/expected/text.txt",
       "output_files": {
         "output.md": "tests/fixtures/acceptance/expected/output.md",
         "output.json": "tests/fixtures/acceptance/expected/output.json"
-      }
+      },
+      "category": "vector",
+      "fixture": "tests/fixtures/test-minimal.pdf",
+      "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4"
+    },
+    {
+      "name": "font-recovery",
+      "category": "font",
+      "fixture": "tests/fixtures/encoding/no-mapping.pdf",
+      "fixture_sha256": "4e35868ca3c5a66b46e38f4fe52c3bea00bb4bc77a5a5532992f4fa11da46d6d",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/font-recovery.txt"
+    },
+    {
+      "name": "layout-reading-order",
+      "category": "layout",
+      "fixture": "tests/fixtures/hybrid/hybrid-003-mixed-column-layout.pdf",
+      "fixture_sha256": "8f99c11671f8bd9720fae887a97b2f4c8e0db15b37bbc4d2ede6d9c3168fbdf2",
+      "command": [
+        "{binary}",
+        "extract",
+        "{fixture}",
+        "--text",
+        "-"
+      ],
+      "stdout_file": "tests/fixtures/acceptance/expected/layout-reading-order.txt"
     }
   ]
 }
