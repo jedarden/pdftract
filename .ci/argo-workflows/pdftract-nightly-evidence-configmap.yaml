@@ -71,9 +71,14 @@ data:
         return value
 
     def record(path):
-        content = path.read_bytes()
-        return {"path": str(path.relative_to(root)), "bytes": len(content),
-                "sha256": hashlib.sha256(content).hexdigest()}
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+                size += len(chunk)
+        return {"path": str(path.relative_to(root)), "bytes": size,
+                "sha256": digest.hexdigest()}
 
     evidence = {
         "workflow": workflow, "schedule": schedule, "phase_before_exit": phase,
