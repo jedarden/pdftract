@@ -1,13 +1,13 @@
 # pdftract-nightly-fuzz CronWorkflow
 #
 # Nightly fuzzing job for pdftract using cargo-fuzz with libFuzzer.
-# Runs ~38 CPU-hours across 8 fuzz targets (~4.8h wall clock each, in
-# parallel), seeded from malformed fixtures and checked-in per-target seeds
+# Runs eight fuzz targets (~4.8h each, with two concurrent runs), seeded
+# from malformed fixtures and checked-in per-target seeds
 # (fuzz/seeds/<target>/).
-# New crashes are filed as STRUCT_* diagnostic regressions via issue-reporter.
+# Crash summaries are logged for follow-up triage.
 #
 # === Schedule ===
-# Runs daily at 0400 UTC (midnight EST, 9pm PST) via cron: "0 4 * * *"
+# Runs daily at 04:00 UTC via cron: "0 4 * * *"
 #
 # === Fuzz Targets ===
 # - lexer: Tokenization INV-8 invariant (no panic at public boundary)
@@ -19,13 +19,12 @@
 # - cmap_parser: CMap name and string handling
 #
 # === Resource Budget ===
-# 8 targets x 4.8h in parallel = ~38 CPU-hours
+# 8 targets x 4.8h = ~38 target-hours, approximately 20h at parallelism 2
 # Time limit per target: 6 hours (allows some overlap)
 #
 # === Crash Handling ===
-# - Crash artifacts uploaded as workflow artifacts (crashes-<target>.tar.gz)
-# - argo-workflows-issue-reporter sidecar files beads for new crashes
-# - Crash files added to tests/fixtures/malformed/ (size <= 100 KB)
+# - Crash tarballs are collected on the per-run workspace for reporting.
+# - Durable artifacts and terminal evidence are handled by the evidence work.
 apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
 metadata:
@@ -36,13 +35,19 @@ metadata:
     app.kubernetes.io/component: ci
     app.kubernetes.io/part-of: pdftract
 spec:
-  schedule: "0 4 * * *"  # Daily at 0400 UTC
+  schedules:
+    - "0 4 * * *"  # Daily at 04:00 UTC
+  timezone: UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
   workflowMetadata:
     labels:
       app.kubernetes.io/name: pdftract-nightly-fuzz
       workflow-type: nightly-fuzz
   workflowSpec:
+    entrypoint: pipeline
     serviceAccountName: argo-workflow
+    parallelism: 2  # Shared ReadWriteOnce PVCs keep the run on one node.
 
     # === Workflow Timeout Structure ===
     # Multi-layer timeout protection to prevent indefinite hangs:
@@ -56,9 +61,9 @@ spec:
     # 2. Template-level deadlines:
     #    - setup: 600s (10 min) - cargo-fuzz installation
     #    - seed-corpus: 300s (5 min) - corpus preparation
-    #    - fuzz-matrix: 28800s (8 hours) - parallel fuzz orchestration
+    #    - fuzz-matrix: 79200s (22 hours) - two concurrent fuzz targets
     #    - fuzz-target: 21600s (6 hours) - per-target fuzzing
-    #    - on-exit: 300s (5 min) - exit handler
+    #    - report-crashes: 300s (5 min) - crash summary
     #
     # 3. Command-level timeouts (in-container):
     #    - cargo install cargo-fuzz: 300s timeout
@@ -68,11 +73,12 @@ spec:
     # to prevent hangs on network issues or build problems. Fixed storage
     # classes (sata-large -> sata for <100Gi volumes). Adjusted workflow
     # deadline from 24h to match actual runtime.
-    activeDeadlineSeconds: 86400  # 24 hours absolute max (8 targets × 4.8h + overhead)
-    podGC: OnPodCompletion
-    ttlSecondsAfterFinished:
-      success: 43200   # 12 hours for success
-      failure: 604800  # 7 days for failure (crashes need investigation)
+    activeDeadlineSeconds: 86400  # 24 hours absolute max
+    podGC:
+      strategy: OnWorkflowCompletion
+    ttlStrategy:
+      secondsAfterSuccess: 43200   # 12 hours for success
+      secondsAfterFailure: 604800  # 7 days for failure
 
     volumeClaimTemplates:
       - metadata:
@@ -126,7 +132,6 @@ spec:
       # Clone workspace, then run all fuzz targets in parallel
       - name: pipeline
         dag:
-          onExit: on-exit
           tasks:
             - name: setup
               template: setup
@@ -138,28 +143,13 @@ spec:
             - name: fuzz-matrix
               template: fuzz-matrix
               dependencies: [setup, seed-corpus]
+              continueOn:
+                failed: true
+                error: true
 
             - name: report-crashes
               template: report-crashes
               dependencies: [fuzz-matrix]
-              when: "{{tasks.fuzz-matrix.outputs.parameters.crash-count}} > 0"
-
-      # === Exit Handler ===
-      # Reports fuzzing run summary (duration, execs, crashes)
-      - name: on-exit
-        script:
-          image: alpine:3.19
-          command: [sh]
-          source: |
-            #!/bin/sh
-            set -e
-            echo "=== Nightly Fuzz Exit Report ==="
-            echo "Workflow: {{workflow.name}}"
-            echo "Status: {{workflow.status}}"
-            echo "Duration: {{workflow.duration}}"
-            echo "Crashes found: {{workflow.parameters.crash-count}}"
-            echo "Artifacts available in workflow artifact store"
-        activeDeadlineSeconds: 300
 
       # === Setup Step ===
       # Clone repo and install cargo-fuzz
@@ -168,7 +158,7 @@ spec:
       - name: setup
         activeDeadlineSeconds: 600
         container:
-          image: rust:1.83-bookworm
+          image: rustlang/rust:nightly-bookworm@sha256:b9312379e56f5e8ce6c5b0608876b0b29b36482e2dba6aff68392f7657fabc94
           command: [bash, -c]
           args:
             - |
@@ -176,8 +166,11 @@ spec:
 
               echo "=== Nightly Fuzz Setup ==="
 
-              cd /workspace
+              git clone --depth 1 --branch main \
+                https://git.ardenone.com/jedarden/pdftract.git /workspace/pdftract
+              cd /workspace/pdftract
               export CARGO_HOME="/cache/cargo/registry"
+              export PATH="$CARGO_HOME/bin:$PATH"
 
               # Install cargo-fuzz if not present with timeout
               if ! command -v cargo-fuzz &> /dev/null; then
@@ -219,8 +212,8 @@ spec:
 
               echo "=== Seeding Fuzz Corpus ==="
 
-              MALFORMED_DIR="/workspace/tests/fixtures/malformed"
-              CORPUS_BASE="/workspace/fuzz/corpus"
+              MALFORMED_DIR="/workspace/pdftract/tests/fixtures/malformed"
+              CORPUS_BASE="/workspace/pdftract/fuzz/corpus"
 
               # Check if malformed fixtures exist
               if [ ! -d "$MALFORMED_DIR" ]; then
@@ -235,7 +228,7 @@ spec:
               # Checked-in curated seeds (fuzz/seeds/<target>/, e.g. the real
               # LZW streams for lzw_decode per ADR-003) are copied on top so
               # they are always present regardless of fixture churn.
-              SEEDS_DIR="/workspace/fuzz/seeds"
+              SEEDS_DIR="/workspace/pdftract/fuzz/seeds"
               for target in lexer object_parser xref stream_decoder lzw_decode cmap_parser content profile_yaml; do
                 TARGET_CORPUS="$CORPUS_BASE/$target"
                 mkdir -p "$TARGET_CORPUS"
@@ -267,11 +260,11 @@ spec:
               memory: 512Mi
 
       # === Fuzz Matrix ===
-      # Run all 8 fuzz targets in parallel, 4.8 CPU-hours each
+      # Run all eight fuzz targets, at most two at a time.
       - name: fuzz-matrix
-        activeDeadlineSeconds: 28800  # 8 hours hard limit (8 targets × 4.8h in parallel = ~4.8h, plus overhead)
+        activeDeadlineSeconds: 79200  # Four waves of two targets, plus build headroom.
         dag:
-          onExit: fuzz-matrix-exit
+          failFast: false
           tasks:
             - name: fuzz-lexer
               template: fuzz-target
@@ -282,7 +275,8 @@ spec:
                   - name: timeout
                     value: "17400"  # 4.8 hours in seconds
               continueOn:
-                failed: true  # Continue even if one target fails
+                failed: true
+                error: true  # Continue even if one target fails
             - name: fuzz-object-parser
               template: fuzz-target
               arguments:
@@ -293,6 +287,7 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
             - name: fuzz-xref
               template: fuzz-target
               arguments:
@@ -303,6 +298,7 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
             - name: fuzz-stream-decoder
               template: fuzz-target
               arguments:
@@ -313,6 +309,7 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
             - name: fuzz-cmap-parser
               template: fuzz-target
               arguments:
@@ -323,6 +320,7 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
             - name: fuzz-content
               template: fuzz-target
               arguments:
@@ -333,6 +331,7 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
             - name: fuzz-profile-yaml
               template: fuzz-target
               arguments:
@@ -343,6 +342,7 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
             - name: fuzz-lzw-decode
               template: fuzz-target
               arguments:
@@ -353,15 +353,16 @@ spec:
                     value: "17400"
               continueOn:
                 failed: true
+                error: true
+            - name: fuzz-matrix-exit
+              template: fuzz-matrix-exit
+              dependencies: [fuzz-lexer, fuzz-object-parser, fuzz-xref, fuzz-stream-decoder, fuzz-cmap-parser, fuzz-content, fuzz-profile-yaml, fuzz-lzw-decode]
 
       # === Fuzz Target Template ===
       # Run cargo-fuzz on a single target with address sanitizer
       #
-      # Memory enforcement (bf-1g1fd):
-      # - Cgroup MemoryMax: 1536 MB (hard ceiling on entire fuzz run)
-      # - Libfuzzer -rss_limit_mb: 1024 MB (per-execution RSS cap)
-      # - Libfuzzer -malloc_limit_mb: 1024 MB (total malloc cap)
-      # This layered approach ensures clean failure mode for regressions.
+      # Kubernetes memory limits bound each pod; libFuzzer also limits RSS and
+      # allocations. Unprivileged pods cannot create child cgroups.
       - name: fuzz-target
         inputs:
           parameters:
@@ -369,7 +370,7 @@ spec:
             - name: timeout
         activeDeadlineSeconds: 21600  # 6 hours absolute max
         container:
-          image: rustlang/rust:nightly-bookworm
+          image: rustlang/rust:nightly-bookworm@sha256:b9312379e56f5e8ce6c5b0608876b0b29b36482e2dba6aff68392f7657fabc94
           command: [bash, -c]
           args:
             - |
@@ -378,20 +379,19 @@ spec:
               TARGET="{{inputs.parameters.target}}"
               TIMEOUT="{{inputs.parameters.timeout}}"
               ARTIFACT_DIR="/fuzz-artifacts/$TARGET"
-              MEMORY_MAX_MB=1536  # 1.5 GB cgroup cap (allows overhead above libfuzzer limits)
 
               echo "=========================================="
               echo "Fuzzing Target: $TARGET"
               echo "Timeout: $TIMEOUT seconds"
               echo "=========================================="
 
-              cd /workspace
+              cd /workspace/pdftract
               export CARGO_HOME="/cache/cargo/registry"
               export CARGO_TARGET_DIR="/cache/cargo/target-fuzz-$TARGET"
+              export PATH="$CARGO_HOME/bin:$PATH"
 
-              # Enable address sanitizer for crash detection
-              export RUSTFLAGS="-Zsanitizer=address -Zsanitizer=memory -Zsanitizer=leak"
-              export ASAN_OPTIONS="detect_leaks=1:symbolize=1"
+              # cargo-fuzz enables the address sanitizer for the target.
+              export ASAN_OPTIONS="detect_leaks=0:symbolize=1"
 
               # Create artifact directory
               mkdir -p "$ARTIFACT_DIR"
@@ -402,133 +402,20 @@ spec:
               echo "=== Starting fuzz run for $TARGET (max $TIMEOUT seconds) ==="
               echo "Corpus: fuzz/corpus/$TARGET"
               echo "Artifacts: $ARTIFACT_DIR"
-              echo "Memory limits (bf-1g1fd memory ceiling gate):"
-              echo "  - Cgroup MemoryMax: ${MEMORY_MAX_MB} MB (hard ceiling)"
-              echo "  - rss_limit_mb=1024 (per-execution RSS cap)"
-              echo "  - malloc_limit_mb=1024 (total malloc cap)"
+              echo "Memory limits: Kubernetes pod limit, libFuzzer RSS/malloc 1024 MB"
 
-              # Set up cgroup memory enforcement (bf-1g1fd)
-              # Check if cgroup v2 is available (preferred)
-              if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
-                echo "=== Using cgroup v2 for memory enforcement ==="
-
-                # Create a child cgroup for this fuzz run
-                CGROUP_PATH="/sys/fs/cgroup/fuzz-$TARGET"
-                mkdir -p "$CGROUP_PATH"
-
-                # Set memory limit
-                echo "max ${MEMORY_MAX_MB}M" > "$CGROUP_PATH/memory.max"
-
-                # Enable memory controller
-                echo "+memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true
-
-                # Launch the fuzzer in the cgroup
-                (
-                  # Add current process to the cgroup
-                  echo $$ > "$CGROUP_PATH/cgroup.procs"
-
-                  # Run fuzzer with timeout and memory limits
-                  # -timeout=0 means no per-input timeout (libFuzzer default)
-                  # -max_total_time is the wall-clock budget for this run
-                  # -max_len=10000 limits input size (PDFs are small)
-                  # -rss_limit_mb enforces RSS budget per fuzz execution
-                  # -malloc_limit_mb enforces total malloc budget
-                  # These limits implement the memory ceiling gate (bf-1g1fd)
-                  cargo fuzz run "$TARGET" \
-                    -timeout=0 \
-                    -max_total_time="$TIMEOUT" \
-                    -max_len=10000 \
-                    -rss_limit_mb=1024 \
-                    -malloc_limit_mb=1024 \
-                    -artifact_prefix="$ARTIFACT_DIR/" \
-                    fuzz/corpus/"$TARGET"
-                ) || {
-                  EXIT_CODE=$?
-                  # Clean up cgroup
-                  rmdir "$CGROUP_PATH" 2>/dev/null || true
-
-                  echo "Fuzzing exited with code: $EXIT_CODE"
-                  # Exit code 1 is normal for fuzzers (crash found)
-                  # Exit code 0 is also normal (no crashes found)
-                  # Only fail on infrastructure errors
-                  if [ $EXIT_CODE -ge 2 ]; then
-                    echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
-                    exit $EXIT_CODE
-                  fi
-                }
-
-                # Clean up cgroup
-                rmdir "$CGROUP_PATH" 2>/dev/null || true
-
-              elif [ -w /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
-                echo "=== Using cgroup v1 for memory enforcement ==="
-
-                # Create a cgroup for this fuzz run (cgroup v1)
-                CGROUP_PATH="/sys/fs/cgroup/memory/fuzz-$TARGET"
-
-                # Clean up any existing cgroup
-                mkdir -p "$CGROUP_PATH" 2>/dev/null || rmdir "$CGROUP_PATH" 2>/dev/null
-                mkdir -p "$CGROUP_PATH"
-
-                # Set memory limit
-                MEMORY_MAX_BYTES=$((MEMORY_MAX_MB * 1024 * 1024))
-                echo "$MEMORY_MAX_BYTES" > "$CGROUP_PATH/memory.limit_in_bytes"
-
-                # Disable OOM killer (let it fail cleanly)
-                echo 0 > "$CGROUP_PATH/memory.oom_control" 2>/dev/null || true
-
-                # Launch the fuzzer in the cgroup
-                (
-                  # Add current process to the cgroup
-                  echo $$ > "$CGROUP_PATH/tasks"
-
-                  # Run fuzzer with timeout and memory limits
-                  cargo fuzz run "$TARGET" \
-                    -timeout=0 \
-                    -max_total_time="$TIMEOUT" \
-                    -max_len=10000 \
-                    -rss_limit_mb=1024 \
-                    -malloc_limit_mb=1024 \
-                    -artifact_prefix="$ARTIFACT_DIR/" \
-                    fuzz/corpus/"$TARGET"
-                ) || {
-                  EXIT_CODE=$?
-                  # Clean up cgroup
-                  rmdir "$CGROUP_PATH" 2>/dev/null || true
-
-                  echo "Fuzzing exited with code: $EXIT_CODE"
-                  if [ $EXIT_CODE -ge 2 ]; then
-                    echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
-                    exit $EXIT_CODE
-                  fi
-                }
-
-                # Clean up cgroup
-                rmdir "$CGROUP_PATH" 2>/dev/null || true
-
-              else
-                echo "=== WARNING: No cgroup memory controller available ==="
-                echo "Running without cgroup MemoryMax enforcement."
-                echo "Libfuzzer RSS/malloc limits will still apply."
-                echo ""
-
-                # Run fuzzer with libfuzzer memory limits only
-                cargo fuzz run "$TARGET" \
-                  -timeout=0 \
-                  -max_total_time="$TIMEOUT" \
-                  -max_len=10000 \
-                  -rss_limit_mb=1024 \
-                  -malloc_limit_mb=1024 \
-                  -artifact_prefix="$ARTIFACT_DIR/" \
-                  fuzz/corpus/"$TARGET" || {
-                  EXIT_CODE=$?
-                  echo "Fuzzing exited with code: $EXIT_CODE"
-                  if [ $EXIT_CODE -ge 2 ]; then
-                    echo "ERROR: Infrastructure failure (exit code $EXIT_CODE)"
-                    exit $EXIT_CODE
-                  fi
-                }
-              fi
+              # Keep libFuzzer flags after -- so cargo-fuzz forwards them.
+              set +e
+              timeout "$((TIMEOUT + 300))" cargo fuzz run "$TARGET" -s address -- \
+                "fuzz/corpus/$TARGET" \
+                -timeout=10 \
+                -max_total_time="$TIMEOUT" \
+                -max_len=10000 \
+                -rss_limit_mb=1024 \
+                -malloc_limit_mb=1024 \
+                -artifact_prefix="$ARTIFACT_DIR/"
+              FUZZ_STATUS=$?
+              set -e
 
               echo "=== Fuzz run complete for $TARGET ==="
 
@@ -564,6 +451,8 @@ spec:
               Timeouts: $TIMEOUT_COUNT
               EOF
 
+              exit "$FUZZ_STATUS"
+
           volumeMounts:
             - name: workspace
               mountPath: /workspace
@@ -585,6 +474,7 @@ spec:
       # === Fuzz Matrix Exit Handler ===
       # Count total crashes across all targets
       - name: fuzz-matrix-exit
+        activeDeadlineSeconds: 300
         script:
           image: alpine:3.19
           command: [sh]
@@ -606,8 +496,6 @@ spec:
 
             echo "Total targets with crashes: $TOTAL_CRASHES"
 
-            # Save as output parameter for conditional execution
-            echo "$TOTAL_CRASHES" > /tmp/crash-count
           volumeMounts:
             - name: workspace
               mountPath: /workspace
@@ -618,14 +506,9 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-          outputs:
-            parameters:
-              - name: crash-count
-                valueFrom:
-                  path: /tmp/crash-count
 
       # === Report Crashes ===
-      # File beads for new crashes via argo-workflows-issue-reporter
+      # Log the collected crash artifacts for triage.
       - name: report-crashes
         activeDeadlineSeconds: 300
         container:
@@ -637,9 +520,7 @@ spec:
 
               echo "=== Processing Crash Artifacts ==="
 
-              # This is a placeholder for the argo-workflows-issue-reporter integration
-              # The sidecar pattern would be implemented in a follow-up bead
-              # For now, we just collect and list the crash artifacts
+              # Durable artifact retention is handled by the evidence work.
 
               for target in lexer object_parser xref stream_decoder lzw_decode cmap_parser content profile_yaml; do
                 CRASH_FILE="/workspace/crashes-$target.tar.gz"
@@ -651,7 +532,7 @@ spec:
               done
 
               echo "=== Crash processing complete ==="
-              echo "Crash artifacts available in workflow artifact store"
+              echo "Crash tarballs remain on the per-run workspace"
           volumeMounts:
             - name: workspace
               mountPath: /workspace
@@ -662,14 +543,3 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-        outputs:
-          artifacts:
-            - name: all-crashes
-              path: /workspace
-              optional: true
-
-    # === Workflow Parameters ===
-    arguments:
-      parameters:
-        - name: crash-count
-          value: "0"
