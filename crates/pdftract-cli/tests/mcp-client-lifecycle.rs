@@ -40,6 +40,7 @@ use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -209,12 +210,18 @@ struct McpServer {
     stdin: Option<ChildStdin>,
     responses: Receiver<Value>,
     stderr: Arc<Mutex<Vec<u8>>>,
+    reader_paused: Arc<AtomicBool>,
     next_id: u64,
 }
 
 impl McpServer {
     /// Spawn `pdftract mcp --stdio [extra args]` with bounded, drained IO.
     fn spawn(extra_args: &[&str]) -> Self {
+        Self::spawn_with_reader_paused(extra_args, false)
+    }
+
+    /// Hold stdout unread so a large in-flight response blocks in its write.
+    fn spawn_with_reader_paused(extra_args: &[&str], pause_reader: bool) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_pdftract"))
             .arg("mcp")
             .arg("--stdio")
@@ -232,9 +239,17 @@ impl McpServer {
         // Exits on EOF once the child is gone; detached threads cannot hang
         // the test because every *test-side* receive is recv_timeout-bounded.
         let (tx, rx) = channel::<Value>();
+        let reader_paused = Arc::new(AtomicBool::new(pause_reader));
+        let reader_pause_flag = Arc::clone(&reader_paused);
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            while let Ok(Some(body)) = read_frame(&mut reader) {
+            loop {
+                while reader_pause_flag.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                let Ok(Some(body)) = read_frame(&mut reader) else {
+                    break;
+                };
                 match serde_json::from_str::<Value>(&body) {
                     Ok(msg) => {
                         if tx.send(msg).is_err() {
@@ -279,6 +294,7 @@ impl McpServer {
             stdin,
             responses: rx,
             stderr: stderr_log,
+            reader_paused,
             next_id: 0,
         }
     }
@@ -371,6 +387,18 @@ impl McpServer {
         String::from_utf8_lossy(&log[start..]).into_owned()
     }
 
+    fn wait_for_stderr(&self, marker: &str) {
+        let deadline = Instant::now() + READ_TIMEOUT;
+        while !self.stderr_tail().contains(marker) {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for stderr marker {marker:?}; stderr tail:\n{}",
+                self.stderr_tail()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// Close stdin, signaling EOF (documented terminate step).
     fn close_stdin(&mut self) {
         self.stdin.take();
@@ -382,7 +410,7 @@ impl McpServer {
         match wait_with_timeout(&mut self.child, SHUTDOWN_TIMEOUT_MS) {
             Ok(code) => code,
             Err(e) => panic!(
-                "server did not exit within {SHUTDOWN_TIMEOUT_MS}ms of stdin EOF: {e}; stderr tail:\n{}",
+                "server did not exit within {SHUTDOWN_TIMEOUT_MS}ms: {e}; stderr tail:\n{}",
                 self.stderr_tail()
             ),
         }
@@ -391,6 +419,7 @@ impl McpServer {
 
 impl Drop for McpServer {
     fn drop(&mut self) {
+        self.reader_paused.store(false, Ordering::SeqCst);
         // Graceful path first: EOF lets the server drain and exit 0.
         self.stdin.take();
         // wait_with_timeout kills at the deadline and bounds the post-kill
@@ -487,6 +516,75 @@ fn assert_data_reason<'a>(what: &str, response: &'a Value) -> &'a str {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+#[cfg(unix)]
+fn send_sigterm(server: &McpServer) {
+    // SAFETY: the PID belongs to the live child owned by the test guard.
+    assert_eq!(
+        unsafe { libc::kill(server.child.id() as i32, libc::SIGTERM) },
+        0
+    );
+}
+
+/// A client can keep stdin open after handshake without preventing shutdown.
+#[cfg(unix)]
+#[test]
+fn sigterm_exits_while_idle_with_stdin_open() {
+    let mut server = McpServer::spawn(&[]);
+    let init = server.request("initialize", json!({"protocolVersion": "2024-11-05"}));
+    assert_success(&init, "initialize");
+
+    send_sigterm(&server);
+    assert_eq!(
+        server.wait_for_exit(),
+        Some(0),
+        "stderr:\n{}",
+        server.stderr_tail()
+    );
+    assert!(server.stdin.is_some(), "the client must hold stdin open");
+    server.wait_for_stderr("SIGTERM received, draining complete");
+}
+
+/// SIGTERM during a blocked response write must let that response flush.
+#[cfg(unix)]
+#[test]
+fn sigterm_drains_in_flight_response() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pdf_path = dir.path().join("large.pdf");
+    std::fs::write(&pdf_path, minimal_pdf(&"X".repeat(2_000_000))).expect("write fixture");
+
+    // Holding stdout unread makes the response larger than the pipe capacity,
+    // so the server is still writing it when SIGTERM arrives.
+    let mut server = McpServer::spawn_with_reader_paused(&[], true);
+    let body = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {
+            "name": "extract_text",
+            "arguments": {"path": pdf_path.to_str().expect("utf-8 fixture path")}
+        }
+    });
+    server.send_raw(&body.to_string());
+    server.wait_for_stderr("tool=extract_text");
+
+    send_sigterm(&server);
+    server.reader_paused.store(false, Ordering::SeqCst);
+    let response = server.recv_response(1);
+    let result = assert_success(&response, "in-flight tools/call");
+    assert!(
+        result["structuredContent"]["text"]
+            .as_str()
+            .is_some_and(|text| text.len() >= 1_000_000),
+        "in-flight response must contain at least 1 MB of extracted text"
+    );
+    assert_eq!(
+        server.wait_for_exit(),
+        Some(0),
+        "stderr:\n{}",
+        server.stderr_tail()
+    );
+    assert!(server.stdin.is_some(), "the client must hold stdin open");
+    server.wait_for_stderr("SIGTERM received, draining complete");
+}
 
 /// The full documented lifecycle: spawn → initialize → tools/list (the
 /// advertised ten-entry catalog) → tools/call on a fixture →
@@ -641,8 +739,16 @@ fn specialized_tools_return_real_results_over_wire() {
     );
     let search_result = assert_success(&search, "search");
     assert_eq!(search_result["isError"], false, "search failed: {search}");
-    assert_eq!(search_result["structuredContent"]["matches"].as_array().map(Vec::len), Some(1));
-    assert_eq!(search_result["structuredContent"]["matches"][0]["page_index"], 0);
+    assert_eq!(
+        search_result["structuredContent"]["matches"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        search_result["structuredContent"]["matches"][0]["page_index"],
+        0
+    );
 
     let table = server.request(
         "tools/call",
@@ -663,8 +769,16 @@ fn specialized_tools_return_real_results_over_wire() {
         }),
     );
     let classify_result = assert_success(&classify, "classify");
-    assert_eq!(classify_result["isError"], false, "classify failed: {classify}");
-    assert!(classify_result["structuredContent"]["document_type"].is_string());
+    if cfg!(feature = "profiles") {
+        assert_eq!(
+            classify_result["isError"], false,
+            "classify failed: {classify}"
+        );
+        assert!(classify_result["structuredContent"]["document_type"].is_string());
+    } else {
+        assert_eq!(classify_result["isError"], true);
+        assert_eq!(classify_result["structuredContent"]["code"], -32002);
+    }
 
     let forms = server.request(
         "tools/call",
@@ -674,7 +788,10 @@ fn specialized_tools_return_real_results_over_wire() {
         }),
     );
     let forms_result = assert_success(&forms, "get_form_fields");
-    assert_eq!(forms_result["isError"], false, "get_form_fields failed: {forms}");
+    assert_eq!(
+        forms_result["isError"], false,
+        "get_form_fields failed: {forms}"
+    );
     assert!(forms_result["structuredContent"]["form_fields"].is_array());
 
     let attachments = server.request(
@@ -685,7 +802,10 @@ fn specialized_tools_return_real_results_over_wire() {
         }),
     );
     let attachments_result = assert_success(&attachments, "get_attachments");
-    assert_eq!(attachments_result["isError"], false, "get_attachments failed: {attachments}");
+    assert_eq!(
+        attachments_result["isError"], false,
+        "get_attachments failed: {attachments}"
+    );
     assert!(attachments_result["structuredContent"]["attachments"].is_array());
 
     server.close_stdin();

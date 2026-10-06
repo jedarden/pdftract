@@ -13,19 +13,81 @@
 
 use crate::mcp::framing::{BatchMessage, ErrorObject, Id, Request, Response};
 use crate::mcp::tools;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use serde_json::json;
+#[cfg(unix)]
+use std::io::Read;
 use std::io::{self, BufRead, BufReader, BufWriter, Stdout, Write};
 use std::panic::Location;
 use std::path::Path;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Instant;
 
 /// Global flag indicating whether we should keep running.
 ///
 /// Set to false by SIGTERM handler to trigger graceful shutdown.
 static SHOULD_RUN: AtomicBool = AtomicBool::new(true);
+
+/// Poll stdin in bounded intervals so an idle server observes SIGTERM even
+/// when the client keeps its end of the pipe open. `read_line` retries
+/// `Interrupted` internally, so disabling SA_RESTART alone is insufficient.
+#[cfg(unix)]
+struct ShutdownAwareStdin;
+
+#[cfg(unix)]
+impl Read for ShutdownAwareStdin {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        loop {
+            if !SHOULD_RUN.load(Ordering::SeqCst) {
+                return Err(io::Error::other("SIGTERM received"));
+            }
+
+            let mut fd = libc::pollfd {
+                fd: libc::STDIN_FILENO,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: `fd` is a valid pollfd for the duration of this call.
+            let ready = unsafe { libc::poll(&mut fd, 1, 100) };
+            if ready == 0 {
+                continue;
+            }
+            if ready < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(error);
+            }
+            if fd.revents & libc::POLLNVAL != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid stdin fd",
+                ));
+            }
+
+            // A ready pipe read returns available bytes (or EOF) without
+            // waiting for a whole JSON-RPC frame. Buffered bytes are still
+            // dispatched after SIGTERM before the next loop-top flag check.
+            // SAFETY: `buf` is writable for `buf.len()` bytes and stdin is
+            // owned by this transport for the lifetime of the server.
+            let count =
+                unsafe { libc::read(libc::STDIN_FILENO, buf.as_mut_ptr().cast(), buf.len()) };
+            if count >= 0 {
+                return Ok(count as usize);
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() != io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+    }
+}
 
 /// Global stdout writer protected by a mutex.
 ///
@@ -158,7 +220,8 @@ fn setup_signal_handlers() {
             }
 
             // Set up the SIGTERM handler
-            // SA_RESTART: Automatically restart interrupted system calls
+            // Keep in-flight writes restartable. ShutdownAwareStdin bounds
+            // the idle read wait independently of SA_RESTART.
             let mut sa: libc::sigaction = std::mem::zeroed();
             sa.sa_sigaction = sigterm_handler as *const () as usize;
             sa.sa_flags = libc::SA_RESTART;
@@ -497,6 +560,9 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
     eprintln!();
 
     // Create buffered stdin reader
+    #[cfg(unix)]
+    let stdin = ShutdownAwareStdin;
+    #[cfg(not(unix))]
     let stdin = io::stdin();
     let mut stdin = BufReader::with_capacity(65536, stdin);
 
@@ -523,6 +589,9 @@ pub fn run(root: Option<&Path>, audit_log: Option<&std::path::Path>) -> Result<(
                 break;
             }
             Err(e) => {
+                if !SHOULD_RUN.load(Ordering::SeqCst) {
+                    break;
+                }
                 // Parse error - send error response and continue
                 eprintln!("Parse error: {}", e);
 

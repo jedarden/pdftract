@@ -363,27 +363,24 @@ fn test_notification_no_response() {
         write_framed_message(stdin, notification).expect("Failed to write notification");
     }
 
-    // Try to read with a short timeout - there should be no response
-    let stdout = child.stdout.as_mut().expect("Failed to open stdout");
-    let mut reader = BufReader::new(stdout);
+    // `fill_buf` blocks when no response arrives, so poll the pipe itself.
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
 
-    // Set a short read timeout by polling
-    let start = std::time::Instant::now();
-    let _has_data = loop {
-        reader.fill_buf().ok();
-        let buffer_len = reader.buffer().len();
-        if buffer_len > 0 {
-            break true;
-        }
-        if start.elapsed() > Duration::from_millis(50) {
-            break false;
-        }
-        thread::sleep(Duration::from_millis(5));
-    };
+        let stdout = child.stdout.as_ref().expect("Failed to open stdout");
+        let mut fd = libc::pollfd {
+            fd: stdout.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: stdout owns this fd for the duration of the poll.
+        let ready = unsafe { libc::poll(&mut fd, 1, 50) };
+        assert_eq!(ready, 0, "notification unexpectedly produced stdout data");
+    }
+    #[cfg(not(unix))]
+    thread::sleep(Duration::from_millis(50));
 
-    // Notifications don't get responses, so we shouldn't see data immediately
-    // (unless there's buffering from a previous request)
-    // For this test, we just verify the process is still alive
     assert!(
         child.try_wait().unwrap().is_none(),
         "Process died unexpectedly"
