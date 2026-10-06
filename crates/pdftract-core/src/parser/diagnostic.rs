@@ -3,14 +3,8 @@
 //! This module provides diagnostic types for tracking errors and warnings
 //! during PDF parsing, maintaining INV-8 (no panics at public boundaries).
 
-/// Severity level for diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Severity {
-    /// Warning - the document can still be processed
-    Warning,
-    /// Error - recovery attempted, processing continues
-    Error,
-}
+/// Severity level for diagnostics, shared with the code policy and JSON contract.
+pub use crate::diagnostics::Severity;
 
 /// Diagnostic code identifying the type of error or warning.
 ///
@@ -161,6 +155,28 @@ impl Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostics::DiagCode as CanonicalDiagCode;
+
+    #[test]
+    fn severity_uses_canonical_policy_and_wire_spellings() {
+        for (code, expected) in [
+            (CanonicalDiagCode::XrefRepaired, "info"),
+            (CanonicalDiagCode::StructInvalidName, "warning"),
+            (CanonicalDiagCode::StreamBomb, "error"),
+            (CanonicalDiagCode::EncryptionUnsupported, "fatal"),
+        ] {
+            // The policy value must be usable directly in a typed parser diagnostic.
+            let severity: Severity = code.policy().severity;
+            let diagnostic = Diagnostic::new(severity, "test", "test message");
+            assert_eq!(diagnostic.severity.to_string(), expected);
+
+            let canonical =
+                crate::diagnostics::Diagnostic::with_static_no_offset(code, "test message");
+            let wire = crate::schema::DiagnosticJson::from(&canonical);
+            assert_eq!(canonical.severity(), diagnostic.severity);
+            assert_eq!(wire.severity, expected);
+        }
+    }
 
     #[test]
     fn test_diagnostic_new() {
