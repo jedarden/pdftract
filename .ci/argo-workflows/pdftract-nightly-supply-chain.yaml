@@ -19,7 +19,7 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedules:
-    - "0 3 * * *" # Daily at 03:00 UTC, before the nightly fuzz run.
+    - "*/5 * * * *" # Temporary scheduled verification; restore 03:00 UTC after one run starts.
   timezone: UTC
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
@@ -29,8 +29,7 @@ spec:
     entrypoint: pipeline
     serviceAccountName: argo-workflow
 
-    # Setup (300s) + audit (1800s) + deny (1800s), with scheduling and image
-    # pull headroom. This also bounds a run whose scratch volume never becomes usable.
+    # Audit (1800s) + deny (1800s), with scheduling and image pull headroom.
     activeDeadlineSeconds: 5400
 
     # iad-ci does not expose an artifact repository. Keep pods until the
@@ -43,16 +42,16 @@ spec:
     ttlStrategy:
       secondsAfterSuccess: 259200
       secondsAfterFailure: 604800
-    # The audit and deny tasks are deliberately sequential because the shared
-    # workspace and cargo cache are per-run scratch volumes.
+    # Each task clones into its own pod-local emptyDir. Run them sequentially
+    # to keep their source builds from competing for cluster resources.
     parallelism: 1
     volumes:
       - name: workspace
         emptyDir:
-          sizeLimit: 5Gi
+          sizeLimit: 2Gi
       - name: cargo-cache
         emptyDir:
-          sizeLimit: 20Gi
+          sizeLimit: 8Gi
 
     podMetadata:
       labels:
@@ -66,17 +65,18 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+      # The single io1-60 node has much less disk than the dependable
+      # compute1-8 class and evicted cargo-deny during the 2026-10-06 run.
+      nodeSelector:
+        servers.ngpc.rxt.io/class: ch.vs1.large-iad
 
     templates:
       - name: pipeline
         dag:
           failFast: false
           tasks:
-            - name: setup
-              template: setup
             - name: cargo-audit
               template: cargo-audit
-              dependencies: [setup]
               continueOn:
                 failed: true
                 error: true
@@ -96,44 +96,42 @@ spec:
                   - name: deny-status
                     value: "{{tasks.cargo-deny.status}}"
 
-      - name: setup
-        activeDeadlineSeconds: 300
-        container:
-          image: alpine/git:2.43.0
-          command: [sh, -c]
-          args:
-            - |
-              set -eu
-              rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* 2>/dev/null || true
-              git clone --depth 1 --branch main \
-                https://git.ardenone.com/jedarden/pdftract.git /workspace
-              source_revision="$(git -c safe.directory=/workspace -C /workspace rev-parse HEAD)"
-              printf 'source revision: %s\n' "$source_revision"
-          env:
-            - name: GIT_CONFIG_COUNT
-              value: "1"
-            - name: GIT_CONFIG_KEY_0
-              value: credential.helper
-            - name: GIT_CONFIG_VALUE_0
-              value: '!f() { test "$1" = get && echo "username=x-token" && echo "password=$FORGEJO_TOKEN"; }; f'
-            - name: FORGEJO_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: forgejo-webhook-token
-                  key: token
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 512Mi
-
       - name: cargo-audit
         activeDeadlineSeconds: 1800
+        initContainers:
+          - name: clone-source
+            image: alpine/git:2.43.0
+            command: [sh, -c]
+            args:
+              - |
+                set -eu
+                git clone --depth 1 --branch main \
+                  https://git.ardenone.com/jedarden/pdftract.git /workspace
+                git -c safe.directory=/workspace -C /workspace rev-parse HEAD
+            env:
+              - name: GIT_CONFIG_COUNT
+                value: "1"
+              - name: GIT_CONFIG_KEY_0
+                value: credential.helper
+              - name: GIT_CONFIG_VALUE_0
+                value: '!f() { test "$1" = get && echo "username=x-token" && echo "password=$FORGEJO_TOKEN"; }; f'
+              - name: FORGEJO_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: forgejo-webhook-token
+                    key: token
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+                ephemeral-storage: 1Gi
+              limits:
+                cpu: 1000m
+                memory: 512Mi
+                ephemeral-storage: 4Gi
         container:
           image: rust:1.97-bookworm
           command: [bash, -c]
@@ -156,12 +154,48 @@ spec:
             requests:
               cpu: 500m
               memory: 1Gi
+              ephemeral-storage: 4Gi
             limits:
               cpu: 1500m
               memory: 2Gi
+              ephemeral-storage: 12Gi
 
       - name: cargo-deny
         activeDeadlineSeconds: 1800
+        initContainers:
+          - name: clone-source
+            image: alpine/git:2.43.0
+            command: [sh, -c]
+            args:
+              - |
+                set -eu
+                git clone --depth 1 --branch main \
+                  https://git.ardenone.com/jedarden/pdftract.git /workspace
+                git -c safe.directory=/workspace -C /workspace rev-parse HEAD
+            env:
+              - name: GIT_CONFIG_COUNT
+                value: "1"
+              - name: GIT_CONFIG_KEY_0
+                value: credential.helper
+              - name: GIT_CONFIG_VALUE_0
+                value: '!f() { test "$1" = get && echo "username=x-token" && echo "password=$FORGEJO_TOKEN"; }; f'
+              - name: FORGEJO_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: forgejo-webhook-token
+                    key: token
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+                ephemeral-storage: 1Gi
+              limits:
+                cpu: 1000m
+                memory: 512Mi
+                ephemeral-storage: 4Gi
         container:
           image: rust:1.97-bookworm
           command: [bash, -c]
@@ -184,9 +218,11 @@ spec:
             requests:
               cpu: 500m
               memory: 1Gi
+              ephemeral-storage: 4Gi
             limits:
               cpu: 1500m
               memory: 2Gi
+              ephemeral-storage: 12Gi
 
       - name: policy-gate
         activeDeadlineSeconds: 120
