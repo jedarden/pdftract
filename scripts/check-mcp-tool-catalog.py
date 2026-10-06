@@ -14,10 +14,10 @@ to inspect the call result.
 Beyond that generic smoke, every documented client configuration — the Claude
 Desktop and Cursor JSON snippets and the Continue YAML snippet in
 ``docs/integrations/mcp-clients.md`` — is smoke-tested against its own stdio
-server. Each snippet's exact ``command``/``args`` vector is launched (the
-binary under test is substituted for the ``pdftract`` command name; resolving
-a name through ``PATH`` or an absolute path is client behavior, which the
-Claude Desktop absolute-path variant documents) and must complete the full
+server. Each snippet's ``command`` is resolved through an isolated executable
+mapping to the binary under test, and its ``args`` are passed verbatim. This
+exercises PATH lookup and the Claude Desktop absolute-path form without
+writing to a system installation directory. Every launch must complete the full
 connection lifecycle: initialize handshake, ``tools/list`` discovery against
 the catalog, a successful invocation, a missing-argument in-band failure, an
 unknown-tool ``-32601`` rejection, and a clean exit on stdin EOF. This is what
@@ -37,11 +37,13 @@ import os
 import re
 import selectors
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, NoReturn
 
 
@@ -69,6 +71,7 @@ DOCUMENTED_ADVERTISED_NAMES = (
 # The stdio argument vector every documented client configuration must carry,
 # and the initialize handshake every MCP client performs after spawning.
 DEFAULT_STDIO_ARGS = ["mcp", "--stdio"]
+ABSOLUTE_CLIENT_COMMAND = "/usr/local/bin/pdftract"
 INITIALIZE_PARAMS: dict[str, Any] = {
     "protocolVersion": "2024-11-05",
     "capabilities": {},
@@ -283,17 +286,20 @@ def _documented_server(config: Any, client: str, block_number: int) -> dict[str,
 def _assert_stdio_config(config: Any, client: str, block_number: int) -> None:
     server = _documented_server(config, client, block_number)
     command = server.get("command")
-    if (
-        not isinstance(command, str)
-        or PurePosixPath(command.replace("\\", "/")).name != "pdftract"
-    ):
+    expected_command = (
+        ABSOLUTE_CLIENT_COMMAND
+        if client == "Claude Desktop" and block_number == 2
+        else "pdftract"
+    )
+    if command != expected_command:
         raise CheckFailure(
-            f"{client} configuration block {block_number} does not launch pdftract"
+            f"{client} configuration block {block_number} command {command!r} "
+            f"must be {expected_command!r}"
         )
     if server.get("args") != DEFAULT_STDIO_ARGS:
         raise CheckFailure(
             f"{client} configuration block {block_number} "
-            f"must use args {DEFAULT_STDIO_ARGS}"
+            f"args {server.get('args')!r} must be {DEFAULT_STDIO_ARGS!r}"
         )
 
 
@@ -373,8 +379,12 @@ def parse_client_configs() -> list[ClientConfig]:
     configs: list[ClientConfig] = []
     for client in ("Claude Desktop", "Cursor"):
         blocks = _fenced_blocks(_client_section(markdown, client), "json")
-        if not blocks:
-            raise CheckFailure(f"{client} has no JSON configuration block")
+        expected_count = 2 if client == "Claude Desktop" else 1
+        if len(blocks) != expected_count:
+            raise CheckFailure(
+                f"{client} must have {expected_count} JSON configuration "
+                f"block(s); found {len(blocks)}"
+            )
         for number, block in enumerate(blocks, start=1):
             try:
                 config = json.loads(block)
@@ -413,15 +423,12 @@ def parse_client_configs() -> list[ClientConfig]:
 
 
 def server_argv(stdio_args: list[str]) -> list[str]:
-    """Full argv that launches the server binary with the given stdio args.
-
-    Every documented client configuration is launched through this with its
-    own snippet args, so a snippet edit reaches the wire even though
-    ``_assert_stdio_config`` pins the documented shape.
-    """
+    """Underlying binary and optional prefix, followed by the given stdio args."""
     configured = os.environ.get("PDFTRACT_MCP_BIN")
     if configured:
         parts = shlex.split(configured)
+        if not parts:
+            raise CheckFailure("PDFTRACT_MCP_BIN contains no executable")
         # Replace a trailing generic stdio tail rather than stacking onto it.
         if len(parts) >= 2 and parts[-2:] == DEFAULT_STDIO_ARGS:
             parts = parts[:-2]
@@ -437,6 +444,55 @@ def server_argv(stdio_args: list[str]) -> list[str]:
         "--",
         *stdio_args,
     ]
+
+
+def server_executable(argv: list[str]) -> Path:
+    """Resolve the underlying binary before creating the isolated mapping."""
+    found = shutil.which(argv[0])
+    if found is None:
+        source = "PDFTRACT_MCP_BIN" if os.environ.get("PDFTRACT_MCP_BIN") else "Cargo"
+        raise CheckFailure(
+            f"{source} executable {argv[0]!r} was not found or is not executable"
+        )
+    return Path(found).resolve()
+
+
+def _map_executable(source: Path, destination: Path) -> None:
+    """Create a local executable alias, including on systems without symlinks."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination.symlink_to(source)
+    except OSError:
+        try:
+            os.link(source, destination)
+        except OSError:
+            shutil.copy2(source, destination)
+
+
+def create_launch_mapping(directory: Path, executable: Path) -> None:
+    """Install only the two command forms documented in the client guide."""
+    suffix = ".exe" if os.name == "nt" else ""
+    _map_executable(executable, directory / "bin" / f"pdftract{suffix}")
+    absolute_relative = ABSOLUTE_CLIENT_COMMAND.lstrip("/") + suffix
+    _map_executable(executable, directory / absolute_relative)
+
+
+def resolve_client_command(config: ClientConfig, directory: Path) -> Path:
+    """Resolve a snippet command inside the mapping, never on the host PATH."""
+    if config.command == "pdftract":
+        found = shutil.which(config.command, path=str(directory / "bin"))
+        resolved = Path(found) if found is not None else None
+    elif config.command == ABSOLUTE_CLIENT_COMMAND:
+        suffix = ".exe" if os.name == "nt" else ""
+        resolved = directory / (config.command.lstrip("/") + suffix)
+    else:
+        resolved = None
+    if resolved is None or not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise CheckFailure(
+            f"{config.label} command {config.command!r} has no executable "
+            "in the isolated client mapping"
+        )
+    return resolved
 
 
 @dataclass
@@ -576,9 +632,17 @@ class FrameClient:
                 )
 
 
-def start_client(timeout: float, argv: list[str] | None = None) -> FrameClient:
+def start_client(
+    timeout: float,
+    argv: list[str] | None = None,
+    *,
+    executable: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> FrameClient:
     process = subprocess.Popen(
         argv if argv is not None else server_argv(DEFAULT_STDIO_ARGS),
+        executable=executable,
+        env=env,
         cwd=ROOT,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -772,7 +836,11 @@ def run_tool_conformance(
 
 
 def smoke_client_config(
-    config: ClientConfig, catalog_by_name: dict[str, dict[str, Any]], timeout: float
+    config: ClientConfig,
+    catalog_by_name: dict[str, dict[str, Any]],
+    timeout: float,
+    mapping: Path,
+    server_prefix: list[str],
 ) -> str:
     """Smoke-test one documented client configuration end to end.
 
@@ -782,8 +850,22 @@ def smoke_client_config(
     in-band document failure, unknown-tool rejection), and a clean exit on
     stdin EOF.
     """
-    argv = server_argv(config.args)
-    client = start_client(timeout, argv)
+    executable = resolve_client_command(config, mapping)
+    argv = [config.command, *server_prefix, *config.args]
+    env = os.environ.copy()
+    env["PATH"] = str(mapping / "bin") + os.pathsep + env.get("PATH", "")
+    try:
+        client = start_client(
+            timeout,
+            argv,
+            executable=executable if config.command == ABSOLUTE_CLIENT_COMMAND else None,
+            env=env,
+        )
+    except OSError as error:
+        raise CheckFailure(
+            f"{config.label} could not launch command {config.command!r} "
+            f"with args {config.args!r}: {error}"
+        ) from error
     try:
         assert_initialize_result(
             result_of(client.send("initialize", INITIALIZE_PARAMS), "initialize")
@@ -797,7 +879,7 @@ def smoke_client_config(
         client.close()
         raise
     client.close(require_clean_exit=True)
-    return f"{Path(argv[0]).name} {' '.join(config.args)}"
+    return shlex.join([config.command, *config.args])
 
 
 def run_smoke(client: FrameClient, catalog_by_name: dict[str, dict[str, Any]]) -> None:
@@ -824,15 +906,25 @@ def main() -> int:
         if timeout <= 0:
             fail("PDFTRACT_MCP_TIMEOUT must be positive")
 
+        underlying = server_argv([])
+        server_binary = server_executable(underlying)
+
         client = start_client(timeout)
         try:
             run_smoke(client, catalog_by_name)
         finally:
             client.close()
 
-        for config in configs:
-            vector = smoke_client_config(config, catalog_by_name, timeout)
-            print(f"MCP client config smoke OK: {config.label} [{vector}]")
+        with tempfile.TemporaryDirectory(
+            prefix=".pdftract-mcp-launch-", dir=ROOT
+        ) as temporary:
+            mapping = Path(temporary)
+            create_launch_mapping(mapping, server_binary)
+            for config in configs:
+                vector = smoke_client_config(
+                    config, catalog_by_name, timeout, mapping, underlying[1:]
+                )
+                print(f"MCP client config smoke OK: {config.label} [{vector}]")
         print(
             f"MCP client configuration interop OK: {len(configs)} documented "
             f"configurations ({', '.join(dict.fromkeys(c.client for c in configs))})"

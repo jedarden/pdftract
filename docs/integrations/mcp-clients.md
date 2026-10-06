@@ -40,10 +40,10 @@ stdio server: one server is launched per snippet using that snippet's exact
 `command` and `args`, and the run must complete the documented connection
 lifecycle — initialize handshake, `tools/list` discovery against the catalog,
 a successful invocation, an in-band missing-document failure, an unknown-tool
-`-32601` rejection, and a clean exit on stdin EOF. The binary under test is
-substituted for the snippet's `pdftract` command name, since resolving a name
-through `PATH` or an absolute path is client behavior; the snippet's
-arguments are what the configuration controls, and they are launched verbatim.
+`-32601` rejection, and a clean exit on stdin EOF. The check maps the binary
+under test to temporary executables for the `PATH` command and the Claude
+Desktop absolute path, resolves each snippet's command through that mapping,
+and passes its arguments verbatim. No system installation path is changed.
 To check the configurations and the actual wire response, run:
 
 ```bash
