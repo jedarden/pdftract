@@ -5,9 +5,8 @@
 # policy data daily so newly published advisories are visible even when the
 # repository is quiet.
 #
-# Logs are retained in completed pods for 24 hours because iad-ci has no Argo
-# artifact repository. Workflow status is retained longer by ttlStrategy, so
-# the terminal phase and node exit codes remain queryable after pod cleanup.
+# The exit handler archives task logs and terminal evidence to the explicit
+# Garage artifact location before pod garbage collection.
 apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
 metadata:
@@ -27,15 +26,14 @@ spec:
   failedJobsHistoryLimit: 7
   workflowSpec:
     entrypoint: pipeline
+    onExit: evidence-exit
     serviceAccountName: argo-workflow
 
     # Audit (1800s) + deny (1800s), with scheduling and image pull headroom.
     activeDeadlineSeconds: 5400
 
-    # iad-ci does not expose an artifact repository. Keep pods until the
-    # workflow is terminal, then delay pod GC so kubectl logs remains available
-    # for one day. Scratch volumes are bounded below; workflow status survives
-    # for 3 days (success) or 7 days (failure) for terminal-phase and exit-code evidence.
+    # Keep pods through the exit handler and for a day of upload debugging.
+    # The evidence artifact outlives both the pods and Workflow TTL.
     podGC:
       strategy: OnWorkflowCompletion
       deleteDelayDuration: 24h
@@ -52,6 +50,12 @@ spec:
       - name: cargo-cache
         emptyDir:
           sizeLimit: 8Gi
+      - name: nightly-evidence-script
+        configMap:
+          name: pdftract-nightly-evidence
+      - name: evidence-output
+        emptyDir:
+          sizeLimit: 4Gi
 
     podMetadata:
       labels:
@@ -71,6 +75,113 @@ spec:
         servers.ngpc.rxt.io/class: ch.vs1.large-iad
 
     templates:
+      - name: evidence-exit
+        dag:
+          tasks:
+            - name: capture
+              template: capture-evidence
+            - name: prune
+              template: prune-evidence
+              dependencies: [capture]
+
+      - name: capture-evidence
+        activeDeadlineSeconds: 900
+        container:
+          image: python:3.13-slim-bookworm
+          command: [python3, /opt/evidence/capture.py]
+          args: ["{{workflow.name}}", "{{workflow.status}}", pdftract-nightly-supply-chain]
+          volumeMounts:
+            - name: nightly-evidence-script
+              mountPath: /opt/evidence
+            - name: evidence-output
+              mountPath: /evidence
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        outputs:
+          artifacts:
+            - name: terminal-evidence
+              path: /evidence
+              artifactGC:
+                strategy: Never
+              archive:
+                tar:
+                  compressionLevel: 6
+              s3:
+                endpoint: needle-ci-artifacts-iad.argo-workflows.svc.cluster.local:3900
+                bucket: needle-ci-artifacts
+                region: garage
+                insecure: true
+                key: pdftract/nightly/pdftract-nightly-supply-chain/{{workflow.name}}/evidence.tgz
+                accessKeySecret:
+                  name: needle-ci-local-artifact-publisher
+                  key: access-key
+                secretKeySecret:
+                  name: needle-ci-local-artifact-publisher
+                  key: secret-key
+
+      - name: prune-evidence
+        activeDeadlineSeconds: 300
+        container:
+          image: docker.io/amazon/aws-cli:2.36.44
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              endpoint=http://needle-ci-artifacts-iad.argo-workflows.svc.cluster.local:3900
+              bucket=needle-ci-artifacts
+              prefix=pdftract/nightly/pdftract-nightly-supply-chain/
+              current="${prefix}{{workflow.name}}/evidence.tgz"
+              export AWS_ACCESS_KEY_ID="$READER_ACCESS_KEY_ID"
+              export AWS_SECRET_ACCESS_KEY="$READER_SECRET_ACCESS_KEY"
+              aws --endpoint-url="$endpoint" s3api head-object --bucket "$bucket" --key "$current" >/dev/null
+              cutoff=$(date -u -d '30 days ago' '+%Y-%m-%dT%H:%M:%SZ')
+              aws --endpoint-url="$endpoint" s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix" \
+                --query "Contents[?LastModified<='$cutoff'].Key" --output text |
+                tr '\t' '\n' | while IFS= read -r key; do
+                  [ -z "$key" ] && continue
+                  [ "$key" = None ] && continue
+                  [ "$key" = "$current" ] && continue
+                  AWS_ACCESS_KEY_ID="$PUBLISHER_ACCESS_KEY_ID" \
+                    AWS_SECRET_ACCESS_KEY="$PUBLISHER_SECRET_ACCESS_KEY" \
+                    aws --endpoint-url="$endpoint" s3api delete-object --bucket "$bucket" --key "$key" >/dev/null
+                done
+              echo 'Nightly supply-chain evidence upload verified; objects older than 30 days pruned'
+          env:
+            - name: READER_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-reader
+                  key: access-key
+            - name: READER_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-reader
+                  key: secret-key
+            - name: PUBLISHER_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-publisher
+                  key: access-key
+            - name: PUBLISHER_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-publisher
+                  key: secret-key
+            - name: AWS_DEFAULT_REGION
+              value: garage
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+
       - name: pipeline
         dag:
           failFast: false

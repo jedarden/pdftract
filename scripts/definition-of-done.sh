@@ -9,3 +9,4 @@ fi
 python3 scripts/audit_readme_capabilities.py
 python3 scripts/validate-sdk-documentation.py
 sh .ci/scripts/test-argo-workflow-drift.sh
+python3 .ci/scripts/test-nightly-evidence.py

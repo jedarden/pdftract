@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pdftract-nightly-evidence
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/name: pdftract-nightly-evidence
+    app.kubernetes.io/part-of: pdftract
+data:
+  capture.py: |
+    #!/usr/bin/env python3
+    """Collect terminal Argo evidence before pod GC runs.
+
+    The workflow service account can list pods and read pod logs, but cannot
+    read Workflow objects. Argo passes its name and pre-exit phase below.
+    """
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import re
+    import shutil
+    import ssl
+    import sys
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    workflow, phase, schedule = sys.argv[1:4]
+    if schedule not in ("pdftract-nightly-fuzz", "pdftract-nightly-supply-chain"):
+        raise SystemExit("unrecognized nightly schedule")
+    if not workflow.startswith(schedule + "-"):
+        raise SystemExit("workflow name does not match schedule")
+
+    root = Path("/evidence")
+    logs = root / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    api = "https://%s:%s" % (
+        os.environ["KUBERNETES_SERVICE_HOST"],
+        os.environ.get("KUBERNETES_SERVICE_PORT", "443"),
+    )
+    sa = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+    token = (sa / "token").read_text().strip()
+    context = ssl.create_default_context(cafile=str(sa / "ca.crt"))
+    namespace = (sa / "namespace").read_text().strip()
+
+    def get(path):
+        request = urllib.request.Request(
+            api + path, headers={"Authorization": "Bearer " + token}
+        )
+        with urllib.request.urlopen(request, context=context, timeout=45) as response:
+            return response.read()
+
+    selector = urllib.parse.quote("workflows.argoproj.io/workflow=" + workflow)
+    pods = json.loads(get("/api/v1/namespaces/%s/pods?labelSelector=%s" %
+                          (namespace, selector)))["items"]
+    if not pods:
+        raise SystemExit("no task pods remain to capture")
+
+    # Main task containers do not receive credential values. Clone init logs
+    # contain the checked-out revision; scrub them before storage too.
+    patterns = (
+        (re.compile(r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)\S+"), r"\1[REDACTED]"),
+        (re.compile(r"(?i)\b((?:token|password|secret|api[_-]?key)\s*[:=]\s*)\S+"), r"\1[REDACTED]"),
+        (re.compile(r"(?i)(https?://)[^/@\s]+@"), r"\1[REDACTED]@"),
+    )
+
+    def sanitize(value):
+        for pattern, replacement in patterns:
+            value = pattern.sub(replacement, value)
+        return value
+
+    def record(path):
+        content = path.read_bytes()
+        return {"path": str(path.relative_to(root)), "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest()}
+
+    evidence = {
+        "workflow": workflow, "schedule": schedule, "phase_before_exit": phase,
+        "source_revision": None, "pods": [], "task_logs": [],
+        "coverage": [], "crash_set": [], "missing_logs": [],
+    }
+    revision = re.compile(r"(?m)^([0-9a-f]{40})$")
+    for pod in sorted(pods, key=lambda p: p["metadata"]["name"]):
+        if pod["status"].get("phase") == "Running":
+            continue  # The exit-handler pod is still running.
+        name = pod["metadata"]["name"]
+        annotations = pod["metadata"].get("annotations", {})
+        pod_status = {"name": name, "phase": pod["status"].get("phase"),
+                      "node_name": annotations.get("workflows.argoproj.io/node-name"),
+                      "node_id": annotations.get("workflows.argoproj.io/node-id"),
+                      "containers": []}
+        containers = pod["status"].get("initContainerStatuses", []) + pod["status"].get("containerStatuses", [])
+        for container in containers:
+            kind = container["name"]
+            if kind in ("init", "wait"):
+                continue
+            terminated = container.get("state", {}).get("terminated", {})
+            pod_status["containers"].append({
+                "name": kind, "exit_code": terminated.get("exitCode"),
+                "reason": terminated.get("reason"),
+            })
+            params = urllib.parse.urlencode({"container": kind, "limitBytes": 16777216})
+            try:
+                raw = get("/api/v1/namespaces/%s/pods/%s/log?%s" %
+                          (namespace, urllib.parse.quote(name), params))
+            except urllib.error.HTTPError as error:
+                evidence["missing_logs"].append({"pod": name, "container": kind,
+                                                 "http_status": error.code})
+                continue
+            value = sanitize(raw.decode("utf-8", errors="replace"))
+            if kind == "clone-source" or (schedule.endswith("fuzz") and kind == "main"):
+                match = revision.search(value)
+                if match and evidence["source_revision"] is None:
+                    evidence["source_revision"] = match.group(1)
+            path = logs / (name + "-" + kind + ".log")
+            path.write_text(value)
+            log_ref = record(path)
+            log_ref["truncated"] = len(raw) >= 16777216
+            evidence["task_logs"].append(log_ref)
+        evidence["pods"].append(pod_status)
+
+    if schedule.endswith("fuzz"):
+        coverage_root = Path("/workspace/pdftract/fuzz/coverage")
+        for source in sorted(coverage_root.glob("*/coverage.profdata")):
+            target = source.parent.name
+            destination = root / "coverage" / target / "coverage.profdata"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+            evidence["coverage"].append(record(destination))
+
+        for source in sorted(Path("/fuzz-artifacts").glob("*/*")):
+            if not source.is_file() or not source.name.startswith(("crash-", "leak-", "timeout-")):
+                continue
+            destination = root / "crashes" / source.parent.name / source.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+            evidence["crash_set"].append(record(destination))
+
+    (root / "manifest.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    print("Captured %s: %d pods, %d logs, %d coverage files, %d crash files" %
+          (workflow, len(evidence["pods"]), len(evidence["task_logs"]),
+           len(evidence["coverage"]), len(evidence["crash_set"])))

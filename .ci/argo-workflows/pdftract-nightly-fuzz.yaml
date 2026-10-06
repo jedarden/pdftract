@@ -24,7 +24,7 @@
 #
 # === Crash Handling ===
 # - Crash tarballs are collected on the per-run workspace for reporting.
-# - Durable artifacts and terminal evidence are handled by the evidence work.
+# - Terminal logs, status, coverage and crash inputs are archived to Garage.
 apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
 metadata:
@@ -46,6 +46,7 @@ spec:
       workflow-type: nightly-fuzz
   workflowSpec:
     entrypoint: pipeline
+    onExit: evidence-exit
     serviceAccountName: argo-workflow
     parallelism: 2  # Shared ReadWriteOnce PVCs keep the run on one node.
 
@@ -112,6 +113,12 @@ spec:
           items:
             - key: .dockerconfigjson
               path: config.json
+      - name: nightly-evidence-script
+        configMap:
+          name: pdftract-nightly-evidence
+      - name: evidence-output
+        emptyDir:
+          sizeLimit: 4Gi
 
     podMetadata:
       labels:
@@ -127,6 +134,117 @@ spec:
         fsGroup: 1000
 
     templates:
+      - name: evidence-exit
+        dag:
+          tasks:
+            - name: capture
+              template: capture-evidence
+            - name: prune
+              template: prune-evidence
+              dependencies: [capture]
+
+      - name: capture-evidence
+        activeDeadlineSeconds: 900
+        container:
+          image: python:3.13-slim-bookworm
+          command: [python3, /opt/evidence/capture.py]
+          args: ["{{workflow.name}}", "{{workflow.status}}", pdftract-nightly-fuzz]
+          volumeMounts:
+            - name: nightly-evidence-script
+              mountPath: /opt/evidence
+            - name: evidence-output
+              mountPath: /evidence
+            - name: workspace
+              mountPath: /workspace
+            - name: fuzz-artifacts
+              mountPath: /fuzz-artifacts
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        outputs:
+          artifacts:
+            - name: terminal-evidence
+              path: /evidence
+              artifactGC:
+                strategy: Never
+              archive:
+                tar:
+                  compressionLevel: 6
+              s3:
+                endpoint: needle-ci-artifacts-iad.argo-workflows.svc.cluster.local:3900
+                bucket: needle-ci-artifacts
+                region: garage
+                insecure: true
+                key: pdftract/nightly/pdftract-nightly-fuzz/{{workflow.name}}/evidence.tgz
+                accessKeySecret:
+                  name: needle-ci-local-artifact-publisher
+                  key: access-key
+                secretKeySecret:
+                  name: needle-ci-local-artifact-publisher
+                  key: secret-key
+
+      - name: prune-evidence
+        activeDeadlineSeconds: 300
+        container:
+          image: docker.io/amazon/aws-cli:2.36.44
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              endpoint=http://needle-ci-artifacts-iad.argo-workflows.svc.cluster.local:3900
+              bucket=needle-ci-artifacts
+              prefix=pdftract/nightly/pdftract-nightly-fuzz/
+              current="${prefix}{{workflow.name}}/evidence.tgz"
+              export AWS_ACCESS_KEY_ID="$READER_ACCESS_KEY_ID"
+              export AWS_SECRET_ACCESS_KEY="$READER_SECRET_ACCESS_KEY"
+              aws --endpoint-url="$endpoint" s3api head-object --bucket "$bucket" --key "$current" >/dev/null
+              cutoff=$(date -u -d '30 days ago' '+%Y-%m-%dT%H:%M:%SZ')
+              aws --endpoint-url="$endpoint" s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix" \
+                --query "Contents[?LastModified<='$cutoff'].Key" --output text |
+                tr '\t' '\n' | while IFS= read -r key; do
+                  [ -z "$key" ] && continue
+                  [ "$key" = None ] && continue
+                  [ "$key" = "$current" ] && continue
+                  AWS_ACCESS_KEY_ID="$PUBLISHER_ACCESS_KEY_ID" \
+                    AWS_SECRET_ACCESS_KEY="$PUBLISHER_SECRET_ACCESS_KEY" \
+                    aws --endpoint-url="$endpoint" s3api delete-object --bucket "$bucket" --key "$key" >/dev/null
+                done
+              echo 'Nightly fuzz evidence upload verified; objects older than 30 days pruned'
+          env:
+            - name: READER_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-reader
+                  key: access-key
+            - name: READER_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-reader
+                  key: secret-key
+            - name: PUBLISHER_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-publisher
+                  key: access-key
+            - name: PUBLISHER_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: needle-ci-local-artifact-publisher
+                  key: secret-key
+            - name: AWS_DEFAULT_REGION
+              value: garage
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+
       # === Top-level DAG ===
       # Clone workspace, then run all fuzz targets in parallel
       - name: pipeline
@@ -168,6 +286,7 @@ spec:
               git clone --depth 1 --branch main \
                 https://git.ardenone.com/jedarden/pdftract.git /workspace/pdftract
               cd /workspace/pdftract
+              git rev-parse HEAD
               export CARGO_HOME="/cache/cargo/registry"
               export PATH="$CARGO_HOME/bin:$PATH"
 
@@ -394,6 +513,9 @@ spec:
               # Create artifact directory
               mkdir -p "$ARTIFACT_DIR"
 
+              # The coverage subcommand needs the nightly toolchain's LLVM tools.
+              rustup component add llvm-tools-preview
+
               echo "=== Building fuzz harness for $TARGET ==="
               cargo fuzz build "$TARGET"
 
@@ -414,6 +536,14 @@ spec:
                 -artifact_prefix="$ARTIFACT_DIR/"
               FUZZ_STATUS=$?
               set -e
+
+              # Re-run the evolved corpus with source coverage instrumentation.
+              # Preserve a profdata file even when the fuzz run found a crash.
+              set +e
+              timeout 1200 cargo fuzz coverage "$TARGET" "fuzz/corpus/$TARGET"
+              COVERAGE_STATUS=$?
+              set -e
+              echo "Coverage command exit code: $COVERAGE_STATUS"
 
               echo "=== Fuzz run complete for $TARGET ==="
 
@@ -449,7 +579,10 @@ spec:
               Timeouts: $TIMEOUT_COUNT
               EOF
 
-              exit "$FUZZ_STATUS"
+              if [ "$FUZZ_STATUS" -ne 0 ]; then
+                exit "$FUZZ_STATUS"
+              fi
+              exit "$COVERAGE_STATUS"
 
           volumeMounts:
             - name: workspace
@@ -518,7 +651,7 @@ spec:
 
               echo "=== Processing Crash Artifacts ==="
 
-              # Durable artifact retention is handled by the evidence work.
+              # The onExit handler archives files after the DAG has ended.
 
               for target in lexer object_parser xref stream_decoder lzw_decode cmap_parser content profile_yaml; do
                 CRASH_FILE="/workspace/crashes-$target.tar.gz"
