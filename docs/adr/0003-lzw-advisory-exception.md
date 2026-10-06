@@ -13,6 +13,8 @@ RUSTSEC-2020-0144 is explicitly ignored for the lzw crate until a viable alterna
 becomes available.
 
 ## Rationale
+- The historical weezl incompatibility assessment below is superseded by the
+  2026-10-06 review addendum; migration still requires integration validation.
 - LZW is a **mandatory PDF filter** - the PDF spec requires LZWDecode support for full compliance
 - The lzw crate is the only Rust LZW implementation compatible with PDF LZW encoding
 - Alternative crate (weezl) is **incompatible** with PDF LZW:
@@ -104,3 +106,50 @@ described as local evidence only.
   `scripts/gen_lzw_fuzz_seeds.py`
 - Coverage evidence: `docs/notes/lzw-fuzz-coverage.md` (measured 2026-09-15,
   bead pdftract-fc90d8fa)
+
+## Review addendum — 2026-10-06 (pdftract-26b61246)
+
+- **Installed versions and tree:** `cargo tree -i lzw --locked` reports
+  `lzw 0.10.0` directly in `pdftract-cli` and `pdftract-core` (and transitively
+  in consumers of core). `cargo tree -i weezl --locked` reports `weezl 0.1.12`
+  through `gif`, `lopdf`, and `tiff`; it is not the PDF decoder dependency.
+- **Maintenance and advisory sources:** [crates.io](https://crates.io/api/v1/crates/lzw)
+  still lists `lzw 0.10.0` as the newest release (2016-02-28). The
+  [RustSec advisory record](https://github.com/RustSec/advisory-db/blob/main/crates/lzw/RUSTSEC-2020-0144.md)
+  still marks RUSTSEC-2020-0144 *informational/unmaintained*, with no patched
+  release; the [lzw advisory directory](https://github.com/RustSec/advisory-db/tree/main/crates/lzw)
+  contained no separate vulnerability advisory on the review date.
+  [weezl 0.2.1](https://crates.io/api/v1/crates/weezl) is the newest published
+  release (2026-05-15). Its [changelog](https://github.com/image-rs/weezl/blob/master/Changes.md)
+  and [open issues](https://github.com/image-rs/weezl/issues) do not announce a
+  PDF-specific mode or port.
+- **PDF compatibility assessment:** The published weezl decoder already has
+  MSB bit order plus TIFF code-size switching, matching this repository's
+  `lzw::DecoderEarlyChange` path for PDF `/EarlyChange 1`; its standard switch
+  matches `/EarlyChange 0`. Temporary, dependency-neutral probes on 2026-10-06
+  decoded all eight tracked early/late LZW fixtures identically with both
+  `weezl 0.1.12` and `0.2.1`. On deterministic 1,024- and 8,192-byte varied
+  inputs and an 8,192-byte repeated input, weezl streams decoded identically
+  with the corresponding `lzw` decoder across code-width changes; the `lzw`
+  late-change encoder also round-tripped through weezl. A truncated fixture
+  yielded 11 partial output bytes through weezl's `into_vec` API before
+  `InvalidCode`, so partial recovery appears implementable. These probes do
+  not establish parity for every malformed PDF, predictor, or decompression
+  budget path. Porting an early-change variant upstream is unnecessary on the
+  observed code-size behavior.
+- **Risk and action:** The exception remains provisionally acceptable because
+  the advisory is about maintenance, no distinct lzw vulnerability was found,
+  and the existing local fuzz evidence covers the current decoder. Nightly
+  compensating-control execution remains unverified as described above. The
+  historical claim that no compatible weezl path exists is no longer a sound
+  reason to keep `lzw`. The already locked `weezl 0.1.12` compiled with Rust
+  1.75 in the probe, below this workspace's 1.78 minimum; `weezl 0.2.1`
+  declares Rust 1.88 and cannot be adopted under the current MSRV. Proposed
+  implementation bead `pdftract-e2dc29e2` is held for human admission to
+  validate bounded streaming, truncation, predictors, fixtures, fuzzing, and
+  the MSRV before changing the dependency or decoder.
+- **Next due:** Review the exception when that implementation proposal has a
+  verified outcome, on any new lzw security advisory or viable replacement
+  development, and in all cases by 2027-09-15 (annual September review).
+  `pdftract-26b61246` remains the single monitoring owner for the advisory,
+  weezl/PDF-LZW, and ADR-002 option-ext commitments.
