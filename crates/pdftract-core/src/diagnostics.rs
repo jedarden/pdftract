@@ -3081,7 +3081,7 @@ pub struct Diagnostic {
     /// (None for document-level diagnostics)
     pub page_index: Option<u32>,
     /// Typed severity retained from the code policy at emission time.
-    severity: Severity,
+    pub severity: Severity,
     /// Human-readable message (static messages don't allocate)
     pub message: Cow<'static, str>,
     /// Actionable hint retained from the code policy at emission time.
