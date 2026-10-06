@@ -19,7 +19,7 @@ metadata:
     app.kubernetes.io/part-of: pdftract
 spec:
   schedules:
-    - "*/5 * * * *" # Temporary scheduled verification; restore 03:00 UTC after one run starts.
+    - "0 3 * * *" # Daily at 03:00 UTC, before the nightly fuzz run.
   timezone: UTC
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
