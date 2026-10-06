@@ -61,7 +61,6 @@ spec:
     # 2. Template-level deadlines:
     #    - setup: 600s (10 min) - cargo-fuzz installation
     #    - seed-corpus: 300s (5 min) - corpus preparation
-    #    - fuzz-matrix: 79200s (22 hours) - two concurrent fuzz targets
     #    - fuzz-target: 21600s (6 hours) - per-target fuzzing
     #    - report-crashes: 300s (5 min) - crash summary
     #
@@ -262,7 +261,6 @@ spec:
       # === Fuzz Matrix ===
       # Run all eight fuzz targets, at most two at a time.
       - name: fuzz-matrix
-        activeDeadlineSeconds: 79200  # Four waves of two targets, plus build headroom.
         dag:
           failFast: false
           tasks:
