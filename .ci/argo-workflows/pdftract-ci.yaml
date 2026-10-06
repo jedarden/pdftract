@@ -2994,10 +2994,25 @@ spec:
             cpu: 2000m
             memory: 4Gi
     # === MCP Catalog Check ===
-    # Builds the release MCP stdio server and runs the documented client and
-    # tool-catalog lifecycle check as a Tier 1 quality-matrix gate.
+    # Builds the release MCP stdio server and runs both the wire-level catalog
+    # and pinned Python SDK client checks as a Tier 1 quality-matrix gate.
     - name: mcp-catalog
       activeDeadlineSeconds: 1200
+      initContainers:
+        - name: uv
+          image: docker.io/astral/uv:0.11.23-debian-slim@sha256:e08a160f54f8c272f810f30f3099162199a529151ded0edb3018f6e9c8631846
+          command: [sh, -c]
+          args:
+            - cp "$(command -v uv)" /mcp-uv-tools/uv
+          volumeMounts:
+            - name: mcp-uv-tools
+              mountPath: /mcp-uv-tools
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+      volumes:
+        - name: mcp-uv-tools
+          emptyDir: {}
       container:
         image: rust:1.83-bookworm
         command: [bash, -c]
@@ -3007,18 +3022,18 @@ spec:
             cd /workspace
             export CARGO_HOME=/cache/cargo/registry
             export CARGO_TARGET_DIR=/cache/cargo/target-mcp-catalog
+            export UV_CACHE_DIR=/cache/cargo/uv-mcp-catalog
+            export UV_PYTHON_INSTALL_DIR=/cache/cargo/uv-python
+            export PATH=/mcp-uv-tools:$PATH
 
-            echo "=== Building the release MCP stdio server ==="
-            cargo build --locked --release --package pdftract-cli --bin pdftract --features mcp
-
-            echo "=== Validating documented client configurations and tool contract ==="
-            PDFTRACT_MCP_BIN="$CARGO_TARGET_DIR/release/pdftract" \
-              python3 scripts/check-mcp-tool-catalog.py
+            bash scripts/check-mcp-client-compatibility.sh
         volumeMounts:
           - name: workspace
             mountPath: /workspace
           - name: cargo-cache
             mountPath: /cache/cargo
+          - name: mcp-uv-tools
+            mountPath: /mcp-uv-tools
         resources:
           requests:
             cpu: 1000m

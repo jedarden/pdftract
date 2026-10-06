@@ -53,26 +53,34 @@ scripts/check-mcp-tool-catalog.py
 Set `PDFTRACT_MCP_BIN=/path/to/pdftract` to check a prebuilt binary instead of
 starting one through Cargo.
 
-This check is also the required `mcp-catalog` gate in the `pdftract-ci`
-quality matrix. CI builds a release binary with the `mcp` feature, points
-`PDFTRACT_MCP_BIN` at it, and runs the same lifecycle check against the
-documented client snippets.
+The `mcp-catalog` quality gate in `pdftract-ci` builds a release binary with
+the `mcp` feature and runs both the wire-level catalog check above and the
+official Python MCP SDK check below against that binary. The SDK check
+exercises all four snippets (including both Claude Desktop command forms).
+It launches a fresh server for each snippet, checks handshake and discovery
+against the catalog, invokes a successful tool, checks an in-band tool failure
+and unknown-tool rejection, then verifies a clean exit after the SDK closes
+stdin. The script pins `mcp==1.30.0`, and
+[`check-mcp-sdk-client.py.lock`](../../scripts/check-mcp-sdk-client.py.lock)
+pins its transitive dependencies for Python 3.11. CI uses uv 0.11.23.
 
-The official Python MCP SDK also exercises all four snippets (including both
-Claude Desktop command forms). The test uses `mcp==1.30.0`, pinned in the
-script's inline dependency metadata. It launches a fresh server for each
-snippet, checks discovery against the catalog, invokes a successful tool,
-checks an in-band tool failure and unknown-tool rejection, then verifies a
-clean exit after the SDK closes stdin. To reproduce locally with `uv` and
-Python 3.10 or newer, run:
+To reproduce the full gate locally from the repository root, install uv
+0.11.23 and run the same command as CI:
 
 ```bash
-UV_CACHE_DIR="$PWD/.mcp-sdk-cache" uv run --script scripts/check-mcp-sdk-client.py
+bash scripts/check-mcp-client-compatibility.sh
 ```
 
-Set `PDFTRACT_MCP_BIN=/path/to/pdftract` to use a prebuilt `mcp`-enabled
-binary. Run the independent failure probe with `--probe-broken-config`; it
-breaks only the Cursor launch and requires the other three sessions to pass.
+The command captures the exact executable produced by Cargo, so it works with
+the normal Cargo target directory and this host's `/build/pdftract` wrapper.
+The checks use the guide's snippets, catalog, and checked-in PDF fixtures;
+they require no desktop application. For the independent failure probe, set
+`PDFTRACT_MCP_BIN` to a built MCP-enabled binary and run
+`uv run --locked --python 3.11 --script scripts/check-mcp-sdk-client.py --probe-broken-config`.
+It breaks only the Cursor launch and requires the other three sessions to pass.
+Passing the gate demonstrates SDK-level compatibility of the documented configurations.
+It does not verify the live Claude Desktop, Cursor, or Continue GUI integration,
+including each application's own configuration loading and interface behavior.
 
 ## Claude Desktop
 

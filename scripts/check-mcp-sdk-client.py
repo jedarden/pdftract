@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.10"
+# requires-python = "==3.11.*"
 # dependencies = ["mcp==1.30.0"]
 # ///
 """Exercise every documented stdio launch with the official MCP Python SDK.
 
-Run with ``uv run --script scripts/check-mcp-sdk-client.py``. The companion
+Run with ``uv run --locked --python 3.11 --script scripts/check-mcp-sdk-client.py``. The companion
 ``check-mcp-tool-catalog.py`` remains the detailed wire-level baseline.
 """
 
