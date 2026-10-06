@@ -26,7 +26,7 @@ spec:
   failedJobsHistoryLimit: 7
   workflowSpec:
     entrypoint: pipeline
-    onExit: evidence-exit
+    onExit: capture-evidence
     serviceAccountName: argo-workflow
 
     # Audit (1800s) + deny (1800s), with scheduling and image pull headroom.
@@ -75,15 +75,6 @@ spec:
         servers.ngpc.rxt.io/class: ch.vs1.large-iad
 
     templates:
-      - name: evidence-exit
-        dag:
-          tasks:
-            - name: capture
-              template: capture-evidence
-            - name: prune
-              template: prune-evidence
-              dependencies: [capture]
-
       - name: capture-evidence
         activeDeadlineSeconds: 900
         container:
@@ -123,64 +114,6 @@ spec:
                 secretKeySecret:
                   name: needle-ci-local-artifact-publisher
                   key: secret-key
-
-      - name: prune-evidence
-        activeDeadlineSeconds: 300
-        container:
-          image: docker.io/amazon/aws-cli:2.36.44
-          command: [sh, -c]
-          args:
-            - |
-              set -eu
-              endpoint=http://needle-ci-artifacts-iad.argo-workflows.svc.cluster.local:3900
-              bucket=needle-ci-artifacts
-              prefix=pdftract/nightly/pdftract-nightly-supply-chain/
-              current="${prefix}{{workflow.name}}/evidence.tgz"
-              export AWS_ACCESS_KEY_ID="$READER_ACCESS_KEY_ID"
-              export AWS_SECRET_ACCESS_KEY="$READER_SECRET_ACCESS_KEY"
-              aws --endpoint-url="$endpoint" s3api head-object --bucket "$bucket" --key "$current" >/dev/null
-              cutoff=$(date -u -d '14 days ago' '+%Y-%m-%dT%H:%M:%SZ')
-              aws --endpoint-url="$endpoint" s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix" \
-                --query "Contents[?LastModified<='$cutoff'].Key" --output text |
-                tr '\t' '\n' | while IFS= read -r key; do
-                  [ -z "$key" ] && continue
-                  [ "$key" = None ] && continue
-                  [ "$key" = "$current" ] && continue
-                  AWS_ACCESS_KEY_ID="$PUBLISHER_ACCESS_KEY_ID" \
-                    AWS_SECRET_ACCESS_KEY="$PUBLISHER_SECRET_ACCESS_KEY" \
-                    aws --endpoint-url="$endpoint" s3api delete-object --bucket "$bucket" --key "$key" >/dev/null
-                done
-              echo 'Nightly supply-chain evidence upload verified; objects older than 14 days pruned'
-          env:
-            - name: READER_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: needle-ci-local-artifact-reader
-                  key: access-key
-            - name: READER_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: needle-ci-local-artifact-reader
-                  key: secret-key
-            - name: PUBLISHER_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: needle-ci-local-artifact-publisher
-                  key: access-key
-            - name: PUBLISHER_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: needle-ci-local-artifact-publisher
-                  key: secret-key
-            - name: AWS_DEFAULT_REGION
-              value: garage
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 250m
-              memory: 256Mi
 
       - name: pipeline
         dag:

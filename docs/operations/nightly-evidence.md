@@ -10,18 +10,16 @@ s3://needle-ci-artifacts/pdftract/nightly/<schedule>/<workflow-name>/evidence.tg
 ```
 
 The explicit S3 artifact uses the existing write-only
-`needle-ci-local-artifact-publisher` Secret. A follow-up step uses the separate
-read-only Secret to check the upload, then deletes objects under that schedule's
-prefix older than 14 days with the publisher identity. The bucket also has a
-14 day lifecycle rule for this prefix, so retention remains bounded when a
-schedule stops. Argo ArtifactGC is set to `Never` for this archive, so the
-Workflow's TTL does not remove it. The cleanup step runs on each terminal run.
+`needle-ci-local-artifact-publisher` Secret. A Garage bucket lifecycle rule
+deletes objects under this prefix after 14 days, including when a schedule
+stops. Argo ArtifactGC is set to `Never`, so the Workflow's TTL does not
+remove the archive.
 The collector's temporary output is capped at 1 GiB for fuzz and 128 MiB for
 supply-chain, preserving space in the shared 20 GiB bucket. An oversized run
 fails its exit handler visibly instead of silently dropping files.
 
-`manifest.json` records the Workflow name, schedule, phase before the exit
-handler, source commit (or `null` when clone logs were unavailable), task pod
+`manifest.json` records the Workflow name, schedule, final phase, source commit
+(or `null` when clone logs were unavailable), task pod
 and container exit codes, and SHA-256/size references for task logs. Fuzz
 archives additionally contain each generated `coverage.profdata` and every
 `crash-*`, `leak-*`, and `timeout-*` file. An empty `crash_set` is an explicit
@@ -47,7 +45,7 @@ mkdir -p nightly-evidence
   nightly-evidence/supply-chain.tgz
 mkdir -p nightly-evidence/supply-chain
 tar -xzf nightly-evidence/supply-chain.tgz -C nightly-evidence/supply-chain
-jq '{workflow, source_revision, phase_before_exit, pods, task_logs, coverage, crash_set, missing_logs}' \
+jq '{workflow, source_revision, final_phase, pods, task_logs, coverage, crash_set, missing_logs}' \
   nightly-evidence/supply-chain/manifest.json
 ```
 

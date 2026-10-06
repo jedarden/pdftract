@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix="nightly-evidence-test.", dir=".ci") as 
 
     manifest = json.loads((evidence / "manifest.json").read_text())
     assert manifest["workflow"] == name
-    assert manifest["phase_before_exit"] == "Failed"
+    assert manifest["final_phase"] == "Failed"
     assert manifest["source_revision"] == revision
     assert manifest["pods"][0]["containers"][1]["exit_code"] == 5
     assert len(manifest["pods"]) == 1
