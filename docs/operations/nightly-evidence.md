@@ -12,10 +12,13 @@ s3://needle-ci-artifacts/pdftract/nightly/<schedule>/<workflow-name>/evidence.tg
 The explicit S3 artifact uses the existing write-only
 `needle-ci-local-artifact-publisher` Secret. A follow-up step uses the separate
 read-only Secret to check the upload, then deletes objects under that schedule's
-prefix older than 30 days with the publisher identity. Argo ArtifactGC is set
-to `Never` for this archive, so the Workflow's TTL does not remove it. The
-cleanup step runs on each terminal nightly run. If a schedule stops running,
-an operator must remove stale objects under that prefix.
+prefix older than 14 days with the publisher identity. The bucket also has a
+14 day lifecycle rule for this prefix, so retention remains bounded when a
+schedule stops. Argo ArtifactGC is set to `Never` for this archive, so the
+Workflow's TTL does not remove it. The cleanup step runs on each terminal run.
+The collector's temporary output is capped at 1 GiB for fuzz and 128 MiB for
+supply-chain, preserving space in the shared 20 GiB bucket. An oversized run
+fails its exit handler visibly instead of silently dropping files.
 
 `manifest.json` records the Workflow name, schedule, phase before the exit
 handler, source commit (or `null` when clone logs were unavailable), task pod

@@ -55,7 +55,7 @@ spec:
           name: pdftract-nightly-evidence
       - name: evidence-output
         emptyDir:
-          sizeLimit: 4Gi
+          sizeLimit: 128Mi
 
     podMetadata:
       labels:
@@ -139,7 +139,7 @@ spec:
               export AWS_ACCESS_KEY_ID="$READER_ACCESS_KEY_ID"
               export AWS_SECRET_ACCESS_KEY="$READER_SECRET_ACCESS_KEY"
               aws --endpoint-url="$endpoint" s3api head-object --bucket "$bucket" --key "$current" >/dev/null
-              cutoff=$(date -u -d '30 days ago' '+%Y-%m-%dT%H:%M:%SZ')
+              cutoff=$(date -u -d '14 days ago' '+%Y-%m-%dT%H:%M:%SZ')
               aws --endpoint-url="$endpoint" s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix" \
                 --query "Contents[?LastModified<='$cutoff'].Key" --output text |
                 tr '\t' '\n' | while IFS= read -r key; do
@@ -150,7 +150,7 @@ spec:
                     AWS_SECRET_ACCESS_KEY="$PUBLISHER_SECRET_ACCESS_KEY" \
                     aws --endpoint-url="$endpoint" s3api delete-object --bucket "$bucket" --key "$key" >/dev/null
                 done
-              echo 'Nightly supply-chain evidence upload verified; objects older than 30 days pruned'
+              echo 'Nightly supply-chain evidence upload verified; objects older than 14 days pruned'
           env:
             - name: READER_ACCESS_KEY_ID
               valueFrom:
