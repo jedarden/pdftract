@@ -1,0 +1,54 @@
+{
+  "attachments": [],
+  "fingerprint": "pdftract-v1:ab24a95f44ceca5d2aed4b6d056adddd8539f44c6cd6ca506534e830c82ea8a8",
+  "form_fields": [],
+  "javascript_actions": [],
+  "links": [],
+  "metadata": {
+    "block_count": 1,
+    "cache_age_seconds": null,
+    "cache_status": "skipped",
+    "page_count": 1,
+    "reading_order_algorithm": "xy_cut",
+    "span_count": 1
+  },
+  "pages": [
+    {
+      "blocks": [
+        {
+          "bbox": [
+            56.79999923706055,
+            758.0999755859375,
+            186.1199951171875,
+            774.2000122070312
+          ],
+          "kind": "paragraph",
+          "spans": [],
+          "text": "Dummy PDF file"
+        }
+      ],
+      "index": 0,
+      "spans": [
+        {
+          "bbox": [
+            56.79999923706055,
+            758.0999755859375,
+            186.1199951171875,
+            774.2000122070312
+          ],
+          "color": "#000000",
+          "confidence": 1.0,
+          "confidence_source": "native",
+          "font": "Unknown",
+          "rendering_mode": 0,
+          "size": 12.0,
+          "text": "Dummy PDF file"
+        }
+      ],
+      "tables": []
+    }
+  ],
+  "schema_version": "1.0",
+  "signatures": [],
+  "threads": []
+}

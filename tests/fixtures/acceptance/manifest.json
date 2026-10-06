@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "fixture": "tests/fixtures/test-minimal.pdf",
+  "fixture_sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4",
+  "cases": [
+    {
+      "name": "text",
+      "command": ["{binary}", "extract", "{fixture}", "--text", "-"],
+      "stdout_file": "tests/fixtures/acceptance/expected/text.txt"
+    },
+    {
+      "name": "json",
+      "command": ["{binary}", "extract", "{fixture}", "--json", "-"],
+      "stdout_file": "tests/fixtures/acceptance/expected/output.json"
+    },
+    {
+      "name": "markdown",
+      "command": ["{binary}", "extract", "{fixture}", "--md", "-"],
+      "stdout_file": "tests/fixtures/acceptance/expected/output.md"
+    },
+    {
+      "name": "ndjson",
+      "command": ["{binary}", "extract", "{fixture}", "--ndjson"],
+      "stdout_file": "tests/fixtures/acceptance/expected/output.ndjson"
+    },
+    {
+      "name": "simultaneous",
+      "command": ["{binary}", "extract", "{fixture}", "--text", "-", "--md", "{artifact_dir}/output.md", "--json", "{artifact_dir}/output.json"],
+      "stdout_file": "tests/fixtures/acceptance/expected/text.txt",
+      "output_files": {
+        "output.md": "tests/fixtures/acceptance/expected/output.md",
+        "output.json": "tests/fixtures/acceptance/expected/output.json"
+      }
+    }
+  ]
+}
