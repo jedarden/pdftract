@@ -30,7 +30,7 @@
 # - is-tag: Boolean ("true" if ref is a tag, "false" otherwise)
 #
 # === DAG Structure ===
-# setup -> [parallel: build-matrix, test-matrix, sdk-conformance -> quality-matrix, bench-matrix] -> publish-if-tag
+# setup -> [parallel: build-matrix, test-matrix, fixture-acceptance, sdk-conformance -> quality-matrix, bench-matrix] -> publish-if-tag
 #
 # - setup: Clone repo, fetch dependencies, warm cargo cache
 # - build-matrix: Cross-compile for 5 targets (x86_64/aarch64 Linux musl, macOS x64/ARM64, Windows x64)
@@ -221,6 +221,10 @@ spec:
             template: test-matrix
             dependencies: [workflow-source-drift]
 
+          - name: fixture-acceptance
+            template: fixture-acceptance
+            dependencies: [workflow-source-drift]
+
           - name: quality-matrix
             template: quality-matrix
             # SDK conformance is an upstream hard gate. Keep the per-language
@@ -302,7 +306,7 @@ spec:
 
           - name: publish-if-tag
             template: publish-if-tag
-            dependencies: [workflow-source-drift, build-matrix, test-matrix, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, diagnostics-conformance, verify-provenance]
+            dependencies: [workflow-source-drift, build-matrix, test-matrix, fixture-acceptance, quality-matrix, wer-gate, bench-matrix, regression-corpus, sdk-conformance, mcp-client-smoke, diagnostics-conformance, verify-provenance]
             when: "{{workflow.parameters.is-tag}} == true"
             arguments:
               artifacts:
@@ -1217,6 +1221,65 @@ spec:
           echo "=== Build Matrix Exit Report ==="
           echo "Commit: {{workflow.parameters.commit-sha}}"
           echo "All binaries available as artifacts"
+
+    # === Public fixture acceptance ===
+    # Build the OCR-enabled CLI in this pod; the musl build artifact excludes OCR.
+    # The runner checks all committed cases and writes diagnostics before exiting
+    # nonzero. Argo's wait container uploads this output artifact on failure too.
+    - name: fixture-acceptance
+      activeDeadlineSeconds: 3600
+      container:
+        image: rust:1.90.0-bookworm@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f
+        command: [bash, -c]
+        args:
+          - |
+            set -Eeuo pipefail
+            mkdir -p /tmp/fixture-acceptance
+            cd /workspace
+            export CARGO_HOME=/cache/cargo/registry
+            export CARGO_TARGET_DIR=/cache/cargo/target-fixture-acceptance
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              libtesseract-dev libleptonica-dev tesseract-ocr tesseract-ocr-eng poppler-utils pkg-config libclang-dev
+            cargo build --locked --package pdftract-cli --bin pdftract --features ocr
+            PDFTRACT_BINARY="$CARGO_TARGET_DIR/debug/pdftract" \
+              PDFTRACT_FIXTURE_ARTIFACT_DIR=/tmp/fixture-acceptance \
+              scripts/run-fixture-acceptance.sh --manifest tests/fixtures/acceptance/manifest.json
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: cargo-cache
+            mountPath: /cache/cargo
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+      outputs:
+        artifacts:
+          - name: fixture-acceptance-results
+            path: /tmp/fixture-acceptance
+            archive:
+              tar:
+                compressionLevel: 6
+            s3:
+              endpoint: needle-ci-artifacts-iad.argo-workflows.svc.cluster.local:3900
+              bucket: needle-ci-artifacts
+              region: garage
+              insecure: true
+              key: pdftract/fixture-acceptance/{{workflow.uid}}/results.tgz
+              accessKeySecret:
+                name: needle-ci-local-artifact-publisher
+                key: access-key
+              secretKeySecret:
+                name: needle-ci-local-artifact-publisher
+                key: secret-key
 
     # === Test Matrix ===
     # Run cargo test across feature combinations and targets
