@@ -780,7 +780,7 @@ const _: () = assert!(SHAPE_TABLE.len() == FREQ_TABLE.len());
     }
 
     let json_content =
-        fs::read_to_string(&actual_shapes_path).expect("Failed to read glyph-shapes.json");
+        fs::read_to_string(actual_shapes_path).expect("Failed to read glyph-shapes.json");
 
     let data: serde_json::Value =
         serde_json::from_str(&json_content).expect("Failed to parse glyph-shapes.json");
@@ -1036,8 +1036,11 @@ pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new
     set
 });
 "#;
-        fs::write(Path::new(out_dir).join("unmapped_glyph_names.rs"), rust_code)
-            .expect("Failed to write unmapped_glyph_names.rs");
+        fs::write(
+            Path::new(out_dir).join("unmapped_glyph_names.rs"),
+            rust_code,
+        )
+        .expect("Failed to write unmapped_glyph_names.rs");
         return;
     }
 
@@ -1083,8 +1086,11 @@ pub static UNMAPPED_GLYPH_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new
         insertions.join("\n")
     );
 
-    fs::write(Path::new(out_dir).join("unmapped_glyph_names.rs"), rust_code)
-        .expect("Failed to write unmapped_glyph_names.rs");
+    fs::write(
+        Path::new(out_dir).join("unmapped_glyph_names.rs"),
+        rust_code,
+    )
+    .expect("Failed to write unmapped_glyph_names.rs");
 }
 
 /// Verify SHA-256 checksums of build-time data files.
