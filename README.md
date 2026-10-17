@@ -99,23 +99,33 @@ usable until a real release has been published and independently verified.
 | Homebrew | `jedarden/homebrew-tap` | Pending: the tap is reachable, but `Formula/pdftract.rb` is not published; see the [verification record](packaging/homebrew/README.md#current-publication-verification) below before treating Homebrew as available |
 | Hosted user guide | `pdftract.com` | Domain is not a supported channel |
 
-**Homebrew verification record (2026-09-28).** The client-facing
-`jedarden/homebrew-tap` main branch is at `c7aec641d5cf9e638285fdbc706499f19495f6a2`
-and contains only `Formula/.gitkeep`; `Formula/pdftract.rb` is absent. The
-candidate `v1.2.0` source archive URL fetched successfully and
-`sha256sum` returned
-`db8390ced458a1e3d3816e43a3488a3e643bcb43a8ac7404f1de38b28f503e75`, but the
-signed `SHA256SUMS`, `SHA256SUMS.sig`, and `SHA256SUMS.pem` assets each returned
-HTTP 404. Because the formula is absent, no formula URL/checksum binding can be
-verified; the tag's `Cargo.toml` also declares `0.1.0` rather than `1.2.0`. The
-approved verification command —
+**Homebrew verification record (2026-10-17).** The `v1.2.0` release was
+re-published on 2026-09-29 and now carries a `SHA256SUMS` asset, but the
+handoff is still not renderable: the aggregate (231 bytes) lists only the two
+binary archives — the required `source/pdftract-v1.2.0.tar.gz` line is absent,
+and `SHA256SUMS.sig` and `SHA256SUMS.pem` remain unpublished (HTTP 404), so the
+formula's signed source-archive checksum input (see
+[`docs/notes/homebrew-tap-strategy.md`](docs/notes/homebrew-tap-strategy.md)
+§5) still does not exist. The source archive itself is unchanged and still
+declares workspace version `0.1.0` under the `v1.2.0` tag (archive sha256
+`db8390ced458a1e3d3816e43a3488a3e643bcb43a8ac7404f1de38b28f503e75`), so a
+formula rendered as `1.2.0` would still fail its own `pdftract --version` test
+block. The tap is unchanged: the Forgejo origin `main` remains at
+`c7aec641d5cf9e638285fdbc706499f19495f6a2` with only `Formula/.gitkeep`
+(verified by authenticated clone), and the client-facing GitHub mirror still
+returns 404 for `Formula/pdftract.rb` (last push 2026-09-15). The release
+pipeline that would produce the complete signed handoff is enabled
+(declarative-config 2026-10-07) but currently failing before release: two
+`pdftract-main-release` attempts on 2026-10-17 (08:17Z, 08:30Z) both failed in
+their `pdftract-main-verify` child at the `setup` step (`git clone` exit 128,
+same failure twice — systematic, suspected stale in-cluster Forgejo
+credential; owned by the release cascade, not this channel). The approved
+verification command —
 `brew tap jedarden/tap https://github.com/jedarden/homebrew-tap.git && brew install jedarden/tap/pdftract && pdftract --version`
-— was attempted but exited 127 (`brew: command not found`) after `WARN command
--v brew` exited 1. Therefore there is no Homebrew `pdftract --version` result;
-the clean committed source smoke reports `pdftract 0.1.0`. Homebrew remains
-pending publication of a correctly versioned signed release handoff and
-`Formula/pdftract.rb`, followed by the same smoke test in a Homebrew-capable
-environment.
+— remains unrun on this host (`command -v brew` exited 1; the cascade leg
+performs it in a pinned `homebrew/brew:<semver>` container). Homebrew remains
+pending a correctly versioned signed release handoff and `Formula/pdftract.rb`,
+followed by that smoke test.
 
 The locally supported Docker variants are `default` and `full`; their build and
 smoke-test contract is automated by

@@ -16,6 +16,19 @@ but the client-facing mirror currently contains only `Formula/.gitkeep` and no
 Therefore there is no valid release handoff and no claim that Homebrew installation
 is live; the concrete publication and verification gates remain in §8.
 
+**Audit update (2026-10-17):** Decision unchanged. The `v1.2.0` release was
+re-published 2026-09-29 and now ships a `SHA256SUMS` aggregate, but it is a
+binary-only, unsigned aggregate: no `source/pdftract-v1.2.0.tar.gz` line, and
+`SHA256SUMS.sig`/`SHA256SUMS.pem` remain 404 — the §5 render input still does
+not exist. The Forgejo origin tap is unchanged (`main` = `c7aec641`, only
+`Formula/.gitkeep`; GitHub mirror last push 2026-09-15, formula still 404).
+The archive still declares workspace version `0.1.0` under `v1.2.0`. The
+release cascade's child workflows were enabled 2026-10-07 (declarative-config
+`04b79bdf6`), but both 2026-10-17 `pdftract-main-release` attempts failed
+before release at their `pdftract-main-verify` child's `setup` step
+(`git clone` exit 128, twice — systematic, suspected stale in-cluster Forgejo
+credential; release-cascade-owned). §8 item 1 remains the gating blocker.
+
 ---
 
 ## 1. Decision summary
@@ -291,13 +304,19 @@ WorkflowTemplate, in-tree at `.ci/argo-workflows/`, synced to jedarden/declarati
 The original setup baseline was checked 2026-09-14; the current publication audit
 was checked 2026-09-27. Owners remain in parentheses.
 
-1. **A complete versioned release handoff is still missing.** The `v1.2.0` tag and
-   its immutable source archive exist, but the release URLs for `SHA256SUMS`,
-   `SHA256SUMS.sig`, and `SHA256SUMS.pem` return not-found. The first green release
-   cascade must publish all three assets, with the unique
-   `source/pdftract-vX.Y.Z.tar.gz` line in the signed aggregate, before the
-   Homebrew leg can render anything. A dry-run fixture may validate the renderer,
-   but it is not a release handoff. (pdftract-da3c85cd)
+1. **A complete versioned release handoff is still missing.** *(Re-audited
+   2026-10-17.)* The `v1.2.0` tag and its immutable source archive exist; the
+   release was re-published 2026-09-29 and now carries a `SHA256SUMS`, but that
+   aggregate lists only the two binary archives — the unique
+   `source/pdftract-vX.Y.Z.tar.gz` line is absent and `SHA256SUMS.sig` /
+   `SHA256SUMS.pem` are still not-found, so the Homebrew leg still has nothing
+   to render. The first green release cascade must publish all three, with the
+   signed source-archive line, before the Homebrew leg can render anything. As
+   of 2026-10-17 the enabled `pdftract-main-release` pipeline fails before
+   release at its verify child's `git clone` (exit 128, twice) — fixing that is
+   the release cascade's prerequisite to ever producing this handoff. A dry-run
+   fixture may validate the renderer, but it is not a release handoff.
+   (pdftract-da3c85cd)
 2. **The signed checksum handoff is authoritative.** `pdftract-github-release`
    (pdftract-2x7y; template in-tree at `.ci/argo-workflows/pdftract-github-release.yaml`)
    must publish `SHA256SUMS` and its signature material before the Homebrew leg

@@ -112,29 +112,38 @@ for the same tag are idempotent (unchanged formula ⇒ no-op push).
 
 ### Current publication verification
 
-The client-facing tap was checked on 2026-09-28. It is reachable, but its
-`main` branch (`c7aec641d5cf9e638285fdbc706499f19495f6a2`) contains only
-`Formula/.gitkeep`; no `Formula/pdftract.rb` is published. The source archive
-URL for the versioned `v1.2.0` tag is reachable and hashes to
-`db8390ced458a1e3d3816e43a3488a3e643bcb43a8ac7404f1de38b28f503e75`, but that
-is not evidence of a published formula or a completed Homebrew install. The
-corresponding `SHA256SUMS`, `SHA256SUMS.sig`, and `SHA256SUMS.pem` release assets
-are also not published, so the signed release handoff required to render the
-formula is incomplete. Since the formula is absent, no versioned formula
-archive URL or checksum binding can be independently verified.
+The tap and release were re-checked on 2026-10-17. The Forgejo origin tap
+`main` is still `c7aec641d5cf9e638285fdbc706499f19495f6a2` with only
+`Formula/.gitkeep` (verified by authenticated clone), and the client-facing
+GitHub mirror still returns 404 for `Formula/pdftract.rb` (last push
+2026-09-15). The `v1.2.0` release was re-published on 2026-09-29 and now
+ships a `SHA256SUMS` asset, but that aggregate (231 bytes) contains only the
+two binary archive lines: the required `source/pdftract-v1.2.0.tar.gz` entry
+is absent and `SHA256SUMS.sig` / `SHA256SUMS.pem` are still unpublished
+(HTTP 404), so the signed release handoff required to render the formula
+remains incomplete and the renderer's inputs cannot be assembled. The source
+archive is unchanged (sha256
+`db8390ced458a1e3d3816e43a3488a3e643bcb43a8ac7404f1de38b28f503e75`) and still
+declares workspace version `0.1.0` under the `v1.2.0` tag, so a formula
+rendered as `1.2.0` must not be treated as verified until release metadata and
+the formula agree — the template's own test block would fail its
+`pdftract --version` assertion today.
 
-The CLI now accepts `--version`, and the local source smoke prints
-`pdftract 0.1.0`. The `v1.2.0` tag still declares workspace version `0.1.0`,
-so a future formula rendered as version `1.2.0` must not be treated as
-verified until release metadata and the formula agree. The approved command
+The pipeline that would produce that handoff is enabled (release child
+workflows activated 2026-10-07 in declarative-config) but failing before
+release: two `pdftract-main-release` attempts on 2026-10-17 (08:17Z and 08:30Z)
+both failed in their `pdftract-main-verify` child at the `setup` step
+(`git clone` exit 128, identical failure twice — systematic; suspected stale
+in-cluster Forgejo credential, owned by the release cascade). The approved
+command
 `brew tap jedarden/tap https://github.com/jedarden/homebrew-tap.git && brew install
 jedarden/tap/pdftract && pdftract --version` was attempted on this host but
-returned 127 because `brew` is not installed (`command -v brew` returned 1).
-The clean committed source smoke command returned 0 with `pdftract 0.1.0`;
-there is no Homebrew-reported version.
+returned 127 because `brew` is not installed (`command -v brew` returned 1);
+the cascade leg performs it in a pinned `homebrew/brew:<semver>` container.
 
 Verification evidence and the exact commands are recorded on bead
-`pdftract-ed8d28bf`. The remaining blockers are publication of the signed release
-handoff, publication of `Formula/pdftract.rb`, and the full tap/install/version
-smoke test on a machine with Homebrew; until then the brew command below is a
-validation procedure, not a live install claim.
+`pdftract-ed8d28bf`. The remaining blockers are the systematic release-pipeline
+clone failure, publication of the signed release handoff with the unique
+source-archive line, publication of `Formula/pdftract.rb`, and the full
+tap/install/version smoke test on a machine with Homebrew; until then the brew
+command below is a validation procedure, not a live install claim.
