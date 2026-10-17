@@ -26,14 +26,11 @@
 //! agreeing per-index — which would silently break consumers pairing the
 //! arrays by index.
 //!
-//! Results are assembled directly (populated exactly as the producers in
-//! `extract.rs` populate them: `to_legacy_strings` for the string array,
-//! `DiagnosticJson::from` for the structured array) rather than via
-//! `extract_pdf`, because the extraction path is currently broken tree-wide
-//! on every fixture. `extraction_driven_end_to_end_mirror` runs the same
-//! assertions through `extract_pdf`/`extract_streaming` and self-skips with
-//! a notice until that is fixed, so the end-to-end check arms itself
-//! automatically when extraction recovers.
+//! Results are assembled directly for focused mirror and serialization edge
+//! cases (including duplicate messages with distinct codes). The
+//! `extraction_driven_end_to_end_mirror` test also exercises the live
+//! `extract_pdf`/`extract_streaming` path with a tagged PDF fixture and fails
+//! if extraction or the structured tagged-PDF diagnostic is missing.
 
 use pdftract_core::diagnostics::{DiagCode, Diagnostic, ObjRef, DIAGNOSTIC_CATALOG};
 use pdftract_core::extract::ExtractionResult;
@@ -448,37 +445,46 @@ fn tagged_pdf_bytes() -> Vec<u8> {
 
 #[test]
 fn extraction_driven_end_to_end_mirror() {
-    // Extraction is broken tree-wide at the moment (every fixture fails:
-    // `No /Root` / `Document contains no pages` — see
-    // tests/diagnostics_serialization_format.rs's closing note). When it
-    // recovers, this test stops skipping and enforces the mirror through the
-    // real pipeline: metadata arrays, full-JSON errors, and NDJSON footer.
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let pdf_path = temp_dir.path().join("tagged.pdf");
     std::fs::write(&pdf_path, tagged_pdf_bytes()).expect("write fixture");
 
-    let result = match pdftract_core::extract_pdf(&pdf_path, &Default::default()) {
-        Ok(result) => result,
-        Err(error) => {
-            eprintln!(
-                "SKIPPED (not passed): end-to-end mirror check needs a working \
-                 extraction path; extract_pdf currently fails tree-wide with: {error:#}"
-            );
-            return;
-        }
-    };
+    let result = pdftract_core::extract_pdf(&pdf_path, &Default::default())
+        .expect("extract_pdf must return an ExtractionResult for the tagged fixture");
 
     // Surface 1: metadata mirror, with a real diagnostic present.
-    assert!(
-        !result.metadata.diagnostics_detailed.is_empty(),
-        "the tagged fixture must emit TAGGED_PDF_STRUCT_TREE_DEFERRED; got strings {:?}",
-        result.metadata.diagnostics
-    );
     assert_mirror(
         &result.metadata.diagnostics,
         &result.metadata.diagnostics_detailed,
         "extract_pdf metadata",
     );
+    let tagged_code = DiagCode::LayoutTaggedPdfDeferred.name();
+    let tagged_catalog_entry = DIAGNOSTIC_CATALOG
+        .iter()
+        .find(|info| info.code == DiagCode::LayoutTaggedPdfDeferred)
+        .expect("tagged-PDF deferred diagnostic must have a catalog entry");
+    let (tagged_index, tagged_diagnostic) = result
+        .metadata
+        .diagnostics_detailed
+        .iter()
+        .enumerate()
+        .find(|(_, diagnostic)| diagnostic.code == tagged_code)
+        .expect("tagged fixture must emit TAGGED_PDF_STRUCT_TREE_DEFERRED");
+    assert_eq!(tagged_diagnostic.code, tagged_catalog_entry.code.name());
+    assert_eq!(
+        tagged_diagnostic.severity,
+        tagged_catalog_entry.severity.to_string()
+    );
+    assert_eq!(
+        tagged_diagnostic.hint.as_deref(),
+        Some(tagged_catalog_entry.suggested_action)
+    );
+    let legacy_message = result
+        .metadata
+        .diagnostics
+        .get(tagged_index)
+        .expect("tagged diagnostic must have a matching legacy entry");
+    assert_eq!(legacy_message, &tagged_diagnostic.message);
 
     // Surface 2: full JSON errors.
     let output = result_to_output(&result);
