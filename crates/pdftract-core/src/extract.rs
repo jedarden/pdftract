@@ -3908,15 +3908,26 @@ startxref
         let options = ExtractionOptions::default();
         let result = extract_pdf(&pdf_path, &options).unwrap();
 
-        // Verify the tagged PDF diagnostic is emitted
+        // Verify the tagged PDF diagnostic is emitted. The code lives on the
+        // canonical structured surface (`metadata.diagnostics_detailed`); the
+        // legacy `metadata.diagnostics` strings carry the message verbatim and
+        // must not fold the code in (docs/diagnostics-contract-canonical.md).
         assert!(!result.metadata.diagnostics.is_empty());
+        assert!(
+            result
+                .metadata
+                .diagnostics_detailed
+                .iter()
+                .any(|d| d.code == "TAGGED_PDF_STRUCT_TREE_DEFERRED"),
+            "TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic should be emitted for tagged PDFs"
+        );
         assert!(
             result
                 .metadata
                 .diagnostics
                 .iter()
-                .any(|d| d.contains("TAGGED_PDF_STRUCT_TREE_DEFERRED")),
-            "TAGGED_PDF_STRUCT_TREE_DEFERRED diagnostic should be emitted for tagged PDFs"
+                .any(|d| d.contains("Tagged PDF detected; StructTree traversal deferred")),
+            "legacy diagnostics should carry the deferred-StructTree message verbatim"
         );
 
         // Verify the reading order algorithm is xy_cut
@@ -3935,12 +3946,14 @@ startxref
         let options = ExtractionOptions::default();
         let result = extract_pdf(&pdf_path, &options).unwrap();
 
-        // Verify NO tagged PDF diagnostic is emitted
+        // Verify NO tagged PDF diagnostic is emitted. The code would appear on
+        // the canonical structured surface; the legacy strings carry messages
+        // only (docs/diagnostics-contract-canonical.md), so check there.
         let has_deferred_diag = result
             .metadata
-            .diagnostics
+            .diagnostics_detailed
             .iter()
-            .any(|d| d.contains("TAGGED_PDF_STRUCT_TREE_DEFERRED"));
+            .any(|d| d.code == "TAGGED_PDF_STRUCT_TREE_DEFERRED");
 
         assert!(
             !has_deferred_diag,
