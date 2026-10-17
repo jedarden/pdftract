@@ -50,3 +50,30 @@ compiler" — use `cargo +nightly fuzz build`).
    satisfied bead (the recorded auto-split treadmill).
 3. The stranded artifact was landed instead, per the terminal-action guidance:
    re-derive at HEAD, land, evidence-close.
+
+---
+
+## Re-verification 2026-10-17 (7th split order; re-dispatch after ghost-claim release)
+
+**HEAD at re-verification:** `4b5752f3` (contains `cb0fe966`, confirmed pushed —
+`git merge-base --is-ancestor cb0fe966 origin/main` succeeds). Dispatcher again
+ordered a 3–5-way split ("failed 7 times in a row"); forensic history still shows
+zero failed *build* attempts — the counter is fed by re-dispatches and precondition
+releases. An operator session (2026-10-17T09:38Z, ghost-claim release note on the
+bead) directed: verify at HEAD and close with evidence rather than redo or split.
+
+Re-derived in a clean extraction `/var/tmp/bf-4c49w-verify-20261017`
+(`git archive HEAD`, no stranded blobs needed — `cb0fe966` is IN HEAD now):
+
+| Acceptance criterion | Result | Evidence |
+|---|---|---|
+| `cargo fuzz build profile_yaml` completes without compilation errors | PASS | `cargo +nightly fuzz build profile_yaml` → exit 0, `Finished release profile ... in 4m 06s` |
+| No warnings about unresolved dependencies | PASS | 0 dep errors; 65 ordinary lints in `pdftract-core` lib (e.g. `drop_bounds` at `sdk.rs:445`), pre-existing |
+| Build produces the expected binary artifact | PASS | `/build/pdftract/x86_64-unknown-linux-gnu/release/profile_yaml` (64,025,000 B) |
+| Reasonable build time | PASS | 4m 06s under a 900s timeout guard; no hang |
+| (bonus) artifact executes | PASS | `LD_LIBRARY_PATH=<nix gcc-16.2.0-lib>/lib ... -runs=1` → `Done 2 runs`, `cov: 358`, exit 0 |
+
+Split declined again, same grounds: the deliverable is one verified build command
+with no residual scope; children would exist solely to re-run passing checks
+(forbidden by the dispatch outcome rules). Terminal action per treadmill guidance:
+notes-field update + evidence close.
