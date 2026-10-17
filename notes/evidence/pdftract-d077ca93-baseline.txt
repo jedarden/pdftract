@@ -1,5 +1,5 @@
 bead: pdftract-d077ca93
-baseline HEAD: 4dcff58d
+baseline HEAD: d237c38f
 dirty crates/ files: 28
 crates/ diffstat:  25 files changed, 1102 insertions(+), 390 deletions(-)
 cargo: cargo 1.97.1 (c980f4866 2026-06-30)
