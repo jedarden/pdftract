@@ -20,14 +20,40 @@ module Pdftract
     end
 
     def test_conformance
-      return unless @suite
+      # A missing suite must fail loudly, not report a silent pass: a runner
+      # invoked with the wrong working-dir/CONFORMANCE_SUITE would otherwise
+      # exit 0 having evaluated zero cases (see docs/notes/sdk-conformance-runner.md).
+      if @suite.nil?
+        flunk "Conformance suite not found at #{@suite_path.inspect} " \
+              '(set CONFORMANCE_SUITE or run with tests/sdk-conformance reachable ' \
+              'from the current directory) -- refusing to report a pass without ' \
+              'evaluating any case'
+        return
+      end
+
+      passed = 0
+      skipped = 0
+      failures = []
 
       @suite['cases'].each do |tc|
-        define_method("test_#{tc['id']}_#{tc['method']}") do
-          fixture_path = "tests/sdk-conformance/fixtures/#{tc['fixture']}"
+        fixture_path = "tests/sdk-conformance/fixtures/#{tc['fixture']}"
+        begin
           run_test_case(tc, fixture_path)
+          passed += 1
+        rescue Minitest::Skip
+          skipped += 1
+        rescue Minitest::Assertion => e
+          failures << "#{tc['id']}: #{e.message}"
         end
       end
+
+      total = @suite['cases'].length
+      puts "conformance: #{passed} passed, #{skipped} skipped, " \
+           "#{failures.length} failed (of #{total} cases)"
+
+      return if failures.empty?
+
+      flunk "#{failures.length}/#{total} conformance case(s) failed:\n#{failures.join("\n")}"
     end
 
     def test_structured_diagnostic_model_preserves_canonical_fields

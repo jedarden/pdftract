@@ -16,6 +16,14 @@ Rake::TestTask.new(:conformance) do |t|
   t.warning = false
 end
 
+# Alias under the `test:` namespace so the conformance runtime config can
+# invoke `bundle exec rake test:conformance` (the name used by the shared
+# sdk-conformance-verify runtime config and ADR-001) without duplicating the
+# task definition above.
+namespace :test do
+  task conformance: :conformance
+end
+
 task default: :test
 
 desc "Build the gem"

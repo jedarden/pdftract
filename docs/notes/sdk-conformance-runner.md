@@ -238,8 +238,14 @@ above):
 runtime-image:       ruby:3.2-slim
 sdk-repo:            https://github.com/jedarden/pdftract-ruby.git
 sdk-ref:             main
-conformance-command: gem install --no-document rake && rake conformance
+conformance-command: gem install --no-document bundler && bundle install && bundle exec rake test:conformance
 ```
+
+(`gem install --no-document rake && rake conformance` still works -- `rake
+conformance` and the namespaced `test:conformance` alias run the identical task,
+see `pdftract-ruby/Rakefile`. The `bundle exec` form is the one named in
+pdftract-b8bdfaf6's acceptance criteria and additionally pins dependency
+versions via `Gemfile`/`gemspec`.)
 
 To verify against the shared suite in this monorepo rather than whatever the SDK repo
 vendors, clone the monorepo and point `working-dir` at the SDK:
@@ -253,9 +259,11 @@ Caveats that remain the caller's responsibility:
 
 - The template clones exactly one repository. If the runner cannot find its suite
   (Ruby reads `CONFORMANCE_SUITE`, default `tests/sdk-conformance/cases.json`,
-  relative to `working-dir`), it skips every case and exits 0 — a vacuous pass that
-  cannot fail the gate. Make sure the suite actually reaches the clone before reading
-  `Succeeded` as conformance evidence.
+  relative to `working-dir`), it now **fails** (`ConformanceTest#test_conformance`
+  calls `flunk` when the suite file is absent, fixed in pdftract-b8bdfaf6 -- it used
+  to skip every case and exit 0, a vacuous pass that could not fail the gate). Make
+  sure the suite actually reaches the clone: a `Failed` run with this flunk message
+  means `working-dir`/`sdk-repo` is wrong, not that conformance itself failed.
 - Private SDK repos are out of scope for the shared template (anonymous https clones
   only); language-specific publish workflows wire their own auth when they adopt it.
 
