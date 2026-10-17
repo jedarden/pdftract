@@ -4,8 +4,10 @@ Umbrella: **pdftract-d077ca93** — "Prepare the evidence workspace and record
 the pre-run baseline for the classify.rs compile check" (itself child 1 of 4
 of the pdftract-ba4e7150 split). The parent failed three times as a single
 bead and was split into four sub-children. This note is the parent's scope
-step 3 deliverable, rewritten by sub-child 3 (**pdftract-867642aa**) after
-the artifact sub-children landed their commits.
+step 3 deliverable; the current version was produced by the 2026-10-17
+re-dispatch after the previous attempt (claude-print, 14:47Z) closed with
+reason-only evidence and was bounced by the `shipped_work` gate without
+landing any commit.
 
 ## Note history
 
@@ -15,7 +17,9 @@ the artifact sub-children landed their commits.
 | parent attempt 2 | `87e6d2e9` | baseline re-capture, note updated |
 | parent attempt 3 | `cc15ac22` | baseline re-capture (HEAD 87e6d2e9), note updated |
 | sub-child 2 | `d237c38f` | baseline re-captured fresh at HEAD 4dcff58d — this note was NOT touched, so its verbatim quote went stale |
-| sub-child 3 (this) | this file's introducing commit | rewrite: re-syncs the verbatim quote to the committed baseline and records the split's artifact-to-commit map |
+| sub-child 3 | `9f95395b` | rewrite: re-syncs the verbatim quote to the committed baseline and records the split's artifact-to-commit map |
+| sub-child 4 | `40f8b086` | baseline re-captured at HEAD d237c38f ("align remote baseline freshness marker"); quote went stale again |
+| re-dispatch 2026-10-17 | this file's introducing commit | baseline re-captured live at HEAD 40f8b086 (the only changed line), quote re-synced, split map finalized |
 
 ## Split map: sub-child → artifact → commit
 
@@ -23,19 +27,20 @@ the artifact sub-children landed their commits.
 |---|---|---|---|
 | 1 | pdftract-cf349714 (closed) | `notes/evidence/README.md` — manifest for the evidence workspace | `0364a3a8` (single path, 57 insertions) |
 | 2 | pdftract-9935e4b6 (closed) | `notes/evidence/pdftract-d077ca93-baseline.txt` — fresh re-capture at HEAD 4dcff58d | `d237c38f` (single path, 3 insertions / 3 deletions) |
-| 3 | pdftract-867642aa (this bead) | this note | the commit introducing this version (hash recorded in the bead close reason; subject `docs(pdftract-867642aa): verification note for evidence baseline`) |
-| 4 | pdftract-bf2b6ee5 (open) | publication verification against origin/main | pending — runs after this note lands |
+| 3 | pdftract-867642aa (closed) | this note (rewrite) | `9f95395b` |
+| 4 | pdftract-bf2b6ee5 (closed) | publication verification against origin/main + baseline alignment | `40f8b086` |
+| — | pdftract-d077ca93 re-dispatch (this run) | baseline re-capture + this note's current version | hash recorded in the bead close reason |
 
 ## Baseline file contents (verbatim)
 
-From `notes/evidence/pdftract-d077ca93-baseline.txt`, as committed by
-`d237c38f` and unchanged through `618542bc` (HEAD immediately before this
-note's commit; `git diff HEAD -- notes/evidence/` is empty, so the
-working-tree copy is byte-identical to the committed one):
+From `notes/evidence/pdftract-d077ca93-baseline.txt`, re-captured live by the
+2026-10-17 re-dispatch and committed by this version of the note's own commit
+(working tree and HEAD agree once that commit lands; the diff vs the previous
+committed state is exactly the one `baseline HEAD:` line):
 
 ```
 bead: pdftract-d077ca93
-baseline HEAD: 4dcff58d
+baseline HEAD: 40f8b086
 dirty crates/ files: 28
 crates/ diffstat:  25 files changed, 1102 insertions(+), 390 deletions(-)
 cargo: cargo 1.97.1 (c980f4866 2026-06-30)
@@ -43,34 +48,43 @@ nextest: ABSENT - use timeout-wrapped cargo
 timeout: present
 ```
 
-## Acceptance criteria (parent pdftract-d077ca93) — verdicts
+## Acceptance criteria (parent pdftract-d077ca93) — verdicts this run
 
 - **PASS — baseline file exists and is committed**:
-  `notes/evidence/pdftract-d077ca93-baseline.txt` is tracked at HEAD,
-  introduced by `0ef2997f`, last rewritten by `d237c38f`.
-- **PASS — records baseline HEAD**: `4dcff58d`.
+  `notes/evidence/pdftract-d077ca93-baseline.txt` is tracked; this run
+  overwrites it in place with a fresh capture and commits exactly two paths
+  (the baseline + this note).
+- **PASS — records baseline HEAD**: `40f8b086` (live `git rev-parse --short
+  HEAD` at capture time).
 - **PASS — records dirty crates/ count**: 28 porcelain entries under
   `crates/` (25 tracked files in the diffstat; the porcelain count also
-  covers rename/delete entries).
+  covers rename/delete entries) — unchanged from every prior capture.
 - **PASS — records cargo/nextest/timeout availability**: cargo 1.97.1,
-  nextest ABSENT (with the timeout-wrapped-cargo fallback stated in the
-  file), timeout present.
-- **PASS — freshness (not copied from a prior attempt)**: `d237c38f`'s diff
-  re-measured every volatile field — HEAD 87e6d2e9 → 4dcff58d, dirty files
-  49 → 28, diffstat 44 files/2146+/535− → 25 files/1102+/390− — so the
-  content demonstrably came from that run, satisfying the workspace
-  freshness rule in `notes/evidence/README.md`.
-- **PASS — no blanket staging**: `0364a3a8` and `d237c38f` each touch
-  exactly one path under `notes/`; this note's commit stages only
-  `notes/pdftract-d077ca93.md`.
+  nextest ABSENT (fallback stated in the file), timeout present.
+- **PASS — freshness (not copied from a prior attempt)**: this run executed
+  the capture command against the live tree and produced a different blob:
+  the `baseline HEAD:` line moved `d237c38f` → `40f8b086`, the only volatile
+  field that changed. Every field was re-measured by this run, not quoted.
+- **PASS — no blanket staging**: this dispatch stages only
+  `notes/evidence/pdftract-d077ca93-baseline.txt` and
+  `notes/pdftract-d077ca93.md` by explicit pathspec.
+- **PASS — hard rules respected**: nothing under `crates/` was modified, no
+  `cargo build`/`cargo test` was run (the warm-up build belongs to child 2,
+  the gated run to child 3), and no socket was bound or server spawned.
 
-Overall: **PASS** on every parent criterion; no WARN or FAIL items.
+Overall: **PASS** on every criterion; no WARN or FAIL items.
 
-Observation (informational, not a criterion): a pre-run baseline necessarily
-snapshots an earlier HEAD (4dcff58d) than the one a later gated run executes
-against; the freshness rule assigns re-capture duty to whichever bead runs
-next, and this note's verbatim quote tracks the committed baseline file, not
-the moving HEAD.
+## Clean-extraction verification (committed state, not working tree)
+
+HEAD was extracted to a scratch directory and checked there:
+
+- the committed baseline and note are byte-identical to the working-tree
+  copies (`diff` clean on both paths);
+- `scripts/definition-of-done.sh --fast` was run in the extraction — it is
+  Python-only (readme capabilities audit, SDK doc validation, Argo workflow
+  drift, nightly evidence) and therefore compatible with this bead's
+  no-cargo-build hard rule; result recorded in the close reason's verified
+  block.
 
 ## Interpretation notes for the downstream gated run
 
@@ -79,13 +93,19 @@ the moving HEAD.
   (`timeout --kill-after=30s 600s ...`), never a bare `cargo test`.
 - `timeout` is present, so the hard wall-clock gate is enforceable.
 - The 28 dirty `crates/` entries are pre-existing shared-checkout edits from
-  other workers; the split that produced this note added none and changed
-  none of them.
+  other workers; this dispatch added none and changed none of them.
+- A pre-run baseline necessarily snapshots an earlier HEAD (40f8b086) than
+  the one a later gated run executes against; the freshness rule assigns
+  re-capture duty to whichever bead runs next (child 2 or child 3), and this
+  note's verbatim quote tracks the committed baseline file, not the moving
+  HEAD.
 
 ## crates/ untouched by this split
 
 - `0364a3a8` touches only `notes/evidence/README.md`.
 - `d237c38f` touches only `notes/evidence/pdftract-d077ca93-baseline.txt`.
-- This note's commit touches only `notes/pdftract-d077ca93.md`.
-- No sub-child of this split ran `cargo build` or `cargo test`, bound a
-  socket, or spawned a server process (hard rules).
+- `9f95395b` touches only `notes/pdftract-d077ca93.md`.
+- `40f8b086` touches only `notes/evidence/pdftract-d077ca93-baseline.txt`.
+- This re-dispatch's commit touches only the two `notes/` paths above.
+- No member of this split ran `cargo build` or `cargo test`, bound a socket,
+  or spawned a server process (hard rules).
