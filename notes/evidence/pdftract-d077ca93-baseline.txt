@@ -1,7 +1,7 @@
 bead: pdftract-d077ca93
-baseline HEAD: 87e6d2e9
-dirty crates/ files: 49
-crates/ diffstat:  44 files changed, 2146 insertions(+), 535 deletions(-)
+baseline HEAD: 4dcff58d
+dirty crates/ files: 28
+crates/ diffstat:  25 files changed, 1102 insertions(+), 390 deletions(-)
 cargo: cargo 1.97.1 (c980f4866 2026-06-30)
 nextest: ABSENT - use timeout-wrapped cargo
 timeout: present
