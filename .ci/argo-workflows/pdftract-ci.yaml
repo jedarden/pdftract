@@ -432,15 +432,16 @@ spec:
             echo "Commit SHA: $COMMIT_SHA"
             echo "Ref: $REF"
 
-            # Clone repository
+            # Initialize inside the mounted PVC, which may contain lost+found.
             echo "=== Cloning repository ==="
-            git clone "$REPO_URL" /workspace
-
+            git init -q /workspace
             cd /workspace
+            git remote add origin "$REPO_URL"
+            git fetch --depth 1 origin "$COMMIT_SHA"
 
             # Checkout specific commit
             echo "=== Checking out commit ==="
-            git checkout "$COMMIT_SHA"
+            git checkout --detach FETCH_HEAD
 
             # Get git info for metadata
             GIT_REMOTE_URL=$(git remote get-url origin)
@@ -508,6 +509,22 @@ spec:
             echo "=== Repository ready ==="
             echo "Workspace: /workspace"
             echo "Cargo cache: /cache/cargo"
+        env:
+          - name: GIT_CONFIG_COUNT
+            value: "2"
+          - name: GIT_CONFIG_KEY_0
+            value: credential.helper
+          - name: GIT_CONFIG_VALUE_0
+            value: '!f() { test "$1" = get && echo "username=x-token" && echo "password=$FORGEJO_TOKEN"; }; f'
+          - name: GIT_CONFIG_KEY_1
+            value: safe.directory
+          - name: GIT_CONFIG_VALUE_1
+            value: /workspace
+          - name: FORGEJO_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: forgejo-webhook-token
+                key: token
         volumeMounts:
           - name: workspace
             mountPath: /workspace
