@@ -576,6 +576,24 @@ spec:
             cd /workspace
             apk add --no-cache python3 py3-yaml
             .ci/scripts/check-argo-workflow-drift.sh --live
+        env:
+          # Forgejo requires authentication on every fetch (sign-in required
+          # instance-wide), and the drift script clones declarative-config
+          # with a plain git clone. Give this container the same credential
+          # helper the setup template uses (pdftract-abcabed6); without it the
+          # clone dies with "could not read Username for
+          # 'https://git.ardenone.com'" and the step exits 128.
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: credential.helper
+          - name: GIT_CONFIG_VALUE_0
+            value: '!f() { test "$1" = get && echo "username=x-token" && echo "password=$FORGEJO_TOKEN"; }; f'
+          - name: FORGEJO_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: forgejo-webhook-token
+                key: token
         volumeMounts:
           - name: workspace
             mountPath: /workspace
