@@ -45,6 +45,12 @@ spec:
       app.kubernetes.io/name: pdftract-nightly-fuzz
       workflow-type: nightly-fuzz
   workflowSpec:
+    # Share the PDFtract repo lock with the other peak-fan-out workflows.
+    synchronization:
+      semaphores:
+        - configMapKeyRef:
+            name: repo-ci-semaphores
+            key: pdftract
     entrypoint: pipeline
     onExit: capture-evidence
     serviceAccountName: argo-workflow

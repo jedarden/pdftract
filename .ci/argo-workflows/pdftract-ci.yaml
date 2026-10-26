@@ -59,6 +59,12 @@ metadata:
     app.kubernetes.io/component: ci
     app.kubernetes.io/part-of: pdftract
 spec:
+  # Share one lock across PDFtract's peak-fan-out workflows.
+  synchronization:
+    semaphores:
+      - configMapKeyRef:
+          name: repo-ci-semaphores
+          key: pdftract
   # Backstop against a run that hangs before its pod ever starts (unbound
   # PVC, unschedulable, missing secret). Per-step activeDeadlineSeconds does
   # not cover that case: on 2026-08-07 five needle-ci runs sat Running for
@@ -71,6 +77,15 @@ spec:
   # onExit is a workflow-level field; this was templates[0].dag.onExit,
   # which Argo prunes, so this handler had never actually run.
   onExit: on-exit
+
+  # Artifacts carry state between steps (workflow metadata, binaries,
+  # conformance reports). The iad-ci controller sets no default
+  # artifactRepository, so without this ref the first artifact save fails the
+  # wait container: "artifact storage is not configured" (exit 64). Same
+  # repository the pdftract build and release templates use.
+  artifactRepositoryRef:
+    configMap: ci-release-artifact-repositories
+    key: release-v1
 
   podGC:
     strategy: OnPodCompletion
