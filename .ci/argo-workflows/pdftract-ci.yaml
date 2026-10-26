@@ -1431,14 +1431,32 @@ spec:
 
                 echo "=== Running property tests (proptest) ==="
                 echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
-                cargo nextest run --features proptest --proptest --profile=ci-proptest || {
-                  EXIT_CODE=$?
-                  if [ $EXIT_CODE -ne 0 ]; then
-                    echo "ERROR: Property tests failed!"
-                    echo "Check proptest-regressions/ for new minimal counterexamples"
-                    exit $EXIT_CODE
-                  fi
-                }
+                # cargo-nextest is not part of the rust/cross base images, and
+                # --proptest has never been a nextest flag (the proptest suites are
+                # ordinary feature-gated targets). Use nextest with its ci-proptest
+                # profile when the binary is available (e.g. via the PVC cargo bin)
+                # and fall back to plain cargo test over the two feature-gated
+                # proptest targets otherwise, so the gate runs in both cases.
+                if cargo nextest --version >/dev/null 2>&1; then
+                  cargo nextest run --features proptest --profile=ci-proptest || {
+                    EXIT_CODE=$?
+                    if [ $EXIT_CODE -ne 0 ]; then
+                      echo "ERROR: Property tests failed!"
+                      echo "Check proptest-regressions/ for new minimal counterexamples"
+                      exit $EXIT_CODE
+                    fi
+                  }
+                else
+                  echo "cargo-nextest not available; running feature-gated property tests via cargo test"
+                  cargo test --locked -p pdftract-core --features proptest \
+                    --test object_parser_proptest --test acceptance_crit_verification || {
+                    EXIT_CODE=$?
+                    if [ $EXIT_CODE -ne 0 ]; then
+                      echo "ERROR: Property tests failed!"
+                      exit $EXIT_CODE
+                    fi
+                  }
+                fi
 
                 echo "=== All glibc tests passed ==="
                 echo "Unit tests: PASS"
@@ -1507,14 +1525,32 @@ spec:
 
                 echo "=== Running property tests (proptest) ==="
                 echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
-                cargo nextest run --features proptest --proptest --profile=ci-proptest || {
-                  EXIT_CODE=$?
-                  if [ $EXIT_CODE -ne 0 ]; then
-                    echo "ERROR: Property tests failed!"
-                    echo "Check proptest-regressions/ for new minimal counterexamples"
-                    exit $EXIT_CODE
-                  fi
-                }
+                # cargo-nextest is not part of the rust/cross base images, and
+                # --proptest has never been a nextest flag (the proptest suites are
+                # ordinary feature-gated targets). Use nextest with its ci-proptest
+                # profile when the binary is available (e.g. via the PVC cargo bin)
+                # and fall back to plain cargo test over the two feature-gated
+                # proptest targets otherwise, so the gate runs in both cases.
+                if cargo nextest --version >/dev/null 2>&1; then
+                  cargo nextest run --features proptest --profile=ci-proptest || {
+                    EXIT_CODE=$?
+                    if [ $EXIT_CODE -ne 0 ]; then
+                      echo "ERROR: Property tests failed!"
+                      echo "Check proptest-regressions/ for new minimal counterexamples"
+                      exit $EXIT_CODE
+                    fi
+                  }
+                else
+                  echo "cargo-nextest not available; running feature-gated property tests via cargo test"
+                  cargo test --locked -p pdftract-core --features proptest \
+                    --test object_parser_proptest --test acceptance_crit_verification || {
+                    EXIT_CODE=$?
+                    if [ $EXIT_CODE -ne 0 ]; then
+                      echo "ERROR: Property tests failed!"
+                      exit $EXIT_CODE
+                    fi
+                  }
+                fi
 
                 echo "=== All glibc tests passed ==="
                 echo "Unit tests: PASS"
@@ -1566,14 +1602,32 @@ spec:
 
               echo "=== Running property tests (proptest) ==="
               echo "Seed: $PROPTEST_SEED | Cases: $PROPTEST_CASES"
-              cargo nextest run --features proptest --proptest --profile=ci-proptest || {
-                EXIT_CODE=$?
-                if [ $EXIT_CODE -ne 0 ]; then
-                  echo "ERROR: Property tests failed!"
-                  echo "Check proptest-regressions/ for new minimal counterexamples"
-                  exit $EXIT_CODE
-                fi
-              }
+              # cargo-nextest is not part of the rust/cross base images, and
+              # --proptest has never been a nextest flag (the proptest suites are
+              # ordinary feature-gated targets). Use nextest with its ci-proptest
+              # profile when the binary is available (e.g. via the PVC cargo bin)
+              # and fall back to plain cargo test over the two feature-gated
+              # proptest targets otherwise, so the gate runs in both cases.
+              if cargo nextest --version >/dev/null 2>&1; then
+                cargo nextest run --features proptest --profile=ci-proptest || {
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -ne 0 ]; then
+                    echo "ERROR: Property tests failed!"
+                    echo "Check proptest-regressions/ for new minimal counterexamples"
+                    exit $EXIT_CODE
+                  fi
+                }
+              else
+                echo "cargo-nextest not available; running feature-gated property tests via cargo test"
+                cargo test --locked -p pdftract-core --features proptest \
+                  --test object_parser_proptest --test acceptance_crit_verification || {
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -ne 0 ]; then
+                    echo "ERROR: Property tests failed!"
+                    exit $EXIT_CODE
+                  fi
+                }
+              fi
 
               echo "=== All glibc tests passed ==="
               echo "Unit tests: PASS"
