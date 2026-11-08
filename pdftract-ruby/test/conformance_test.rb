@@ -12,7 +12,8 @@ module Pdftract
   class ConformanceTest < Minitest::Test
     def setup
       @client = Client.new
-      @suite_path = ENV['CONFORMANCE_SUITE'] || 'tests/sdk-conformance/cases.json'
+      @suite_path = File.expand_path(ENV['CONFORMANCE_SUITE'] || 'tests/sdk-conformance/cases.json')
+      @fixture_root = File.join(File.dirname(@suite_path), 'fixtures')
 
       return unless File.exist?(@suite_path)
 
@@ -31,26 +32,39 @@ module Pdftract
         return
       end
 
+      # The subprocess SDK cannot exercise a case without its CLI. Checking
+      # before the loop also prevents a suite of unsupported cases from
+      # reporting success when the binary is absent.
+      unless system(@client.binary_path, '--version', out: File::NULL, err: File::NULL)
+        flunk "pdftract CLI is unavailable or cannot run: #{@client.binary_path}"
+      end
+
       passed = 0
-      skipped = 0
       failures = []
 
       @suite['cases'].each do |tc|
-        fixture_path = "tests/sdk-conformance/fixtures/#{tc['fixture']}"
+        fixture_path = tc['fixture'].start_with?('https://', 'http://') ?
+          tc['fixture'] : File.join(@fixture_root, tc['fixture'])
         begin
+          before = assertions
           run_test_case(tc, fixture_path)
+          assert_operator assertions, :>, before,
+                          "#{tc['id']} completed without checking an expectation"
           passed += 1
-        rescue Minitest::Skip
-          skipped += 1
+        rescue Minitest::Skip => e
+          failures << "#{tc['id']}: skipped: #{e.message}"
         rescue Minitest::Assertion => e
           failures << "#{tc['id']}: #{e.message}"
+        rescue StandardError => e
+          failures << "#{tc['id']}: #{e.class}: #{e.message}"
         end
       end
 
       total = @suite['cases'].length
-      puts "conformance: #{passed} passed, #{skipped} skipped, " \
+      puts "conformance: #{passed} passed, 0 skipped, " \
            "#{failures.length} failed (of #{total} cases)"
 
+      failures << 'suite contains no cases' if total.zero?
       return if failures.empty?
 
       flunk "#{failures.length}/#{total} conformance case(s) failed:\n#{failures.join("\n")}"
@@ -90,14 +104,14 @@ module Pdftract
       when 'classify'
         test_classify(fixture_path, test_case['expected'])
       when 'verify_receipt'
-        test_verify_receipt(fixture_path, test_case['expected'])
+        test_verify_receipt(fixture_path, test_case['options'], test_case['expected'])
       else
-        skip "Method not yet implemented: #{test_case['method']}"
+        flunk "Conformance method is not implemented: #{test_case['method']}"
       end
     end
 
     def test_extract(fixture_path, assertions)
-      skip "Fixture not found: #{fixture_path}" unless File.exist?(fixture_path)
+      require_fixture!(fixture_path)
 
       doc = @client.extract(fixture_path)
 
@@ -111,7 +125,7 @@ module Pdftract
     end
 
     def test_extract_text(fixture_path, assertions)
-      skip "Fixture not found: #{fixture_path}" unless File.exist?(fixture_path)
+      require_fixture!(fixture_path)
 
       text = @client.extract_text(fixture_path)
 
@@ -127,7 +141,7 @@ module Pdftract
     end
 
     def test_extract_markdown(fixture_path, assertions)
-      skip "Fixture not found: #{fixture_path}" unless File.exist?(fixture_path)
+      require_fixture!(fixture_path)
 
       md = @client.extract_markdown(fixture_path)
 
@@ -137,7 +151,7 @@ module Pdftract
     end
 
     def test_get_metadata(fixture_path, assertions)
-      skip "Fixture not found: #{fixture_path}" unless File.exist?(fixture_path)
+      require_fixture!(fixture_path)
 
       metadata = @client.get_metadata(fixture_path)
 
@@ -147,7 +161,7 @@ module Pdftract
     end
 
     def test_hash(fixture_path, assertions)
-      skip "Fixture not found: #{fixture_path}" unless File.exist?(fixture_path)
+      require_fixture!(fixture_path)
 
       fingerprint = @client.hash(fixture_path)
 
@@ -160,7 +174,7 @@ module Pdftract
     end
 
     def test_classify(fixture_path, assertions)
-      skip "Fixture not found: #{fixture_path}" unless File.exist?(fixture_path)
+      require_fixture!(fixture_path)
 
       classification = @client.classify(fixture_path)
 
@@ -168,14 +182,22 @@ module Pdftract
       assert classification.confidence >= 0 && classification.confidence <= 1, "Confidence out of range"
     end
 
-    def test_verify_receipt(fixture_path, assertions)
-      return unless assertions&.key?('receipt')
+    def test_verify_receipt(fixture_path, options, assertions)
+      require_fixture!(fixture_path)
+      receipt = File.join(@fixture_root, options.fetch('receipt'))
+      require_fixture!(receipt)
 
-      valid = @client.verify_receipt(fixture_path, assertions['receipt'])
+      valid = @client.verify_receipt(fixture_path, receipt)
 
       if assertions.key?('valid')
         assert_equal assertions['valid'], valid, "Receipt validity mismatch"
       end
+    end
+
+    def require_fixture!(path)
+      return if path.start_with?('https://', 'http://') || File.file?(path)
+
+      flunk "Fixture not found: #{path}"
     end
   end
 end
